@@ -14,3 +14,11 @@ The point where a user interaction ends and the change it produced is committed 
 **Undoable step**:
 The unit of history: the document change committed at one interaction boundary.
 _Avoid_: command, action
+
+**Design file**:
+The serialized Document — the JSON saved to disk and imported back. The file wraps the Document in a versioned envelope; importing one replaces the whole Document.
+_Avoid_: save, project, scene file
+
+**Locked**:
+A state of a sticker: it cannot be moved, resized, edited, or deleted while locked. The flag survives save/load; it is a property of the sticker, not of the session.
+_Avoid_: pinned, fixed
