@@ -27,6 +27,10 @@ _Avoid_: pinned, fixed
 The outline of a sticker that defines where it is cut — the boundary of the sticker's shape. In the Document it is the shape's clipPath, at the original geometry edge; the inset border shrinks inside it. There is no bleed or separate dieline: the canvas shape is the cut line.
 _Avoid_: dieline, cut path, bleed
 
+**Default size**:
+The size a sticker is created at when added from the sidebar — specified in inches (Square 2×2, Circle Ø2, Rectangle/Oval/Rounded-rectangle 2×3), stored in pixels at the 96 DPI display basis, and editable in the toolbar afterwards.
+_Avoid_: preset size
+
 **Document size**:
 The width and height of the Document in pixels — the basis of Export dimensions. Physical inches are a view-layer derivation (1 in = 96 screen px; 300 DPI at export), never stored.
 _Avoid_: canvas size, print size
