@@ -22,3 +22,15 @@ _Avoid_: save, project, scene file
 **Locked**:
 A state of a sticker: it cannot be moved, resized, edited, or deleted while locked. The flag survives save/load; it is a property of the sticker, not of the session.
 _Avoid_: pinned, fixed
+
+**Cut line**:
+The outline of a sticker that defines where it is cut — the boundary of the sticker's shape. In the Document it is the shape's clipPath, at the original geometry edge; the inset border shrinks inside it. There is no bleed or separate dieline: the canvas shape is the cut line.
+_Avoid_: dieline, cut path, bleed
+
+**Document size**:
+The width and height of the Document in pixels — the basis of Export dimensions. Physical inches are a view-layer derivation (1 in = 96 screen px; 300 DPI at export), never stored.
+_Avoid_: canvas size, print size
+
+**Export**:
+The rendered artifact produced from the Document — PNG, JPEG, PDF, or SVG — at Document size and 300 DPI (raster formats). Exports render the current committed Document with view state excluded; they are not the Design file — a Design file is editable and round-trips, an Export is final pixels or vectors. Exporting is not an undoable step.
+_Avoid_: output file, downloaded file
