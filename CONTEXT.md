@@ -1,6 +1,6 @@
 # Sticker Studio
 
-A client-side sticker design editor: a Fabric.js canvas where each sticker is a shape object, edited in the browser and exported as print-ready files.
+A client-side sticker design editor: a Fabric.js canvas where the design is a set of shape objects, edited in the browser and exported as print-ready files.
 
 ## Language
 
@@ -20,11 +20,11 @@ The serialized Document — the JSON saved to disk and imported back. The file w
 _Avoid_: save, project, scene file
 
 **Locked**:
-A state of a sticker: it cannot be moved, resized, edited, or deleted while locked. The flag survives save/load; it is a property of the sticker, not of the session.
+A state of a shape: it cannot be moved, resized, edited, or deleted while locked. The flag survives save/load; it is a property of the shape, not of the session.
 _Avoid_: pinned, fixed
 
 **Cut line**:
-The outline of a sticker that defines where it is cut — the boundary of the sticker's shape. In the Document it is the shape's clipPath, at the original geometry edge; the inset border shrinks inside it. There is no bleed or separate dieline: the canvas shape is the cut line.
+The outline of a shape that defines where it is cut — the boundary of the shape. In the Document it is the shape's clipPath, at the original geometry edge; the inset border shrinks inside it. There is no bleed or separate dieline: the shape is the cut line.
 _Avoid_: dieline, cut path, bleed
 
 **Group**:
@@ -36,7 +36,7 @@ The set of objects (usually one) currently active in the editor: click selects a
 _Avoid_: active objects, highlight, focus
 
 **Default size**:
-The size a sticker is created at when added from the sidebar — specified in inches (Square 2×2, Circle Ø2, Rectangle/Oval/Triangle 3×2 landscape), stored in pixels at the 96 DPI display basis. Size is then edited on the canvas with the drag handles, not in the toolbar.
+The size a shape is created at when added from the sidebar — specified in inches (Square 2×2, Circle Ø2, Rectangle/Oval/Triangle 3×2 landscape), stored in pixels at the 96 DPI display basis. Size is then edited on the canvas with the drag handles, not in the toolbar.
 _Avoid_: preset size
 
 **Document size**:
@@ -48,7 +48,7 @@ The rendered artifact produced from the Document — PNG, JPEG, PDF, or SVG — 
 _Avoid_: output file, downloaded file
 
 **Text**:
-A Document object that displays styled text — the Fabric Textbox on the canvas, styled per-textbox (no per-run rich text). Text is content placed on a sticker, not a sticker itself: it has no shape of its own and no cut line.
+A Document object that displays styled text — the Fabric Textbox on the canvas, styled per-textbox (no per-run rich text). Text is content placed on a shape, not a shape itself: it has no shape of its own and no cut line.
 _Avoid_: textbox, label, caption, text run
 
 **Text session**:

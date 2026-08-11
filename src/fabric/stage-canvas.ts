@@ -8,7 +8,7 @@ import {
 } from "fabric"
 
 import { stampDocumentProps } from "@/fabric/document-props"
-import { getStickerShapeKind } from "@/fabric/shapes"
+import { DEFAULT_BORDER_COLOR, getShapeKind } from "@/fabric/shapes"
 
 /**
  * Initial Document size — 600×600 px at the 96 DPI display basis. The canvas
@@ -17,6 +17,17 @@ import { getStickerShapeKind } from "@/fabric/shapes"
  */
 export const DOCUMENT_WIDTH = 600
 export const DOCUMENT_HEIGHT = 600
+
+/** Default Document background — white (§3); edited in the stage toolbar. */
+export const DOCUMENT_BACKGROUND_COLOR = "#ffffff"
+
+/**
+ * Default Document border — off (width 0) and the shape border color: §3's
+ * canvas starts borderless; the border is a document property the toolbar
+ * turns on (ADR 0002, envelope `border`).
+ */
+export const DOCUMENT_BORDER_WIDTH = 0
+export const DOCUMENT_BORDER_COLOR = DEFAULT_BORDER_COLOR
 
 /** Rotation-handle size — larger than the 13px corner handles so the icon reads. */
 const ROTATE_HANDLE_SIZE = 20
@@ -88,15 +99,20 @@ export function createStageCanvas(element: HTMLCanvasElement): Canvas {
   const canvas = new Canvas(element, {
     width: DOCUMENT_WIDTH,
     height: DOCUMENT_HEIGHT,
-    backgroundColor: "#ffffff",
+    backgroundColor: DOCUMENT_BACKGROUND_COLOR,
   })
+
+  // Document border (envelope-owned, ADR 0002) — off at creation. The canvas
+  // is the document: the border lives here, mirrored by the stage toolbar.
+  canvas.borderWidth = DOCUMENT_BORDER_WIDTH
+  canvas.borderColor = DOCUMENT_BORDER_COLOR
 
   // Document identity (ADR 0002): stamp the id/locked defaults at the
   // document boundary so every creation path — sidebar, console-added
   // objects, imports — carries a stable id. Objects restored from a Design
   // file already have their ids and are left untouched. The rotation handle
-  // is replaced with the icon version on every add path; sticker shapes also
-  // expose corner handles only (uniform scaling).
+  // is replaced with the icon version on every add path; shapes also expose
+  // corner handles only (uniform scaling).
   canvas.on("object:added", (event) => {
     const obj = event.target
     if (!obj) return
@@ -107,19 +123,40 @@ export function createStageCanvas(element: HTMLCanvasElement): Canvas {
       rotate.sizeY = ROTATE_HANDLE_SIZE
       rotate.render = renderRotateHandle
     }
-    if (getStickerShapeKind(obj)) {
+    if (getShapeKind(obj)) {
       obj.setControlsVisibility({ ml: false, mt: false, mr: false, mb: false })
     }
   })
 
-  // Sticker shapes scale uniformly — the aspect ratio is frozen at the
+  // The document border (envelope-owned, ADR 0002) renders as an inset stroke
+  // on the document edge — same inset model as shape borders (§4): the stroke
+  // sits inside the edge, so exports (which render only the document area)
+  // show the full border. `after:render` paints in the background's base
+  // space, so the stroke hugs the document edge at any zoom.
+  canvas.on("after:render", () => {
+    const borderWidth = canvas.borderWidth
+    if (!borderWidth) return
+    const ctx = canvas.getContext()
+    ctx.save()
+    ctx.strokeStyle = canvas.borderColor
+    ctx.lineWidth = borderWidth
+    ctx.strokeRect(
+      borderWidth / 2,
+      borderWidth / 2,
+      canvas.width - borderWidth,
+      canvas.height - borderWidth,
+    )
+    ctx.restore()
+  })
+
+  // Shapes scale uniformly — the aspect ratio is frozen at the
   // gesture start, so a corner drag never distorts the shape. The first
   // `object:scaling` tick records the ratio; later ticks keep it; the end of
   // the gesture (any transform commit) clears it for the next one.
   const gestureRatios = new WeakMap<FabricObject, number>()
   canvas.on("object:scaling", (event) => {
     const obj = event.target
-    if (!obj || !getStickerShapeKind(obj)) return
+    if (!obj || !getShapeKind(obj)) return
     const ratio = gestureRatios.get(obj)
     if (ratio === undefined) {
       gestureRatios.set(obj, obj.scaleX / obj.scaleY)

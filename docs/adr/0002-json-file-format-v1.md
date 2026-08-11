@@ -2,7 +2,7 @@
 
 Status: accepted
 
-The design file is a thin envelope around Fabric's own serialization: `{ "format": "sticker-studio", "version": 1, "size": { "width", "height" }, "rotation": 0, "canvas": <canvas.toJSON()> }`. The canvas is the document (ADR 0001's model), so the Fabric payload inside the envelope is loaded verbatim via `loadFromJSON(json.canvas)`; the envelope exists only for what Fabric does not serialize — our format version (Fabric's own `version` field is Fabric's), the document size (Fabric's `loadFromJSON` never touches canvas size), and the document rotation. Numbers are pixels, the literal Fabric values; the physical-inch basis is a view-layer derivation (1 in = 96 screen px; 300 DPI at export via the 3.125 multiplier), never stored.
+The design file is a thin envelope around Fabric's own serialization: `{ "format": "sticker-studio", "version": 1, "size": { "width", "height" }, "rotation": 0, "border": { "width": 0, "color": "#18181b" }, "canvas": <canvas.toJSON()> }`. The canvas is the document (ADR 0001's model), so the Fabric payload inside the envelope is loaded verbatim via `loadFromJSON(json.canvas)`; the envelope exists only for what Fabric does not serialize — our format version (Fabric's own `version` field is Fabric's), the document size (Fabric's `loadFromJSON` never touches canvas size), the document rotation, and the document border (Fabric has no border concept of its own; the stage and exports draw it as an inset stroke at the document edge, build-spec §4). Numbers are pixels, the literal Fabric values; the physical-inch basis is a view-layer derivation (1 in = 96 screen px; 300 DPI at export via the 3.125 multiplier), never stored.
 
 ## Considered Options
 
@@ -16,7 +16,7 @@ Every object carries three flat format fields, registered as Fabric custom prope
 
 ## What survives import
 
-Objects in z-order (groups nested as one Group object, per-object clipPath cut lines, the inset border model), background color (Fabric's `background`), document size and rotation (envelope). Selection, viewport/zoom/pan, and undo history are view state and never enter the file.
+Objects in z-order (groups nested as one Group object, per-object clipPath cut lines, the inset border model), background color (Fabric's `background`), document size, rotation, and the document border (envelope). Selection, viewport/zoom/pan, and undo history are view state and never enter the file.
 
 ## Validation and migration
 

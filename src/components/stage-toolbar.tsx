@@ -18,7 +18,7 @@ import {
   DEFAULT_BORDER_COLOR,
   DEFAULT_FILL,
   getBorderWidth,
-  getStickerShapeKind,
+  getShapeKind,
 } from "@/fabric/shapes"
 import { commitPx, formatPx, type Unit } from "@/lib/units"
 import { cn } from "@/lib/utils"
@@ -85,6 +85,33 @@ function UnitField({
   )
 }
 
+/** A color swatch input — shared by the shape and canvas property sections. */
+function ColorInput({
+  value,
+  onChange,
+  disabled,
+  ariaLabel,
+  title,
+}: {
+  value: string
+  onChange: (color: string) => void
+  disabled?: boolean
+  ariaLabel: string
+  title: string
+}) {
+  return (
+    <input
+      type="color"
+      className="h-7 w-9 cursor-pointer rounded-md bg-transparent p-0.5"
+      value={value}
+      disabled={disabled}
+      aria-label={ariaLabel}
+      title={title}
+      onChange={(event) => onChange(event.target.value)}
+    />
+  )
+}
+
 /**
  * The unit switch — a label swap over stored px, shared by all toolbar
  * fields. The active unit reads on the trigger; the dropdown offers the rest.
@@ -117,7 +144,7 @@ function UnitSwitcher() {
   )
 }
 
-/** A W×H field pair in the active unit — shared by Document and sticker size. */
+/** A W×H field pair in the active unit — shared by Document and shape size. */
 function SizeFieldPair({
   widthPx,
   heightPx,
@@ -161,28 +188,73 @@ function DocumentSize() {
 }
 
 /**
+ * Document look section (build spec §5) — always visible: the canvas
+ * background color and the document border (width slider + color). Both are
+ * document properties (the border is envelope-owned, ADR 0002) and use the
+ * same control styling and inset border model as the shape-property section.
+ */
+function CanvasProps() {
+  const { canvasProps, commitCanvasProps } = useStage()
+  const { backgroundColor, borderWidth, borderColor } = canvasProps
+
+  return (
+    <div className="flex items-center gap-3">
+      <label className="flex items-center gap-1.5">
+        <span className="text-[10px] leading-none text-muted-foreground">Background</span>
+        <ColorInput
+          value={backgroundColor}
+          ariaLabel="Canvas background color"
+          title="Canvas background color"
+          onChange={(backgroundColor) => commitCanvasProps({ backgroundColor })}
+        />
+      </label>
+      <label className="flex items-center gap-2">
+        <span className="text-[10px] leading-none text-muted-foreground">Border</span>
+        <Slider
+          className="w-28"
+          min={BORDER_RANGE.min}
+          max={BORDER_RANGE.max}
+          step={BORDER_RANGE.step}
+          value={[borderWidth]}
+          onValueChange={([value]) => commitCanvasProps({ borderWidth: value })}
+          aria-label="Border width"
+        />
+        <span className="w-8 text-right text-[10px] leading-none text-muted-foreground tabular-nums">
+          {borderWidth}px
+        </span>
+        <ColorInput
+          value={borderColor}
+          disabled={borderWidth === 0}
+          ariaLabel="Border color"
+          title={borderWidth === 0 ? "Border is off — set a width first" : "Border color"}
+          onChange={(borderColor) => commitCanvasProps({ borderColor })}
+        />
+      </label>
+    </div>
+  )
+}
+
+/**
  * Contextual shape-property section (build spec §5), visible only while a
- * single sticker is selected: the background (fill) color and the inset
- * border (width slider + color). All values display in px and commit
- * immediately.
+ * single shape is selected: the background (fill) color and the inset border
+ * (width slider + color). All values display in px and commit immediately.
  */
 function ShapeProps() {
   const { selection, commitShapeProps } = useStage()
-  const sticker = selection.length === 1 ? selection[0] : null
-  if (!sticker) return null
+  const shape = selection.length === 1 ? selection[0] : null
+  if (!shape) return null
 
-  const borderWidth = getBorderWidth(sticker)
+  const borderWidth = getBorderWidth(shape)
 
   return (
     <div className="flex items-center gap-3">
       <label className="flex items-center gap-1.5">
         <span className="text-[10px] leading-none text-muted-foreground">Fill</span>
-        <input
-          type="color"
-          className="h-7 w-9 cursor-pointer rounded-md bg-transparent p-0.5"
-          value={typeof sticker.fill === "string" ? sticker.fill : DEFAULT_FILL}
-          title="Sticker background color"
-          onChange={(event) => commitShapeProps({ fillColor: event.target.value })}
+        <ColorInput
+          value={typeof shape.fill === "string" ? shape.fill : DEFAULT_FILL}
+          ariaLabel="Shape background color"
+          title="Shape background color"
+          onChange={(fillColor) => commitShapeProps({ fillColor })}
         />
       </label>
       <label className="flex items-center gap-2">
@@ -199,14 +271,12 @@ function ShapeProps() {
         <span className="w-8 text-right text-[10px] leading-none text-muted-foreground tabular-nums">
           {borderWidth}px
         </span>
-        <input
-          type="color"
-          className="h-7 w-9 cursor-pointer rounded-md bg-transparent p-0.5"
-          value={typeof sticker.stroke === "string" ? sticker.stroke : DEFAULT_BORDER_COLOR}
+        <ColorInput
+          value={typeof shape.stroke === "string" ? shape.stroke : DEFAULT_BORDER_COLOR}
           disabled={borderWidth === 0}
-          aria-label="Border color"
+          ariaLabel="Border color"
           title={borderWidth === 0 ? "Border is off — set a width first" : "Border color"}
-          onChange={(event) => commitShapeProps({ borderColor: event.target.value })}
+          onChange={(borderColor) => commitShapeProps({ borderColor })}
         />
       </label>
     </div>
@@ -214,20 +284,22 @@ function ShapeProps() {
 }
 
 /**
- * Stage toolbar strip (build spec §3): document properties (size with unit
- * display) plus the contextual shape-property section while a single sticker
- * is selected. The §7 selection controls (group, arrange, flip, lock) arrive
- * with the selection build.
+ * Stage toolbar strip (build spec §3): document properties — size with unit
+ * display and the canvas look (background, border) — plus the contextual
+ * shape-property section while a single shape is selected. The §7 selection
+ * controls (group, arrange, flip, lock) arrive with the selection build.
  */
 export function StageToolbar() {
   const { selection } = useStage()
-  const hasSticker = selection.length === 1 && getStickerShapeKind(selection[0]) !== null
+  const hasShape = selection.length === 1 && getShapeKind(selection[0]) !== null
 
   return (
     <div className="flex h-10 shrink-0 items-center gap-3 border-b bg-background px-3">
       <DocumentSize />
       <UnitSwitcher />
-      {hasSticker && (
+      <Separator orientation="vertical" className="mx-1 h-5" />
+      <CanvasProps />
+      {hasShape && (
         <>
           <Separator orientation="vertical" className="mx-1 h-5" />
           <ShapeProps />

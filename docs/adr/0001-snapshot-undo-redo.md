@@ -2,7 +2,7 @@
 
 Status: accepted
 
-Fabric.js ships no undo/redo (its plugins are stale), and sticker documents are small — tens of objects, a few KB of JSON — so we back history with a document-state stack: one full `canvas.toJSON()` snapshot pushed per interaction boundary, restored via `loadFromJSON`. The stack's previous entry is the pre-interaction state, so nothing is captured mid-gesture and no debouncing is needed.
+Fabric.js ships no undo/redo (its plugins are stale), and design documents are small — tens of objects, a few KB of JSON — so we back history with a document-state stack: one full `canvas.toJSON()` snapshot pushed per interaction boundary, restored via `loadFromJSON`. The stack's previous entry is the pre-interaction state, so nothing is captured mid-gesture and no debouncing is needed.
 
 ## Considered Options
 

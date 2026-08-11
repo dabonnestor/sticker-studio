@@ -4,9 +4,9 @@ Build-ready specification for the client-side sticker design editor MVP, assembl
 
 ## 1. Overview & scope
 
-A Sticker Mule Studio-like client-side editor: a Fabric.js canvas where each sticker is a shape object, edited in the browser and exported as print-ready files. Fully client-side, static-site target, no backend of any kind.
+A Sticker Mule Studio-like client-side editor: a Fabric.js canvas where the design is a set of shape objects, edited in the browser and exported as print-ready files. Fully client-side, static-site target, no backend of any kind.
 
-**In scope (MVP)**: stickers (Square, Circle, Rectangle, Oval, Triangle), text, image placement, selection & single-level grouping, undo/redo, zoom/viewport, JSON save/import, export to PNG/JPEG/PDF/SVG at 300 DPI (raster), document rotation.
+**In scope (MVP)**: shapes (Square, Circle, Rectangle, Oval, Triangle), text, image placement, selection & single-level grouping, undo/redo, zoom/viewport, JSON save/import, export to PNG/JPEG/PDF/SVG at 300 DPI (raster), document rotation.
 
 **Explicitly out of scope**: bleed/dieline/cut marks (the canvas shape is the cut line), layers panel, per-run rich text, preset size lists, vector PDF, wheel zoom/pan, multi-page layouts, text-on-curve, custom-shape drawing, collaboration, accounts, cross-session undo history, image editing (crop/filter), any backend/database. See the map's Out of scope list for the full record.
 
@@ -47,29 +47,31 @@ All chrome — buttons, the Export dropdown, sidebar sections, toolbar inputs, t
 
 - **Top bar**: logo; Import File (opens JSON, §10); Save File (downloads JSON, §10); Export dropdown (PNG/JPEG/PDF/SVG, §11). (#7, #8)
 - **Left sidebar**: Text (adds a Text object), Shapes (five shapes), Image Upload (place/scale/rotate only — no crop/filter). (charting)
-- **Stage toolbar**: sits **above** the stage; canvas properties (document W×H with unit display, §5) plus a **contextual selection section** (§7) visible only while a selection exists. (#9, #10)
-- **Stage**: gray workspace that scrolls; white canvas with subtle shadow, centered — no edge border (the white canvas reads on the gray workspace without one). Clicking the workspace outside the canvas deselects. (#9)
+- **Stage toolbar**: sits **above** the stage; canvas properties — document W×H with unit display and the canvas look (background color, border width + color, §5) — plus a **contextual selection section** (§7) visible only while a selection exists. (#9, #10)
+- **Stage**: gray workspace that scrolls; white canvas with subtle shadow, centered — no edge border by default (the document border is a property the toolbar turns on, off at creation, §5; the white canvas reads on the gray workspace without one). Clicking the workspace outside the canvas deselects. (#9)
 - **Bottom bar**: undo/redo buttons (↶ ↷), zoom controls `− [% ▾] + [slider]`, preview, fullscreen, and the status area (export progress/errors). Sits at the bottom of the main column, aligned with the stage toolbar above. (#8, #12)
 
 ## 4. Document model
 
-- One Fabric object per sticker: **fill = background, stroke = border, clipPath = cut line**. (#4)
-- **Inset border model**: the sticker's geometry is the area *inside* the border — turning the border on shrinks geometry by half the stroke per side (`width − border`, `rx/radius − border/2`), so the stroke's outer edge sits exactly on the cut path (a cutter never halves the border). The clipPath always sits at the original edge; the **cut geometry is derived** (`width + borderWidth` when the border is on), so it survives JSON restore. (#4)
+- One Fabric object per shape: **fill = background, stroke = border, clipPath = cut line**. (#4)
+- **Inset border model**: the shape's geometry is the area *inside* the border — turning the border on shrinks geometry by half the stroke per side (`width − border`, `rx/radius − border/2`), so the stroke's outer edge sits exactly on the cut path (a cutter never halves the border). The clipPath always sits at the original edge; the **cut geometry is derived** (`width + borderWidth` when the border is on), so it survives JSON restore. (#4)
+- **Document border**: the same inset model at the document edge — the stroke sits inside the edge, so exports (which render only the document area) show the full border. Off by default; edited in the stage toolbar (§5), carried in the envelope (§10). (#9)
 - Every object carries flat registered Fabric custom props: `id` (required, generated at creation, stable across save/load — undo reselects by it), `name` (optional user label), `locked` (boolean — cannot be moved, resized, edited, or deleted; survives save/load). Text adds `uppercase` and `autoFit`. Groups carry their own `id`/`name`/`locked` like any object. (ADR 0002)
 - Custom properties must be registered via Fabric's `customProperties` mechanism at app startup. (ADR 0002)
 - Object identity/type list for import validation: known Fabric types only (see §10).
 
-## 5. Sticker shapes, default sizes, units
+## 5. Shapes, default sizes, units
 
 - **Shapes**: Square, Circle, Rectangle, Oval, Triangle. One **default size** per shape, inches-specified / px-stored at the 96 DPI display basis: Square 2×2 → 192×192 px; Circle Ø2 → radius 96 px; Rectangle / Oval / Triangle 3×2 (landscape) → 288×192 px. (#9)
-- **Shape properties in the toolbar**: the sticker **background** (fill color picker) and the inset **border** — a width slider (0 = off, up to 1 in = 96 px) and a color picker — visible while a single sticker is selected. Sticker size is not edited in the toolbar — the canvas drag handles resize, which scales the cut extent and the visible border together. (#9, #10)
-- **Uniform scaling**: sticker shapes scale with their aspect ratio locked — corner handles only, and the scale ratio is frozen at the gesture start, so dragging a corner never distorts the shape. Applies to every add path, including JSON restore. (#10)
+- **Shape properties in the toolbar**: the shape **background** (fill color picker) and the inset **border** — a width slider (0 = off, up to 1 in = 96 px) and a color picker — visible while a single shape is selected. Shape size is not edited in the toolbar — the canvas drag handles resize, which scales the cut extent and the visible border together. (#9, #10)
+- **Uniform scaling**: shapes scale with their aspect ratio locked — corner handles only, and the scale ratio is frozen at the gesture start, so dragging a corner never distorts the shape. Applies to every add path, including JSON restore. (#10)
 - **Unit switch (in / mm / px)** is a label swap over stored px: 1 in = 96 px, mm = px ÷ 96 × 25.4. No DPI setting — 300 DPI is export-only. Document-size W×H converts to px at commit; switching units re-labels without rescaling; decimals in in/mm, integer px display (display-only rounding). No min/max clamps (the export ceiling governs, §11). (#9)
 - **Document size** (stage toolbar): width/height in px — the basis of export dimensions; part of the Design file envelope (§10). (ADR 0002, glossary)
+- **Canvas background & border** (stage toolbar, always visible): the canvas background color and the document border — a width slider (0 = off, up to 1 in = 96 px) and a color picker, the same controls as the shape border. Both are document properties: the background is Fabric's `backgroundColor` (serialized in `canvas.toJSON()`, honored at export), the border is envelope-owned (§10) and draws inset on the document edge (§4). (#9)
 
 ## 6. Text
 
-- Text is a Document object (Fabric **Textbox**), **not a sticker** — no shape of its own, no cut line. (charting, #11)
+- Text is a Document object (Fabric **Textbox**), **not a shape** — no shape of its own, no cut line. (charting, #11)
 - **Auto-fit**: the box hugs its content (width auto-fit) at creation and re-fits at the end of each text session, while it has never been manually resized; the first manual resize hands the width to the user and multi-line text wraps at that width. Unset width would collapse to ~2px in Fabric v7 — auto-fit once at add time by measuring the longest line via `ctx.measureText`. (#4, #11)
 - **Entering edit**: Fabric v7 — a **second single-click** opens the text session (not double-click). Scale folds into `fontSize` + `width` on `object:scaling`, scale resets to 1 (v7 removed `unscaledText`); glyphs never distort. (#4, #11)
 - **Text session** = one interaction boundary: everything typed commits as **one undoable step** at exit; commit on blur / click-away / Ctrl+Enter; **Escape reverts the session** (restores pre-session state) — in-session Ctrl+Z stays field-local. Enter = newline; empty-on-exit restores the string `"Text"`. (#11)
@@ -82,7 +84,7 @@ All chrome — buttons, the Export dropdown, sidebar sections, toolbar inputs, t
 Sourced from ticket #10; recorded in ADR 0003; glossary terms **Group** and **Selection**.
 
 - **Selection interactions**: click selects and replaces; Shift-click toggles membership; rubber-band (marquee) selects a set; clicking empty canvas deselects; **Ctrl+A selects all**. (Q1)
-- **Rubber-band mechanics**: press-drag on an object is a move gesture; the marquee starts only on empty canvas — a sticker's clipped-out areas count as empty, so a marquee can start inside a shape's bounding box wherever the shape has no pixels. The marquee selects any object whose bounding box **intersects** it (not fully-contained-only). (Q2)
+- **Rubber-band mechanics**: press-drag on an object is a move gesture; the marquee starts only on empty canvas — a shape's clipped-out areas count as empty, so a marquee can start inside a shape's bounding box wherever the shape has no pixels. The marquee selects any object whose bounding box **intersects** it (not fully-contained-only). (Q2)
 - **Locked objects**: selectable but inert — appear in the selection, show properties read-only in the toolbar (unlock lives there), no transform handles, no transforms, no delete. Marquee includes locked objects; Del deletes only unlocked objects in a mixed selection. (Q3)
 - **Grouping — single level**: groups are flat containers of individual objects; **groups never contain groups** (MVP). Group is disabled unless ≥2 objects are selected. If the selection contains an existing group, Group **flattens** it first (children rise to top level, keeping their ids, transforms, and cut lines), then groups everything together. (Q4)
 - **Entering a group**: double-click enters — children become individually selectable for (a) inspecting/editing their properties in the toolbar and (b) editing Text (second single-click opens the text session, same as top level). Children inside a group are **fixed**: no free dragging, no individual resize, no delete, no reorder — Ungroup first. Exit: click empty canvas or Escape (outside a text session). (Q5)
@@ -97,7 +99,7 @@ Sourced from ticket #10; recorded in ADR 0003; glossary terms **Group** and **Se
 
 Snapshot-based document-state stack (ADR 0001, #6):
 
-- One full `canvas.toJSON()` snapshot pushed **per interaction boundary**: `object:modified` (end of a move/scale/rotate/flip gesture), `text:editing:exited` (text session exit), and once per structural command (add object, delete, group, ungroup, arrange, lock toggle, property commit, JSON import). The stack's previous entry is the pre-interaction state — nothing is captured mid-gesture, no debouncing.
+- One full `canvas.toJSON()` snapshot pushed **per interaction boundary**: `object:modified` (end of a move/scale/rotate/flip gesture), `text:editing:exited` (text session exit), and once per structural command (add object, delete, group, ungroup, arrange, lock toggle, property commit, JSON import). The stack's previous entry is the pre-interaction state — nothing is captured mid-gesture, no debouncing. The envelope fields — size, rotation, the document border — are document state too: the stack snapshots them alongside the canvas payload (§10).
 - **Restore**: async `loadFromJSON`; history recording **suppressed** while a restore runs (restores fire `object:added` storms).
 - **Selection restore**: each history entry carries the object ids to reselect after restore (selection is never serialized).
 - **Redo**: linear — cleared by any new edit.
@@ -122,20 +124,20 @@ Sourced from ticket #12; glossary terms **Zoom** and **Fit**.
 ADR 0002, #7:
 
 ```json
-{ "format": "sticker-studio", "version": 1, "size": { "width": 192, "height": 192 }, "rotation": 0, "canvas": <canvas.toJSON()> }
+{ "format": "sticker-studio", "version": 1, "size": { "width": 192, "height": 192 }, "rotation": 0, "border": { "width": 0, "color": "#18181b" }, "canvas": <canvas.toJSON()> }
 ```
 
-- Thin envelope around Fabric's serialization; the `canvas` payload is loaded verbatim via `loadFromJSON` (Fabric destructures only its known keys — the wrapper is transparent). Pixels are the literal Fabric values; `rotation` is the document rotation (exports render rotated).
+- Thin envelope around Fabric's serialization; the `canvas` payload is loaded verbatim via `loadFromJSON` (Fabric destructures only its known keys — the wrapper is transparent). Pixels are the literal Fabric values; `rotation` is the document rotation (exports render rotated); `border` is the document border — width 0 = off, the stroke renders inset on the document edge (§4, §11).
 - **Save File** = download the envelope JSON (`<design-file-basename>.json`, `untitled` fallback). **Import File** = open → validate → strip envelope → `loadFromJSON` → one undoable step.
 - **Validation (reject loudly)**: `format` marker present, `version === 1`, `canvas.objects` is an array of **known object types only** — Fabric's enlivening fails *silently* on unknown types and a silent drop is data loss. Future versions migrate via a documented `migrators: Record<version, fn>` registry run sequentially on load; v1 ships the pattern, not an implementation.
-- **Survives import**: objects in z-order (groups nested as one Group object, per-object clipPath cut lines, inset border), background, document size, rotation. **Never in the file**: selection, viewport/zoom/pan, undo history.
+- **Survives import**: objects in z-order (groups nested as one Group object, per-object clipPath cut lines, inset border), background, document size, rotation, the document border (envelope). **Never in the file**: selection, viewport/zoom/pan, undo history.
 
 ## 11. Export pipeline
 
 Sourced from ticket #8. **Export = render the current committed Document** — one shared pipeline for all four formats:
 
 1. **Commit first**: flush any pending text edit (exit editing) before serializing — the same step runs before Save File. The export serializes the live canvas via `canvas.toJSON()`, the same bytes a Design file would carry.
-2. **Offscreen render**: `StaticCanvas` via `loadFromJSON` (envelope stripped — render the `canvas` payload). No DOM element, no viewport/zoom/pan, no selection chrome, no workspace background — only the Document. Document rotation applies.
+2. **Offscreen render**: `StaticCanvas` via `loadFromJSON` (envelope stripped — render the `canvas` payload). No DOM element, no viewport/zoom/pan, no selection chrome, no workspace background — only the Document. Document rotation applies; the document border (envelope, §10) renders inset on the document edge — the same stroke the stage draws.
 3. **Fonts**: await `document.fonts.ready` before rasterizing; if a family used in the document failed to load → warn in the status area and export with fallback rendering.
 4. **Ceiling**: refuse when the 300 DPI raster would exceed **8192 px per side** (browser canvas limits) — clear error in the bottom-bar status area.
 5. **Not an undoable step**; never mutates the Document or history.
@@ -205,6 +207,7 @@ Suggested session boundaries (each session builds against this spec, one module 
 
 - [ ] Add each of the five shapes → default sizes land at 96 DPI basis (Square 2×2, Circle Ø2, Rectangle/Oval/Triangle 3×2 landscape).
 - [ ] Border on → geometry shrinks by half the stroke per side; cut geometry derives correctly; round-trips; border width and color changes repaint immediately (no stale cached render).
+- [ ] Canvas background and border edit live in the toolbar (always visible); the border is off by default, draws inset on the document edge, survives import, and renders at export.
 - [ ] Text: second single-click edits; session commits as one undoable step; Escape reverts; empty-on-exit restores "Text"; auto-fit until first manual resize.
 - [ ] Undo/redo walks every boundary type; redo clears on new edit; selection restored by id; depth capped at 100.
 - [ ] Selection: click/shift/marquee (intersect, empty-canvas start incl. clipped areas)/click-empty/Ctrl+A; locked objects selectable but inert; Del skips them.

@@ -8,23 +8,42 @@ import {
 } from "react"
 import type { Canvas, Object as FabricObject } from "fabric"
 
-import { DOCUMENT_HEIGHT, DOCUMENT_WIDTH } from "@/fabric/stage-canvas"
 import {
-  createStickerShape,
+  DOCUMENT_BACKGROUND_COLOR,
+  DOCUMENT_BORDER_COLOR,
+  DOCUMENT_BORDER_WIDTH,
+  DOCUMENT_HEIGHT,
+  DOCUMENT_WIDTH,
+} from "@/fabric/stage-canvas"
+import {
+  createShape,
   setBorderColor,
   setBorderWidth,
   setFillColor,
 } from "@/fabric/shapes"
-import type { StickerShapeKind } from "@/fabric/shapes"
+import type { ShapeKind } from "@/fabric/shapes"
 import type { Unit } from "@/lib/units"
 
-/** A shape-property commit against the selected sticker (build spec §5). */
+/** A shape-property commit against the selected shape (build spec §5). */
 export interface ShapePropsPatch {
   /** Background (fill) color. */
   fillColor?: string
   /** Border width in px (0 = off). */
   borderWidth?: number
   /** Border color. */
+  borderColor?: string
+}
+
+/**
+ * A document-property commit against the canvas (build spec §5) — the canvas
+ * background color and the document border (inset, §4). Border width 0 = off.
+ */
+export interface CanvasPropsPatch {
+  /** Canvas (document) background color. */
+  backgroundColor?: string
+  /** Document border width in px (0 = off). */
+  borderWidth?: number
+  /** Document border color. */
   borderColor?: string
 }
 
@@ -42,12 +61,20 @@ interface StageContextValue {
   documentSize: { width: number; height: number }
   /** Resize the Document; the canvas dimensions are the source of truth. */
   setDocumentSize: (width: number, height: number) => void
+  /**
+   * Mirror of the Document's look — background color and the border
+   * (envelope-owned, §5): the border lives on the canvas (the canvas is the
+   * document); this is what the toolbar edits.
+   */
+  canvasProps: { backgroundColor: string; borderWidth: number; borderColor: string }
+  /** Apply a property patch to the Document (§5). */
+  commitCanvasProps: (patch: CanvasPropsPatch) => void
   /** Active display unit — a label swap over stored px (§5). */
   unit: Unit
   setUnit: (unit: Unit) => void
-  /** Add a sticker of the given kind, centered and selected (§5). */
-  addShape: (kind: StickerShapeKind) => void
-  /** Apply a property patch to the selected sticker (§5). */
+  /** Add a shape of the given kind, centered and selected (§5). */
+  addShape: (kind: ShapeKind) => void
+  /** Apply a property patch to the selected shape (§5). */
   commitShapeProps: (patch: ShapePropsPatch) => void
 }
 
@@ -66,11 +93,23 @@ export function StageProvider({ children }: { children: ReactNode }) {
     width: DOCUMENT_WIDTH,
     height: DOCUMENT_HEIGHT,
   })
+  const [canvasProps, setCanvasPropsState] = useState({
+    backgroundColor: DOCUMENT_BACKGROUND_COLOR,
+    borderWidth: DOCUMENT_BORDER_WIDTH,
+    borderColor: DOCUMENT_BORDER_COLOR,
+  })
   const [unit, setUnit] = useState<Unit>("in")
 
   const registerCanvas = useCallback((next: Canvas | null) => {
     setCanvas(next)
-    if (next) setDocumentSizeState({ width: next.width, height: next.height })
+    if (next) {
+      setDocumentSizeState({ width: next.width, height: next.height })
+      setCanvasPropsState({
+        backgroundColor: (next.backgroundColor as string) || DOCUMENT_BACKGROUND_COLOR,
+        borderWidth: next.borderWidth,
+        borderColor: next.borderColor,
+      })
+    }
   }, [])
 
   useEffect(() => {
@@ -101,13 +140,31 @@ export function StageProvider({ children }: { children: ReactNode }) {
   )
 
   const addShape = useCallback(
-    (kind: StickerShapeKind) => {
+    (kind: ShapeKind) => {
       if (!canvas) return
-      const obj = createStickerShape(kind)
+      const obj = createShape(kind)
       canvas.add(obj)
       canvas.centerObject(obj)
       canvas.setActiveObject(obj)
       canvas.requestRenderAll()
+    },
+    [canvas],
+  )
+
+  const commitCanvasProps = useCallback(
+    (patch: CanvasPropsPatch) => {
+      if (!canvas) return
+      if (patch.backgroundColor !== undefined) {
+        canvas.backgroundColor = patch.backgroundColor
+      }
+      if (patch.borderWidth !== undefined) canvas.borderWidth = patch.borderWidth
+      if (patch.borderColor !== undefined) canvas.borderColor = patch.borderColor
+      canvas.requestRenderAll()
+      setCanvasPropsState({
+        backgroundColor: (canvas.backgroundColor as string) || DOCUMENT_BACKGROUND_COLOR,
+        borderWidth: canvas.borderWidth,
+        borderColor: canvas.borderColor,
+      })
     },
     [canvas],
   )
@@ -134,6 +191,8 @@ export function StageProvider({ children }: { children: ReactNode }) {
         selection,
         documentSize,
         setDocumentSize,
+        canvasProps,
+        commitCanvasProps,
         unit,
         setUnit,
         addShape,

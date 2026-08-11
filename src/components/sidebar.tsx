@@ -11,10 +11,10 @@ import {
 
 import { useStage } from "@/components/stage-context"
 import { Button } from "@/components/ui/button"
-import type { StickerShapeKind } from "@/fabric/shapes"
+import type { ShapeKind } from "@/fabric/shapes"
 
-/** The sticker shapes (build spec §5) — labels here, kinds in the model. */
-const SHAPES: { kind: StickerShapeKind; label: string; icon: LucideIcon }[] = [
+/** The shape kinds (build spec §5) — labels here, kinds in the model. */
+const SHAPES: { kind: ShapeKind; label: string; icon: LucideIcon }[] = [
   { kind: "square", label: "Square", icon: Square },
   { kind: "circle", label: "Circle", icon: Circle },
   { kind: "rectangle", label: "Rectangle", icon: RectangleHorizontal },
@@ -32,7 +32,7 @@ function SectionHeading({ children }: { children: string }) {
 
 /**
  * Left sidebar (build spec §3): Text, Shapes, and Image Upload sections.
- * Shape buttons add stickers centered on the canvas; Text arrives with the
+ * Shape buttons add shapes centered on the canvas; Text arrives with the
  * text build, Image Upload with the selection build.
  */
 export function Sidebar() {

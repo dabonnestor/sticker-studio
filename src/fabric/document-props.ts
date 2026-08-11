@@ -14,6 +14,16 @@ declare module "fabric" {
      */
     locked: boolean
   }
+  interface Canvas {
+    /**
+     * Document border width in px (0 = off) — envelope-owned (ADR 0002), like
+     * size and rotation: Fabric never serializes it, the Design file envelope
+     * does. The stage draws it as an inset stroke (§4).
+     */
+    borderWidth: number
+    /** Document border color — envelope-owned (ADR 0002). */
+    borderColor: string
+  }
   interface Textbox {
     /**
      * One-way uppercase flag (build spec §6) — the stored string is uppercased

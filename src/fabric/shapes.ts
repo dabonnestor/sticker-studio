@@ -9,7 +9,7 @@ import {
 import { stampDocumentProps } from "@/fabric/document-props"
 
 /**
- * Sticker shape model (build spec §4, §5). One Fabric object per sticker:
+ * Shape model (build spec §4, §5). One Fabric object per shape:
  * fill = background, stroke = border, clipPath = cut line.
  *
  * Inset border model (§4): the object geometry is the area *inside* the
@@ -24,14 +24,14 @@ import { stampDocumentProps } from "@/fabric/document-props"
  * model keeps `width + borderWidth` constant, so the cache canvas dimensions
  * never change and Fabric would never notice).
  */
-export type StickerShapeKind =
+export type ShapeKind =
   | "square"
   | "circle"
   | "rectangle"
   | "oval"
   | "triangle"
 
-/** Default sticker fill (background) at creation. */
+/** Default shape fill (background) at creation. */
 export const DEFAULT_FILL = "#ffd23f"
 
 /** Default border color (§4: stroke = border; width 0 = off). */
@@ -49,7 +49,7 @@ export interface CutExtent {
  * Rectangle / Oval / Triangle 3×2 (landscape) → 288×192.
  */
 interface ShapeSpec {
-  kind: StickerShapeKind
+  kind: ShapeKind
   /** Cut-extent width at creation (border off), px. */
   width: number
   /** Cut-extent height at creation (border off), px. */
@@ -60,7 +60,7 @@ interface ShapeSpec {
   ellipseRadii?: { x: number; y: number }
 }
 
-const SHAPE_SPECS: Record<StickerShapeKind, ShapeSpec> = {
+const SHAPE_SPECS: Record<ShapeKind, ShapeSpec> = {
   square: { kind: "square", width: 192, height: 192 },
   circle: { kind: "circle", width: 192, height: 192, radius: 96 },
   rectangle: { kind: "rectangle", width: 288, height: 192 },
@@ -84,16 +84,16 @@ function buildShape(spec: ShapeSpec): FabricObject {
 }
 
 /**
- * Create a sticker of the given kind: default size at the 96 DPI basis, border
+ * Create a shape of the given kind: default size at the 96 DPI basis, border
  * off (cut = geometry), the cut clipPath at the original edge, and the
  * document identity stamped (id, locked=false, ADR 0002).
  */
-export function createStickerShape(kind: "square" | "rectangle"): Rect
-export function createStickerShape(kind: "circle"): Circle
-export function createStickerShape(kind: "oval"): Ellipse
-export function createStickerShape(kind: "triangle"): Triangle
-export function createStickerShape(kind: StickerShapeKind): FabricObject
-export function createStickerShape(kind: StickerShapeKind): FabricObject {
+export function createShape(kind: "square" | "rectangle"): Rect
+export function createShape(kind: "circle"): Circle
+export function createShape(kind: "oval"): Ellipse
+export function createShape(kind: "triangle"): Triangle
+export function createShape(kind: ShapeKind): FabricObject
+export function createShape(kind: ShapeKind): FabricObject {
   const spec = SHAPE_SPECS[kind]
   const obj = buildShape(spec)
   obj.fill = DEFAULT_FILL
@@ -104,12 +104,12 @@ export function createStickerShape(kind: StickerShapeKind): FabricObject {
 }
 
 /**
- * Classify an object as one of the sticker kinds by its current geometry —
+ * Classify an object as one of the shape kinds by its current geometry —
  * square vs rectangle is the local width === height (a distorted square just
  * reads as a rectangle); anything else (text, groups, imported objects) is
- * not a sticker.
+ * not a shape.
  */
-export function getStickerShapeKind(obj: FabricObject): StickerShapeKind | null {
+export function getShapeKind(obj: FabricObject): ShapeKind | null {
   if (obj instanceof Circle) return "circle"
   if (obj instanceof Ellipse) return "oval"
   if (obj instanceof Triangle) return "triangle"
@@ -175,7 +175,7 @@ export function setBorderWidth(obj: FabricObject, width: number): void {
 }
 
 /**
- * Scale the sticker so its cut extent matches the target. Axes scale
+ * Scale the shape so its cut extent matches the target. Axes scale
  * independently.
  */
 export function resizeToCut(obj: FabricObject, target: CutExtent): void {
@@ -186,7 +186,7 @@ export function resizeToCut(obj: FabricObject, target: CutExtent): void {
   })
 }
 
-/** Set the sticker background — the object's fill (§4: fill = background). */
+/** Set the shape background — the object's fill (§4: fill = background). */
 export function setFillColor(obj: FabricObject, color: string): void {
   obj.set("fill", color)
 }
