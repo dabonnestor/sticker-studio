@@ -38,3 +38,15 @@ _Avoid_: canvas size, print size
 **Export**:
 The rendered artifact produced from the Document — PNG, JPEG, PDF, or SVG — at Document size and 300 DPI (raster formats). Exports render the current committed Document with view state excluded; they are not the Design file — a Design file is editable and round-trips, an Export is final pixels or vectors. Exporting is not an undoable step.
 _Avoid_: output file, downloaded file
+
+**Text**:
+A Document object that displays styled text — the Fabric Textbox on the canvas, styled per-textbox (no per-run rich text). Text is content placed on a sticker, not a sticker itself: it has no shape of its own and no cut line.
+_Avoid_: textbox, label, caption, text run
+
+**Text session**:
+The interval between entering and exiting an edit of a Text object — one interaction boundary: everything typed in one session commits as a single undoable step at exit, and Escape reverts the session without committing.
+_Avoid_: text edit, edit mode
+
+**Auto-fit**:
+The width behavior of a Text object — the box hugs its content at creation and re-fits at the end of each Text session while it has never been manually resized; the first manual resize hands the width to the user, and multi-line text wraps at that width.
+_Avoid_: auto-grow, fit-to-content
