@@ -1,24 +1,23 @@
-import { useEffect, useRef } from "react"
+import { useEffect, useRef, type MouseEvent } from "react"
 import type { Canvas } from "fabric"
 
 import { useStage } from "@/components/stage-context"
 import { createStageCanvas } from "@/fabric/stage-canvas"
 import { exposeStageCanvas } from "@/lib/dev"
-import { cn } from "@/lib/utils"
 
 /** The previous canvas's async dispose, awaited before re-creating (§14). */
 const pendingDispose: { current: Promise<void> | null } = { current: null }
 
 /**
  * The stage (build spec §3): a gray scrollable workspace with the white
- * Document canvas centered in it. The canvas carries a subtle shadow and a
- * 1px #d0d0d0 edge border — view-only chrome on the mount wrapper (toggled in
- * the stage toolbar), never part of the Document, never exported. Fabric is
- * confined to this component.
+ * Document canvas centered in it. The canvas carries a subtle shadow —
+ * view-only chrome on the mount wrapper, never part of the Document, never
+ * exported. Fabric is confined to this component.
  */
 export function Stage() {
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
-  const { registerCanvas, edgeBorder } = useStage()
+  const wrapperRef = useRef<HTMLDivElement | null>(null)
+  const { canvas, registerCanvas } = useStage()
 
   useEffect(() => {
     const element = canvasRef.current
@@ -49,12 +48,26 @@ export function Stage() {
     }
   }, [registerCanvas])
 
+  /**
+   * Clicking the workspace outside the canvas deselects (§7: clicking empty
+   * canvas deselects). Clicks inside the canvas wrapper — the white Document,
+   * including Fabric's overlay canvases — are Fabric's: its own empty-canvas
+   * click already clears the selection there.
+   */
+  const handleMouseDown = (event: MouseEvent<HTMLDivElement>) => {
+    const wrapper = wrapperRef.current
+    if (!canvas || !wrapper || wrapper.contains(event.target as Node)) return
+    canvas.discardActiveObject()
+    canvas.requestRenderAll()
+  }
+
   return (
-    <div className="min-h-0 flex-1 overflow-auto bg-zinc-200">
+    <div
+      className="min-h-0 flex-1 overflow-auto bg-zinc-200"
+      onMouseDown={handleMouseDown}
+    >
       <div className="flex min-h-full min-w-full items-center justify-center p-6">
-        <div
-          className={cn("bg-white shadow-md", edgeBorder && "border border-[#d0d0d0]")}
-        >
+        <div className="bg-white shadow-md" ref={wrapperRef}>
           <canvas ref={canvasRef} aria-label="Design canvas" />
         </div>
       </div>

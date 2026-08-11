@@ -1,21 +1,23 @@
-import { useEffect, useState, type ReactNode } from "react"
-import { Frame } from "lucide-react"
+import { useEffect, useState } from "react"
+import { ChevronDown } from "lucide-react"
 
 import { useStage } from "@/components/stage-context"
 import { Button } from "@/components/ui/button"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
 import { Input } from "@/components/ui/input"
 import { Separator } from "@/components/ui/separator"
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from "@/components/ui/tooltip"
+import { Slider } from "@/components/ui/slider"
 import {
   DEFAULT_BORDER_COLOR,
+  DEFAULT_FILL,
   getBorderWidth,
-  getCutExtent,
-  getCutRadius,
   getStickerShapeKind,
 } from "@/fabric/shapes"
 import { commitPx, formatPx, type Unit } from "@/lib/units"
@@ -27,10 +29,14 @@ const UNITS: { value: Unit; label: string }[] = [
   { value: "px", label: "px" },
 ]
 
+/** Border slider range and step — 0 (off) to 1 inch at the 96 DPI basis. */
+const BORDER_RANGE = { min: 0, max: 96, step: 1 } as const
+
 /**
  * A labeled numeric field over stored px, displayed in the active unit
  * (build spec §5): switching units re-labels without rescaling; the value
- * converts to integer px at commit (Enter/blur); invalid input reverts.
+ * converts to integer px at commit (Enter/blur); invalid input reverts. The
+ * label sits beside the input, like the shape-property controls.
  */
 function UnitField({
   label,
@@ -63,8 +69,8 @@ function UnitField({
   }
 
   return (
-    <label className={cn("flex flex-col gap-0.5", className)}>
-      <span className="text-[10px] leading-none text-muted-foreground">{label}</span>
+    <label className={cn("flex items-center gap-1.5", className)}>
+      <span className="w-3 text-[10px] leading-none text-muted-foreground">{label}</span>
       <Input
         className="h-7 w-16"
         inputMode="decimal"
@@ -79,24 +85,35 @@ function UnitField({
   )
 }
 
-/** The unit switch — a label swap over stored px, shared by all toolbar fields. */
+/**
+ * The unit switch — a label swap over stored px, shared by all toolbar
+ * fields. The active unit reads on the trigger; the dropdown offers the rest.
+ */
 function UnitSwitcher() {
   const { unit, setUnit } = useStage()
   return (
-    <div className="flex items-center gap-0.5" role="group" aria-label="Units">
-      {UNITS.map(({ value, label }) => (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
         <Button
-          key={value}
           variant="ghost"
-          size="xs"
-          aria-pressed={unit === value}
-          className={cn(unit === value && "bg-muted")}
-          onClick={() => setUnit(value)}
+          size="sm"
+          className="w-14 gap-1 font-medium"
+          aria-label="Units"
         >
-          {label}
+          {unit}
+          <ChevronDown aria-hidden />
         </Button>
-      ))}
-    </div>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="start">
+        <DropdownMenuLabel>Units</DropdownMenuLabel>
+        <DropdownMenuSeparator />
+        {UNITS.map(({ value, label }) => (
+          <DropdownMenuItem key={value} onClick={() => setUnit(value)}>
+            {label}
+          </DropdownMenuItem>
+        ))}
+      </DropdownMenuContent>
+    </DropdownMenu>
   )
 }
 
@@ -113,7 +130,7 @@ function SizeFieldPair({
   onCommit: (width: number, height: number) => void
 }) {
   return (
-    <div className="flex items-end gap-1.5">
+    <div className="flex items-center gap-3">
       <UnitField
         label="W"
         valuePx={widthPx}
@@ -145,70 +162,49 @@ function DocumentSize() {
 
 /**
  * Contextual shape-property section (build spec §5), visible only while a
- * single sticker is selected: size (square = one linked side, circle =
- * diameter, others W×H), the rounded-rectangle corner radius, and the inset
- * border (width + color). All values display in the active unit and commit
- * as px.
+ * single sticker is selected: the background (fill) color and the inset
+ * border (width slider + color). All values display in px and commit
+ * immediately.
  */
 function ShapeProps() {
-  const { selection, unit, commitShapeProps } = useStage()
+  const { selection, commitShapeProps } = useStage()
   const sticker = selection.length === 1 ? selection[0] : null
-  const kind = sticker ? getStickerShapeKind(sticker) : null
-  if (!sticker || !kind) return null
+  if (!sticker) return null
 
-  const cut = getCutExtent(sticker)
   const borderWidth = getBorderWidth(sticker)
 
-  const sizeFields: ReactNode =
-    kind === "square" ? (
-      <UnitField
-        label="Side"
-        valuePx={cut.width}
-        unit={unit}
-        onCommit={(side) => commitShapeProps({ size: { width: side, height: side } })}
-      />
-    ) : kind === "circle" ? (
-      <UnitField
-        label="Diameter"
-        valuePx={cut.width}
-        unit={unit}
-        onCommit={(diameter) =>
-          commitShapeProps({ size: { width: diameter, height: diameter } })
-        }
-      />
-    ) : (
-      <SizeFieldPair
-        widthPx={cut.width}
-        heightPx={cut.height}
-        unit={unit}
-        onCommit={(width, height) => commitShapeProps({ size: { width, height } })}
-      />
-    )
-
   return (
-    <div className="flex items-end gap-2">
-      {sizeFields}
-      {kind === "rounded-rectangle" && (
-        <UnitField
-          label="Radius"
-          valuePx={getCutRadius(sticker)}
-          unit={unit}
-          onCommit={(radius) => commitShapeProps({ cornerRadius: radius })}
-        />
-      )}
-      <UnitField
-        label="Border"
-        valuePx={borderWidth}
-        unit="px"
-        onCommit={(width) => commitShapeProps({ borderWidth: width })}
-      />
-      <label className="flex flex-col gap-0.5">
-        <span className="text-[10px] leading-none text-muted-foreground">Color</span>
+    <div className="flex items-center gap-3">
+      <label className="flex items-center gap-1.5">
+        <span className="text-[10px] leading-none text-muted-foreground">Fill</span>
         <input
           type="color"
-          className="h-7 w-9 cursor-pointer rounded-md border border-input bg-transparent p-0.5"
+          className="h-7 w-9 cursor-pointer rounded-md bg-transparent p-0.5"
+          value={typeof sticker.fill === "string" ? sticker.fill : DEFAULT_FILL}
+          title="Sticker background color"
+          onChange={(event) => commitShapeProps({ fillColor: event.target.value })}
+        />
+      </label>
+      <label className="flex items-center gap-2">
+        <span className="text-[10px] leading-none text-muted-foreground">Border</span>
+        <Slider
+          className="w-28"
+          min={BORDER_RANGE.min}
+          max={BORDER_RANGE.max}
+          step={BORDER_RANGE.step}
+          value={[borderWidth]}
+          onValueChange={([value]) => commitShapeProps({ borderWidth: value })}
+          aria-label="Border width"
+        />
+        <span className="w-8 text-right text-[10px] leading-none text-muted-foreground tabular-nums">
+          {borderWidth}px
+        </span>
+        <input
+          type="color"
+          className="h-7 w-9 cursor-pointer rounded-md bg-transparent p-0.5"
           value={typeof sticker.stroke === "string" ? sticker.stroke : DEFAULT_BORDER_COLOR}
           disabled={borderWidth === 0}
+          aria-label="Border color"
           title={borderWidth === 0 ? "Border is off — set a width first" : "Border color"}
           onChange={(event) => commitShapeProps({ borderColor: event.target.value })}
         />
@@ -219,35 +215,18 @@ function ShapeProps() {
 
 /**
  * Stage toolbar strip (build spec §3): document properties (size with unit
- * display, edge-border toggle) plus the contextual shape-property section
- * while a single sticker is selected. The §7 selection controls (group,
- * arrange, flip, lock) arrive with the selection build.
+ * display) plus the contextual shape-property section while a single sticker
+ * is selected. The §7 selection controls (group, arrange, flip, lock) arrive
+ * with the selection build.
  */
 export function StageToolbar() {
-  const { selection, edgeBorder, setEdgeBorder } = useStage()
+  const { selection } = useStage()
   const hasSticker = selection.length === 1 && getStickerShapeKind(selection[0]) !== null
 
   return (
-    <div className="flex h-11 shrink-0 items-center gap-2 border-t bg-background px-3">
+    <div className="flex h-10 shrink-0 items-center gap-3 border-b bg-background px-3">
       <DocumentSize />
       <UnitSwitcher />
-      <Separator orientation="vertical" className="mx-1 h-5" />
-      <TooltipProvider>
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <Button
-              variant={edgeBorder ? "outline" : "ghost"}
-              size="icon-sm"
-              aria-pressed={edgeBorder}
-              aria-label="Toggle canvas edge border"
-              onClick={() => setEdgeBorder(!edgeBorder)}
-            >
-              <Frame aria-hidden />
-            </Button>
-          </TooltipTrigger>
-          <TooltipContent>Canvas edge border (view-only)</TooltipContent>
-        </Tooltip>
-      </TooltipProvider>
       {hasSticker && (
         <>
           <Separator orientation="vertical" className="mx-1 h-5" />

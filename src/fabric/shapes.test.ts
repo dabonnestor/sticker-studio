@@ -1,4 +1,4 @@
-import { Circle, Ellipse, Group, Rect, util } from "fabric"
+import { Circle, Ellipse, Group, Rect, Triangle, util } from "fabric"
 import { describe, expect, it } from "vitest"
 
 import { registerCustomProperties } from "@/fabric/custom-properties"
@@ -6,21 +6,25 @@ import {
   DEFAULT_BORDER_COLOR,
   createStickerShape,
   getCutExtent,
-  getCutRadius,
   getStickerShapeKind,
   resizeToCut,
   setBorderColor,
   setBorderWidth,
-  setCutRadius,
+  setFillColor,
 } from "@/fabric/shapes"
 
 /**
  * Sticker shape model (build spec §4, §5). Default sizes are inches-specified
  * at the 96 DPI display basis: Square 2×2 → 192×192 px, Circle Ø2 → radius 96,
- * Rectangle / Oval / Rounded-rectangle 2×3 → 192×288 px. The inset border
+ * Rectangle / Oval / Triangle 3×2 (landscape) → 288×192 px. The inset border
  * model: the object geometry is the area inside the border; turning the border
  * on shrinks it by half the stroke per side while the cut extent (the clipPath,
  * which never moves) stays at the original edge.
+ *
+ * Every mutator goes through `obj.set()` so Fabric marks the object dirty:
+ * the inset model keeps `width + strokeWidth` constant, so the cache canvas
+ * dimensions never change and a direct assignment would leave the stale cache
+ * rendering the old border (regression: border/color changes did not paint).
  */
 describe("shape model", () => {
   describe("createStickerShape — default sizes (§5)", () => {
@@ -38,27 +42,26 @@ describe("shape model", () => {
       expect(s.radius).toBe(96)
     })
 
-    it("rectangle: 2×3 in → 192×288 px", () => {
+    it("rectangle: 3×2 in (landscape) → 288×192 px", () => {
       const s = createStickerShape("rectangle")
       expect(s).toBeInstanceOf(Rect)
-      expect(s.width).toBe(192)
-      expect(s.height).toBe(288)
+      expect(s.width).toBe(288)
+      expect(s.height).toBe(192)
       expect(s.rx).toBe(0)
     })
 
-    it("oval: 2×3 in → rx 96, ry 144 px", () => {
+    it("oval: 3×2 in (landscape) → rx 144, ry 96 px", () => {
       const s = createStickerShape("oval")
       expect(s).toBeInstanceOf(Ellipse)
-      expect(s.rx).toBe(96)
-      expect(s.ry).toBe(144)
+      expect(s.rx).toBe(144)
+      expect(s.ry).toBe(96)
     })
 
-    it("rounded-rectangle: 2×3 in with rx = 20% of the shorter side (38.4 px)", () => {
-      const s = createStickerShape("rounded-rectangle")
-      expect(s).toBeInstanceOf(Rect)
-      expect(s.width).toBe(192)
-      expect(s.height).toBe(288)
-      expect(s.rx).toBeCloseTo(38.4, 10)
+    it("triangle: 3×2 in (landscape) → 288×192 px", () => {
+      const s = createStickerShape("triangle")
+      expect(s).toBeInstanceOf(Triangle)
+      expect(s.width).toBe(288)
+      expect(s.height).toBe(192)
     })
 
     it("starts with the border off: strokeWidth 0, cut = geometry", () => {
@@ -74,21 +77,20 @@ describe("shape model", () => {
     })
 
     it("has a cut clipPath sitting at the creation extent", () => {
-      const s = createStickerShape("rounded-rectangle")
-      expect(s.clipPath).toBeInstanceOf(Rect)
-      expect((s.clipPath as Rect).width).toBe(192)
-      expect((s.clipPath as Rect).height).toBe(288)
-      expect((s.clipPath as Rect).rx).toBeCloseTo(38.4, 10)
+      const s = createStickerShape("triangle")
+      expect(s.clipPath).toBeInstanceOf(Triangle)
+      expect((s.clipPath as Triangle).width).toBe(288)
+      expect((s.clipPath as Triangle).height).toBe(192)
     })
   })
 
   describe("getStickerShapeKind", () => {
-    it("classifies the five kinds", () => {
+    it("classifies the kinds", () => {
       expect(getStickerShapeKind(createStickerShape("square"))).toBe("square")
       expect(getStickerShapeKind(createStickerShape("circle"))).toBe("circle")
       expect(getStickerShapeKind(createStickerShape("rectangle"))).toBe("rectangle")
       expect(getStickerShapeKind(createStickerShape("oval"))).toBe("oval")
-      expect(getStickerShapeKind(createStickerShape("rounded-rectangle"))).toBe("rounded-rectangle")
+      expect(getStickerShapeKind(createStickerShape("triangle"))).toBe("triangle")
     })
 
     it("returns null for non-sticker objects", () => {
@@ -108,6 +110,23 @@ describe("shape model", () => {
       expect(getCutExtent(s).height).toBe(192)
     })
 
+    it("rectangle: border on shrinks the interior, cut preserved", () => {
+      const s = createStickerShape("rectangle")
+      setBorderWidth(s, 10)
+      expect(s.width).toBe(278) // 288 − 10
+      expect(s.height).toBe(182) // 192 − 10
+      expect(getCutExtent(s)).toEqual({ width: 288, height: 192 })
+    })
+
+    it("triangle: border on shrinks the interior, cut preserved", () => {
+      const s = createStickerShape("triangle")
+      setBorderWidth(s, 8)
+      expect(s.width).toBe(280)
+      expect(s.height).toBe(184)
+      expect(s.strokeWidth).toBe(8)
+      expect(getCutExtent(s)).toEqual({ width: 288, height: 192 })
+    })
+
     it("circle: radius shrinks by half the stroke, diameter preserved", () => {
       const s = createStickerShape("circle")
       setBorderWidth(s, 8)
@@ -115,36 +134,34 @@ describe("shape model", () => {
       expect(getCutExtent(s).width).toBeCloseTo(192, 10)
     })
 
-    it("rounded-rectangle: rx shrinks by half the stroke, cut radius preserved", () => {
-      const s = createStickerShape("rounded-rectangle")
+    it("oval: radii shrink by half the stroke, cut preserved", () => {
+      const s = createStickerShape("oval")
       setBorderWidth(s, 8)
-      expect(s.rx).toBeCloseTo(34.4, 10) // 38.4 − 8/2
-      expect(getCutRadius(s)).toBeCloseTo(38.4, 10)
+      expect(s.rx).toBe(140) // 144 − 4
+      expect(s.ry).toBe(92) // 96 − 4
+      expect(getCutExtent(s)).toEqual({ width: 288, height: 192 })
     })
 
     it("turning the border off restores the original geometry", () => {
-      const s = createStickerShape("rounded-rectangle")
+      const s = createStickerShape("rectangle")
       setBorderWidth(s, 8)
       setBorderWidth(s, 0)
-      expect(s.width).toBe(192)
-      expect(s.height).toBe(288)
-      expect(s.rx).toBeCloseTo(38.4, 10)
+      expect(s.width).toBe(288)
+      expect(s.height).toBe(192)
       expect(s.strokeWidth).toBe(0)
-      expect(getCutExtent(s).width).toBe(192)
+      expect(getCutExtent(s)).toEqual({ width: 288, height: 192 })
     })
 
     it("the clipPath stays at the original edge throughout border changes", () => {
-      const s = createStickerShape("rounded-rectangle")
-      const clip = s.clipPath as Rect
+      const s = createStickerShape("triangle")
+      const clip = s.clipPath as Triangle
       setBorderWidth(s, 8)
       setBorderWidth(s, 16)
       setBorderWidth(s, 0)
-      expect(clip.width).toBe(192)
-      expect(clip.height).toBe(288)
-      expect(clip.rx).toBeCloseTo(38.4, 10)
+      expect(clip.width).toBe(288)
+      expect(clip.height).toBe(192)
       // and the clip always matches the derived cut geometry
-      expect(getCutExtent(s).width).toBe(clip.width)
-      expect(getCutRadius(s)).toBeCloseTo(clip.rx, 10)
+      expect(getCutExtent(s)).toEqual({ width: clip.width, height: clip.height })
     })
 
     it("clamps the border to the sticker's cut extent (interior never inverts)", () => {
@@ -154,13 +171,20 @@ describe("shape model", () => {
       expect(s.strokeWidth).toBe(192)
       expect(getCutExtent(s).width).toBe(192)
     })
+
+    it("marks the object dirty — the cached render is invalidated (regression)", () => {
+      const s = createStickerShape("rectangle")
+      s.dirty = false // as after a clean render
+      setBorderWidth(s, 8)
+      expect(s.dirty).toBe(true)
+    })
   })
 
   describe("getCutExtent", () => {
     it("derives the cut from width + borderWidth", () => {
       const s = createStickerShape("rectangle")
       setBorderWidth(s, 10)
-      expect(getCutExtent(s)).toEqual({ width: 192, height: 288 })
+      expect(getCutExtent(s)).toEqual({ width: 288, height: 192 })
     })
 
     it("accounts for scale", () => {
@@ -180,9 +204,9 @@ describe("shape model", () => {
   describe("resizeToCut", () => {
     it("scales the sticker so its cut extent matches the target", () => {
       const s = createStickerShape("rectangle")
-      resizeToCut(s, { width: 384, height: 288 })
-      expect(getCutExtent(s)).toEqual({ width: 384, height: 288 })
-      expect(s.width).toBe(192) // local geometry unchanged — scale does the work
+      resizeToCut(s, { width: 384, height: 192 })
+      expect(getCutExtent(s)).toEqual({ width: 384, height: 192 })
+      expect(s.width).toBe(288) // local geometry unchanged — scale does the work
     })
 
     it("preserves the cut extent through a border change", () => {
@@ -199,49 +223,25 @@ describe("shape model", () => {
       expect(s.scaleY).toBe(2)
     })
 
-    it("resize never re-derives the corner radius (§5)", () => {
-      const s = createStickerShape("rounded-rectangle")
-      resizeToCut(s, { width: 384, height: 576 })
-      expect(s.rx).toBeCloseTo(38.4, 10) // not re-derived to 20% of the new side
+    it("goes through set() — scale is constrained, not just assigned", () => {
+      const s = createStickerShape("square")
+      resizeToCut(s, { width: 384, height: 384 })
+      expect(s.scaleX).toBe(2)
     })
   })
 
-  describe("setCutRadius", () => {
-    it("sets the corner radius as an independent px property", () => {
-      const s = createStickerShape("rounded-rectangle")
-      setCutRadius(s, 50)
-      expect(s.rx).toBe(50)
-      expect(getCutRadius(s)).toBe(50)
+  describe("setFillColor", () => {
+    it("sets the fill", () => {
+      const s = createStickerShape("square")
+      setFillColor(s, "#00ff00")
+      expect(s.fill).toBe("#00ff00")
     })
 
-    it("interior rx accounts for the border (cut rx = rx + border/2)", () => {
-      const s = createStickerShape("rounded-rectangle")
-      setBorderWidth(s, 8)
-      setCutRadius(s, 40)
-      expect(s.rx).toBe(36) // 40 − 8/2
-      expect(getCutRadius(s)).toBe(40)
-    })
-
-    it("clamps to the geometry", () => {
-      const s = createStickerShape("rounded-rectangle")
-      setCutRadius(s, 500)
-      expect(s.rx).toBe(96) // half the shorter interior side
-    })
-
-    it("moves the cut clipPath with the radius — the cut line matches the corners", () => {
-      const s = createStickerShape("rounded-rectangle")
-      setCutRadius(s, 50)
-      expect((s.clipPath as Rect).rx).toBe(50)
-      expect(getCutRadius(s)).toBe(50)
-    })
-
-    it("keeps the cut radius (interior rx + border/2) on the clipPath with a border on", () => {
-      const s = createStickerShape("rounded-rectangle")
-      setBorderWidth(s, 8)
-      setCutRadius(s, 40)
-      expect(s.rx).toBe(36) // 40 − 8/2
-      expect((s.clipPath as Rect).rx).toBe(40)
-      expect(getCutRadius(s)).toBe(40)
+    it("marks the object dirty — the cached render is invalidated (regression)", () => {
+      const s = createStickerShape("square")
+      s.dirty = false
+      setFillColor(s, "#00ff00")
+      expect(s.dirty).toBe(true)
     })
   })
 
@@ -251,29 +251,34 @@ describe("shape model", () => {
       setBorderColor(s, "#ff0000")
       expect(s.stroke).toBe("#ff0000")
     })
+
+    it("marks the object dirty — the cached render is invalidated (regression)", () => {
+      const s = createStickerShape("square")
+      s.dirty = false
+      setBorderColor(s, "#ff0000")
+      expect(s.dirty).toBe(true)
+    })
   })
 
   describe("round-trip (§4, ADR 0002)", () => {
     it("serializes and revives geometry, border, clipPath and identity", async () => {
       registerCustomProperties()
-      const s = createStickerShape("rounded-rectangle")
+      const s = createStickerShape("triangle")
       s.name = "sticker"
       setBorderWidth(s, 8)
-      resizeToCut(s, { width: 384, height: 288 })
+      resizeToCut(s, { width: 576, height: 192 })
 
-      const revived = (await util.enlivenObjects([s.toObject()]))[0] as Rect
+      const revived = (await util.enlivenObjects([s.toObject()]))[0] as Triangle
 
       expect(revived.id).toBe(s.id)
       expect(revived.name).toBe("sticker")
       expect(revived.locked).toBe(false)
       expect(revived.strokeWidth).toBe(8)
       expect(revived.stroke).toBe(DEFAULT_BORDER_COLOR)
-      expect(revived.width).toBe(184) // interior geometry survives
-      expect(revived.rx).toBeCloseTo(34.4, 10)
-      expect(getCutExtent(revived)).toEqual({ width: 384, height: 288 })
-      expect(getCutRadius(revived)).toBeCloseTo(38.4, 10)
-      expect(revived.clipPath).toBeInstanceOf(Rect)
-      expect((revived.clipPath as Rect).width).toBe(192)
+      expect(revived.width).toBe(280) // interior geometry survives
+      expect(getCutExtent(revived)).toEqual({ width: 576, height: 192 })
+      expect(revived.clipPath).toBeInstanceOf(Triangle)
+      expect((revived.clipPath as Triangle).width).toBe(288)
     })
   })
 })

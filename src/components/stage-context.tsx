@@ -11,24 +11,21 @@ import type { Canvas, Object as FabricObject } from "fabric"
 import { DOCUMENT_HEIGHT, DOCUMENT_WIDTH } from "@/fabric/stage-canvas"
 import {
   createStickerShape,
-  resizeToCut,
   setBorderColor,
   setBorderWidth,
-  setCutRadius,
+  setFillColor,
 } from "@/fabric/shapes"
-import type { CutExtent, StickerShapeKind } from "@/fabric/shapes"
+import type { StickerShapeKind } from "@/fabric/shapes"
 import type { Unit } from "@/lib/units"
 
 /** A shape-property commit against the selected sticker (build spec §5). */
 export interface ShapePropsPatch {
-  /** Target cut extent in px — square: one linked side, circle: diameter. */
-  size?: CutExtent
+  /** Background (fill) color. */
+  fillColor?: string
   /** Border width in px (0 = off). */
   borderWidth?: number
   /** Border color. */
   borderColor?: string
-  /** Visible corner radius in px (rounded-rectangle). */
-  cornerRadius?: number
 }
 
 interface StageContextValue {
@@ -45,9 +42,6 @@ interface StageContextValue {
   documentSize: { width: number; height: number }
   /** Resize the Document; the canvas dimensions are the source of truth. */
   setDocumentSize: (width: number, height: number) => void
-  /** View-only 1px #d0d0d0 edge border on the canvas wrapper (§3). */
-  edgeBorder: boolean
-  setEdgeBorder: (on: boolean) => void
   /** Active display unit — a label swap over stored px (§5). */
   unit: Unit
   setUnit: (unit: Unit) => void
@@ -72,7 +66,6 @@ export function StageProvider({ children }: { children: ReactNode }) {
     width: DOCUMENT_WIDTH,
     height: DOCUMENT_HEIGHT,
   })
-  const [edgeBorder, setEdgeBorder] = useState(true)
   const [unit, setUnit] = useState<Unit>("in")
 
   const registerCanvas = useCallback((next: Canvas | null) => {
@@ -124,10 +117,9 @@ export function StageProvider({ children }: { children: ReactNode }) {
       if (!canvas) return
       const obj = canvas.getActiveObjects()[0]
       if (!obj) return
-      if (patch.size) resizeToCut(obj, patch.size)
+      if (patch.fillColor !== undefined) setFillColor(obj, patch.fillColor)
       if (patch.borderWidth !== undefined) setBorderWidth(obj, patch.borderWidth)
       if (patch.borderColor !== undefined) setBorderColor(obj, patch.borderColor)
-      if (patch.cornerRadius !== undefined) setCutRadius(obj, patch.cornerRadius)
       canvas.requestRenderAll()
       setSelection(canvas.getActiveObjects())
     },
@@ -142,8 +134,6 @@ export function StageProvider({ children }: { children: ReactNode }) {
         selection,
         documentSize,
         setDocumentSize,
-        edgeBorder,
-        setEdgeBorder,
         unit,
         setUnit,
         addShape,

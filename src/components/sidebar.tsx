@@ -4,7 +4,7 @@ import {
   ImagePlus,
   RectangleHorizontal,
   Square,
-  SquareRoundCorner,
+  Triangle,
   Type,
   type LucideIcon,
 } from "lucide-react"
@@ -13,13 +13,13 @@ import { useStage } from "@/components/stage-context"
 import { Button } from "@/components/ui/button"
 import type { StickerShapeKind } from "@/fabric/shapes"
 
-/** The five sticker shapes (build spec §5) — labels here, kinds in the model. */
+/** The sticker shapes (build spec §5) — labels here, kinds in the model. */
 const SHAPES: { kind: StickerShapeKind; label: string; icon: LucideIcon }[] = [
   { kind: "square", label: "Square", icon: Square },
   { kind: "circle", label: "Circle", icon: Circle },
   { kind: "rectangle", label: "Rectangle", icon: RectangleHorizontal },
   { kind: "oval", label: "Oval", icon: Ellipse },
-  { kind: "rounded-rectangle", label: "Rounded rectangle", icon: SquareRoundCorner },
+  { kind: "triangle", label: "Triangle", icon: Triangle },
 ]
 
 function SectionHeading({ children }: { children: string }) {

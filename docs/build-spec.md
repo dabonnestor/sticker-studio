@@ -6,7 +6,7 @@ Build-ready specification for the client-side sticker design editor MVP, assembl
 
 A Sticker Mule Studio-like client-side editor: a Fabric.js canvas where each sticker is a shape object, edited in the browser and exported as print-ready files. Fully client-side, static-site target, no backend of any kind.
 
-**In scope (MVP)**: stickers (Square, Circle, Rectangle, Oval, Rounded-rectangle), text, image placement, selection & single-level grouping, undo/redo, zoom/viewport, JSON save/import, export to PNG/JPEG/PDF/SVG at 300 DPI (raster), document rotation.
+**In scope (MVP)**: stickers (Square, Circle, Rectangle, Oval, Triangle), text, image placement, selection & single-level grouping, undo/redo, zoom/viewport, JSON save/import, export to PNG/JPEG/PDF/SVG at 300 DPI (raster), document rotation.
 
 **Explicitly out of scope**: bleed/dieline/cut marks (the canvas shape is the cut line), layers panel, per-run rich text, preset size lists, vector PDF, wheel zoom/pan, multi-page layouts, text-on-curve, custom-shape drawing, collaboration, accounts, cross-session undo history, image editing (crop/filter), any backend/database. See the map's Out of scope list for the full record.
 
@@ -34,24 +34,22 @@ A Sticker Mule Studio-like client-side editor: a Fabric.js canvas where each sti
 ┌─────────────────────────────────────────────────────────────┐
 │ Top bar:  Logo │ Import File │ Save File │ Export ▾        │
 ├──────────┬──────────────────────────────────────────────────┤
-│ Sidebar  │  Stage: gray workspace (scrollable)             │
-│  Text    │    ┌────────────────────────────────────────┐    │
-│  Shapes  │    │  Canvas: white, subtle shadow, centered │    │
-│  Image   │    │  1px #d0d0d0 edge border (view-only)    │    │
+│ Sidebar  │  Stage toolbar (canvas props + selection ctx)    │
+│  Text    │  Stage: gray workspace (scrollable)             │
+│  Shapes  │    ┌────────────────────────────────────────┐    │
+│  Image   │    │  Canvas: white, subtle shadow, centered │    │
 │  Upload  │    └────────────────────────────────────────┘    │
-│          │  Stage toolbar (canvas props + selection ctx)    │
-├──────────┴──────────────────────────────────────────────────┤
-│ Bottom bar:  ↶ ↷ │ − [% ▾] ────slider──── + │ Preview │ ⛶  │
-└─────────────────────────────────────────────────────────────┘
+│          │  Bottom bar:  ↶ ↷ │ − [% ▾] ────slider──── +   │
+└──────────┴──────────────────────────────────────────────────┘
 ```
 
 All chrome — buttons, the Export dropdown, sidebar sections, toolbar inputs, the bottom-bar slider, dialogs — is built from shadcn/ui components; only the stage canvas is Fabric. (user decision 2026-08-11)
 
 - **Top bar**: logo; Import File (opens JSON, §10); Save File (downloads JSON, §10); Export dropdown (PNG/JPEG/PDF/SVG, §11). (#7, #8)
 - **Left sidebar**: Text (adds a Text object), Shapes (five shapes), Image Upload (place/scale/rotate only — no crop/filter). (charting)
-- **Stage**: gray workspace that scrolls; white canvas with subtle shadow, centered; 1px `#d0d0d0` canvas-edge border on by default, view-only (never exported), toggled in the stage toolbar. (#9)
-- **Stage toolbar**: canvas properties (document W×H with unit display, §5; edge-border toggle) plus a **contextual selection section** (§7) visible only while a selection exists. (#9, #10)
-- **Bottom bar**: undo/redo buttons (↶ ↷), zoom controls `− [% ▾] + [slider]`, preview, fullscreen, and the status area (export progress/errors). (#8, #12)
+- **Stage toolbar**: sits **above** the stage; canvas properties (document W×H with unit display, §5) plus a **contextual selection section** (§7) visible only while a selection exists. (#9, #10)
+- **Stage**: gray workspace that scrolls; white canvas with subtle shadow, centered — no edge border (the white canvas reads on the gray workspace without one). Clicking the workspace outside the canvas deselects. (#9)
+- **Bottom bar**: undo/redo buttons (↶ ↷), zoom controls `− [% ▾] + [slider]`, preview, fullscreen, and the status area (export progress/errors). Sits at the bottom of the main column, aligned with the stage toolbar above. (#8, #12)
 
 ## 4. Document model
 
@@ -63,9 +61,10 @@ All chrome — buttons, the Export dropdown, sidebar sections, toolbar inputs, t
 
 ## 5. Sticker shapes, default sizes, units
 
-- **Shapes**: Square, Circle, Rectangle, Oval, Rounded-rectangle. One **default size** per shape, inches-specified / px-stored at the 96 DPI display basis: Square 2×2 → 192×192 px; Circle Ø2 → radius 96 px; Rectangle / Oval / Rounded-rectangle 2×3 → 192×288 px. (#9)
-- **Rounded-rectangle corner radius**: 20% of the shorter side at creation, then an independent px property — editable in the toolbar, resize does not re-derive it. (#9)
-- **Unit switch (in / mm / px)** is a label swap over stored px: 1 in = 96 px, mm = px ÷ 96 × 25.4. No DPI setting — 300 DPI is export-only. Toolbar W×H converts to px at commit; switching units re-labels without rescaling; decimals in in/mm, integer px display (display-only rounding). Square = one linked value (both sides), Circle = diameter, others W×H. No min/max clamps (the export ceiling governs, §11). (#9)
+- **Shapes**: Square, Circle, Rectangle, Oval, Triangle. One **default size** per shape, inches-specified / px-stored at the 96 DPI display basis: Square 2×2 → 192×192 px; Circle Ø2 → radius 96 px; Rectangle / Oval / Triangle 3×2 (landscape) → 288×192 px. (#9)
+- **Shape properties in the toolbar**: the sticker **background** (fill color picker) and the inset **border** — a width slider (0 = off, up to 1 in = 96 px) and a color picker — visible while a single sticker is selected. Sticker size is not edited in the toolbar — the canvas drag handles resize, which scales the cut extent and the visible border together. (#9, #10)
+- **Uniform scaling**: sticker shapes scale with their aspect ratio locked — corner handles only, and the scale ratio is frozen at the gesture start, so dragging a corner never distorts the shape. Applies to every add path, including JSON restore. (#10)
+- **Unit switch (in / mm / px)** is a label swap over stored px: 1 in = 96 px, mm = px ÷ 96 × 25.4. No DPI setting — 300 DPI is export-only. Document-size W×H converts to px at commit; switching units re-labels without rescaling; decimals in in/mm, integer px display (display-only rounding). No min/max clamps (the export ceiling governs, §11). (#9)
 - **Document size** (stage toolbar): width/height in px — the basis of export dimensions; part of the Design file envelope (§10). (ADR 0002, glossary)
 
 ## 6. Text
@@ -88,6 +87,7 @@ Sourced from ticket #10; recorded in ADR 0003; glossary terms **Group** and **Se
 - **Grouping — single level**: groups are flat containers of individual objects; **groups never contain groups** (MVP). Group is disabled unless ≥2 objects are selected. If the selection contains an existing group, Group **flattens** it first (children rise to top level, keeping their ids, transforms, and cut lines), then groups everything together. (Q4)
 - **Entering a group**: double-click enters — children become individually selectable for (a) inspecting/editing their properties in the toolbar and (b) editing Text (second single-click opens the text session, same as top level). Children inside a group are **fixed**: no free dragging, no individual resize, no delete, no reorder — Ungroup first. Exit: click empty canvas or Escape (outside a text session). (Q5)
 - **Control surface**: contextual stage-toolbar section, visible only while a selection exists — Group (Ctrl+G) / Ungroup (Ctrl+Shift+G), Arrange (forward/backward: Ctrl+] / Ctrl+[; to front/back: Ctrl+Shift+] / Ctrl+Shift+[), Flip H/V, Lock toggle. (Q6)
+- **Rotation handle**: renders as a circular badge with a rotate arrow, larger than the corner handles (20px vs 13px) so it reads as a rotate control; the arrow rotates with the object. (Q6)
 - **Lock levels**: locking a group locks the set as one object — no enter-group, no move/scale/flip/arrange/delete; stays selectable for unlocking. Children can be locked individually: inside a group, a locked child's text session and property edits are blocked, but the group still moves as a whole. (Q7)
 - **Group semantics**: one slot in the top-level z-order (children never appear at top level; internal order fixed at group time); arrange/flip/scale/rotate operate on the group as one unit; flip H/V flips the whole group while children keep their own flip, rotation, and cut geometry; deleting a group deletes its children as one undoable step. (Q8, ADR 0003)
 - **Undo**: each structural command (group, ungroup, arrange, flip, lock toggle, group delete) is one undoable step; undo restores the selection to the affected group by id. (ADR 0001, ADR 0003)
@@ -203,8 +203,8 @@ Suggested session boundaries (each session builds against this spec, one module 
 
 ## 16. Acceptance checklist
 
-- [ ] Add each of the five shapes → default sizes land at 96 DPI basis; rounded-rect radius = 20% of shorter side.
-- [ ] Border on → geometry shrinks by half the stroke per side; cut geometry derives correctly; round-trips.
+- [ ] Add each of the five shapes → default sizes land at 96 DPI basis (Square 2×2, Circle Ø2, Rectangle/Oval/Triangle 3×2 landscape).
+- [ ] Border on → geometry shrinks by half the stroke per side; cut geometry derives correctly; round-trips; border width and color changes repaint immediately (no stale cached render).
 - [ ] Text: second single-click edits; session commits as one undoable step; Escape reverts; empty-on-exit restores "Text"; auto-fit until first manual resize.
 - [ ] Undo/redo walks every boundary type; redo clears on new edit; selection restored by id; depth capped at 100.
 - [ ] Selection: click/shift/marquee (intersect, empty-canvas start incl. clipped areas)/click-empty/Ctrl+A; locked objects selectable but inert; Del skips them.

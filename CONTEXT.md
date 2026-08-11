@@ -36,7 +36,7 @@ The set of objects (usually one) currently active in the editor: click selects a
 _Avoid_: active objects, highlight, focus
 
 **Default size**:
-The size a sticker is created at when added from the sidebar — specified in inches (Square 2×2, Circle Ø2, Rectangle/Oval/Rounded-rectangle 2×3), stored in pixels at the 96 DPI display basis, and editable in the toolbar afterwards.
+The size a sticker is created at when added from the sidebar — specified in inches (Square 2×2, Circle Ø2, Rectangle/Oval/Triangle 3×2 landscape), stored in pixels at the 96 DPI display basis. Size is then edited on the canvas with the drag handles, not in the toolbar.
 _Avoid_: preset size
 
 **Document size**:
