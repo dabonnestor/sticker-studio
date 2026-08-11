@@ -3,9 +3,9 @@ import { Canvas } from "fabric"
 import { stampDocumentProps } from "@/fabric/document-props"
 
 /**
- * Placeholder Document size until the document-model build makes it a real
- * Document property (build spec §5, ADR 0002) — 600×600 px at the 96 DPI
- * display basis.
+ * Initial Document size — 600×600 px at the 96 DPI display basis. The canvas
+ * dimensions are the Document size (build spec §5); the stage toolbar edits
+ * them after mount, and exports will size to them.
  */
 export const DOCUMENT_WIDTH = 600
 export const DOCUMENT_HEIGHT = 600

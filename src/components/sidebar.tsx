@@ -9,15 +9,17 @@ import {
   type LucideIcon,
 } from "lucide-react"
 
+import { useStage } from "@/components/stage-context"
 import { Button } from "@/components/ui/button"
+import type { StickerShapeKind } from "@/fabric/shapes"
 
-/** The five sticker shapes (build spec §5). Wired in the document-model build. */
-const SHAPES: { label: string; icon: LucideIcon }[] = [
-  { label: "Square", icon: Square },
-  { label: "Circle", icon: Circle },
-  { label: "Rectangle", icon: RectangleHorizontal },
-  { label: "Oval", icon: Ellipse },
-  { label: "Rounded rectangle", icon: SquareRoundCorner },
+/** The five sticker shapes (build spec §5) — labels here, kinds in the model. */
+const SHAPES: { kind: StickerShapeKind; label: string; icon: LucideIcon }[] = [
+  { kind: "square", label: "Square", icon: Square },
+  { kind: "circle", label: "Circle", icon: Circle },
+  { kind: "rectangle", label: "Rectangle", icon: RectangleHorizontal },
+  { kind: "oval", label: "Oval", icon: Ellipse },
+  { kind: "rounded-rectangle", label: "Rounded rectangle", icon: SquareRoundCorner },
 ]
 
 function SectionHeading({ children }: { children: string }) {
@@ -30,10 +32,12 @@ function SectionHeading({ children }: { children: string }) {
 
 /**
  * Left sidebar (build spec §3): Text, Shapes, and Image Upload sections.
- * Buttons are inert until their builds wire them up (text: text build,
- * shapes: document-model build, image: selection build).
+ * Shape buttons add stickers centered on the canvas; Text arrives with the
+ * text build, Image Upload with the selection build.
  */
 export function Sidebar() {
+  const { addShape } = useStage()
+
   return (
     <aside className="flex w-56 shrink-0 flex-col gap-5 overflow-y-auto border-r bg-background p-3">
       <section className="flex flex-col gap-1.5">
@@ -47,12 +51,13 @@ export function Sidebar() {
       <section className="flex flex-col gap-1.5">
         <SectionHeading>Shapes</SectionHeading>
         <div className="grid grid-cols-2 gap-2">
-          {SHAPES.map(({ label, icon: Icon }) => (
+          {SHAPES.map(({ kind, label, icon: Icon }) => (
             <Button
-              key={label}
+              key={kind}
               variant="outline"
               size="sm"
               className="h-14 flex-col gap-1.5"
+              onClick={() => addShape(kind)}
             >
               <Icon aria-hidden />
               <span className="text-[11px] leading-tight font-normal whitespace-normal">
