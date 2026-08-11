@@ -27,6 +27,14 @@ _Avoid_: pinned, fixed
 The outline of a sticker that defines where it is cut — the boundary of the sticker's shape. In the Document it is the shape's clipPath, at the original geometry edge; the inset border shrinks inside it. There is no bleed or separate dieline: the canvas shape is the cut line.
 _Avoid_: dieline, cut path, bleed
 
+**Group**:
+A Document object that contains other Document objects and moves, scales, rotates, flips, and reorders as one. Groups are single-level — a Group contains only individual objects, never other Groups — and occupy one slot in the Document's z-order; children never appear at top level, and their order inside the Group is fixed at group time. While grouped, children are fixed in place: individually selectable only to inspect their properties or edit Text; repositioning, resizing, deleting, or reordering a child means ungrouping first. A Group has its own id, name, and locked state.
+_Avoid_: layer, container, collection
+
+**Selection**:
+The set of objects (usually one) currently active in the editor: click selects and replaces, Shift-click toggles membership, the rubber-band marquee selects every object it intersects, clicking empty canvas deselects. A Group is selected as a whole; locked objects can be selected but not changed. Selection is view state — it never enters the Design file, and interactions that change only the selection are not interaction boundaries.
+_Avoid_: active objects, highlight, focus
+
 **Default size**:
 The size a sticker is created at when added from the sidebar — specified in inches (Square 2×2, Circle Ø2, Rectangle/Oval/Rounded-rectangle 2×3), stored in pixels at the 96 DPI display basis, and editable in the toolbar afterwards.
 _Avoid_: preset size
