@@ -1,0 +1,4 @@
+allowBuilds:
+  # fabric ships `canvas` (Node native) as an optional dependency; this app
+  # is browser-only, so never build it.
+  canvas: false
