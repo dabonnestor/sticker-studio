@@ -50,3 +50,11 @@ _Avoid_: text edit, edit mode
 **Auto-fit**:
 The width behavior of a Text object — the box hugs its content at creation and re-fits at the end of each Text session while it has never been manually resized; the first manual resize hands the width to the user, and multi-line text wraps at that width.
 _Avoid_: auto-grow, fit-to-content
+
+**Zoom**:
+The magnification of the stage, as a percentage where 100% renders one document pixel as one screen pixel. Zoom is view state — never part of the Document, never an undoable step, and interactions that change only the view (zoom, pan, selection) are not interaction boundaries.
+_Avoid_: scale, magnification
+
+**Fit**:
+The zoom level at which the whole Document fits inside the workspace with a margin — the default zoom on load, whether the Document is smaller or larger than the workspace.
+_Avoid_: fit-to-window, zoom to fit
