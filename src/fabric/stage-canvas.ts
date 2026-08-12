@@ -2,8 +2,11 @@ import {
   Canvas,
   Control,
   Path,
+  Point,
+  type CanvasOptions,
   type ControlRenderingStyleOverride,
   type InteractiveFabricObject,
+  type TMat2D,
   type Object as FabricObject,
 } from "fabric"
 
@@ -90,13 +93,133 @@ function renderRotateHandle(
   ctx.restore()
 }
 
+/** The marquee rectangle, normalized to a top-left box, in viewport space. */
+export interface MarqueeBox {
+  left: number
+  top: number
+  width: number
+  height: number
+}
+
+/**
+ * The marquee rectangle in viewport space (§7 extension): the drag's start
+ * and current extent — `_groupSelector`'s scene-plane values — mapped
+ * through the viewport transform, normalized to a box. Pure, so the overlay
+ * paint and the tests share one mapping.
+ */
+export function getMarqueeBox(
+  selector: { x: number; y: number; deltaX: number; deltaY: number },
+  viewportTransform: TMat2D,
+): MarqueeBox {
+  const start = new Point(selector.x, selector.y).transform(viewportTransform)
+  const extent = new Point(
+    selector.x + selector.deltaX,
+    selector.y + selector.deltaY,
+  ).transform(viewportTransform)
+  return {
+    left: Math.min(start.x, extent.x),
+    top: Math.min(start.y, extent.y),
+    width: Math.abs(extent.x - start.x),
+    height: Math.abs(extent.y - start.y),
+  }
+}
+
+/**
+ * The stage canvas, with the marquee mirrored onto a workspace overlay
+ * (§7 extension). Fabric paints the marquee on the upper canvas, whose
+ * bitmap is exactly the Document's size — a marquee dragged past the
+ * Document edge would be invisible there. The overlay spans the whole
+ * workspace, so the marquee renders — and can select objects — beyond the
+ * Document. Hit-testing stays Fabric's own (`collectObjects` does not clamp
+ * to the Document); only the paint is mirrored.
+ */
+class StageCanvas extends Canvas {
+  private readonly marqueeOverlay: HTMLCanvasElement
+
+  constructor(
+    element: HTMLCanvasElement,
+    marqueeOverlay: HTMLCanvasElement,
+    options: Partial<CanvasOptions>,
+  ) {
+    super(element, options)
+    this.marqueeOverlay = marqueeOverlay
+  }
+
+  /** True while a marquee drag is in progress. */
+  isMarqueeActive(): boolean {
+    return this._groupSelector !== null
+  }
+
+  /** Erase the marquee overlay — the marquee paint lives only on it. */
+  clearMarqueeOverlay(): void {
+    const ctx = this.marqueeOverlay.getContext("2d")
+    if (!ctx) return
+    ctx.setTransform(1, 0, 0, 1, 0, 0)
+    ctx.clearRect(0, 0, this.marqueeOverlay.width, this.marqueeOverlay.height)
+  }
+
+  /**
+   * Mirror Fabric's marquee paint onto the overlay instead of the upper
+   * canvas: the same fill and centered dashed stroke (build spec §7's look),
+   * in overlay-local viewport coordinates — the canvas origin offset by how
+   * far the Document sits inside the overlay, so the paint stays glued to
+   * the scene at any zoom or scroll.
+   */
+  override _drawSelection(_ctx: CanvasRenderingContext2D): void {
+    const overlay = this.marqueeOverlay
+    const ctx = overlay.getContext("2d")
+    if (!ctx) return
+    // Size the bitmap to the overlay's CSS size at the device pixel ratio —
+    // the overlay spans the workspace, which resizes with the window.
+    const dpr = window.devicePixelRatio || 1
+    const width = overlay.offsetWidth
+    const height = overlay.offsetHeight
+    const bitmapWidth = Math.round(width * dpr)
+    if (overlay.width !== bitmapWidth) {
+      overlay.width = bitmapWidth
+      overlay.height = Math.round(height * dpr)
+    }
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
+    ctx.clearRect(0, 0, width, height)
+
+    const box = getMarqueeBox(this._groupSelector!, this.viewportTransform)
+    const canvasRect = this.upperCanvasEl.getBoundingClientRect()
+    const overlayRect = overlay.getBoundingClientRect()
+    ctx.translate(
+      canvasRect.left - overlayRect.left,
+      canvasRect.top - overlayRect.top,
+    )
+
+    if (this.selectionColor) {
+      ctx.fillStyle = this.selectionColor
+      ctx.fillRect(box.left, box.top, box.width, box.height)
+    }
+    if (!this.selectionLineWidth || !this.selectionBorderColor) return
+    const strokeOffset = this.selectionLineWidth / 2
+    ctx.lineWidth = this.selectionLineWidth
+    ctx.strokeStyle = this.selectionBorderColor
+    if (this.selectionDashArray.length) ctx.setLineDash(this.selectionDashArray)
+    ctx.strokeRect(
+      box.left + strokeOffset,
+      box.top + strokeOffset,
+      box.width - this.selectionLineWidth,
+      box.height - this.selectionLineWidth,
+    )
+  }
+}
+
 /**
  * Create the stage Canvas on a fresh canvas element. The white Document
  * background is a document property (serialized, honored at export, build
  * spec §11) — set it here so the stage shows the Document, not CSS paint.
+ * The marquee overlay is the workspace-spanning transparent canvas the
+ * marquee mirror paints on (§7 extension).
  */
-export function createStageCanvas(element: HTMLCanvasElement): Canvas {
-  const canvas = new Canvas(element, {
+export function createStageCanvas(
+  element: HTMLCanvasElement,
+  marqueeOverlay: HTMLCanvasElement,
+): StageCanvas {
+  const canvas = new StageCanvas(element, marqueeOverlay, {
     width: DOCUMENT_WIDTH,
     height: DOCUMENT_HEIGHT,
     backgroundColor: DOCUMENT_BACKGROUND_COLOR,
@@ -147,6 +270,14 @@ export function createStageCanvas(element: HTMLCanvasElement): Canvas {
       canvas.height - borderWidth,
     )
     ctx.restore()
+  })
+
+  // The marquee mirror lives on the workspace overlay, not the upper canvas
+  // (whose bitmap is the Document's size), so Fabric never clears it. Clear
+  // it at the end of every render while no marquee is active — the rect from
+  // a finished drag would otherwise linger on the workspace.
+  canvas.on("after:render", () => {
+    if (!canvas.isMarqueeActive()) canvas.clearMarqueeOverlay()
   })
 
   // Shapes scale uniformly — the aspect ratio is frozen at the

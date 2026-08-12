@@ -32,7 +32,7 @@ A Document object that contains other Document objects and moves, scales, rotate
 _Avoid_: layer, container, collection
 
 **Selection**:
-The set of objects (usually one) currently active in the editor: click selects and replaces, Shift-click toggles membership, the rubber-band marquee selects every object it intersects, clicking empty canvas deselects. A Group is selected as a whole; locked objects can be selected but not changed. Selection is view state — it never enters the Design file, and interactions that change only the selection are not interaction boundaries.
+The set of objects (usually one) currently active in the editor: click selects and replaces, Shift-click toggles membership, the rubber-band marquee selects every object it intersects, clicking empty canvas deselects. The marquee is bounded by the workspace, not the Document: it can start on the workspace and extend past the Document edge, so objects hanging off the Document can be selected. A Group is selected as a whole; locked objects can be selected but not changed. Selection is view state — it never enters the Design file, and interactions that change only the selection are not interaction boundaries.
 _Avoid_: active objects, highlight, focus
 
 **Default size**:
