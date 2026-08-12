@@ -14,6 +14,7 @@ import { stampDocumentProps } from "@/fabric/document-props"
 import { getTextMeasurer } from "@/fabric/fonts"
 import { DEFAULT_BORDER_COLOR, getShapeKind } from "@/fabric/shapes"
 import { wireTextInteractions } from "@/fabric/text-interactions"
+import { isTextObject } from "@/fabric/text"
 
 /**
  * Initial Document size — 600×600 px at the 96 DPI display basis. The canvas
@@ -236,8 +237,10 @@ export function createStageCanvas(
   // document boundary so every creation path — sidebar, console-added
   // objects, imports — carries a stable id. Objects restored from a Design
   // file already have their ids and are left untouched. The rotation handle
-  // is replaced with the icon version on every add path; shapes also expose
-  // corner handles only (uniform scaling).
+  // is replaced with the icon version on every add path; shapes expose
+  // corner handles only (uniform scaling), and text hides the top/bottom
+  // handles — a Y-only drag would distort the glyphs, and the uniform-scaling
+  // lock (§5) pins it dead anyway. Text keeps the ml/mr wrap handles (§6).
   canvas.on("object:added", (event) => {
     const obj = event.target
     if (!obj) return
@@ -250,6 +253,8 @@ export function createStageCanvas(
     }
     if (getShapeKind(obj)) {
       obj.setControlsVisibility({ ml: false, mt: false, mr: false, mb: false })
+    } else if (isTextObject(obj)) {
+      obj.setControlsVisibility({ mt: false, mb: false })
     }
   })
 
@@ -282,14 +287,18 @@ export function createStageCanvas(
     if (!canvas.isMarqueeActive()) canvas.clearMarqueeOverlay()
   })
 
-  // Shapes scale uniformly — the aspect ratio is frozen at the
-  // gesture start, so a corner drag never distorts the shape. The first
-  // `object:scaling` tick records the ratio; later ticks keep it; the end of
-  // the gesture (any transform commit) clears it for the next one.
+  // Shapes and text scale uniformly — the aspect ratio is frozen at the
+  // gesture start, so a corner drag never distorts the object (§5 shapes,
+  // §6 text: the scale fold is gone — text scales like a shape, scale stays
+  // on the object). The first `object:scaling` tick records the ratio; later
+  // ticks keep it; the end of the gesture (any transform commit) clears it
+  // for the next one. Scaling also hands a text's width to the user — a
+  // re-fit at session exit would measure in local units and fight the scale.
   const gestureRatios = new WeakMap<FabricObject, number>()
   canvas.on("object:scaling", (event) => {
     const obj = event.target
-    if (!obj || !getShapeKind(obj)) return
+    if (!obj || (!getShapeKind(obj) && !isTextObject(obj))) return
+    if (isTextObject(obj)) obj.set("autoFit", false)
     const ratio = gestureRatios.get(obj)
     if (ratio === undefined) {
       gestureRatios.set(obj, obj.scaleX / obj.scaleY)
@@ -301,8 +310,9 @@ export function createStageCanvas(
     if (event.target) gestureRatios.delete(event.target)
   })
 
-  // Text (§6): the scale fold (glyphs never distort) and the text session
-  // lifecycle (commit on exit, Escape reverts, auto-fit re-fits, uppercase).
+  // Text (§6): text scales uniformly with the shapes above, and the text
+  // session lifecycle (commit on exit, Escape reverts, auto-fit re-fits,
+  // uppercase) wires here.
   wireTextInteractions(canvas, getTextMeasurer())
 
   return canvas

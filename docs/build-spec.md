@@ -56,7 +56,7 @@ All chrome — buttons, the Export dropdown, sidebar sections, toolbar inputs, t
 - One Fabric object per shape: **fill = background, stroke = border, clipPath = cut line**. (#4)
 - **Inset border model**: the shape's geometry is the area *inside* the border — turning the border on shrinks geometry by half the stroke per side (`width − border`, `rx/radius − border/2`), so the stroke's outer edge sits exactly on the cut path (a cutter never halves the border). The clipPath always sits at the original edge; the **cut geometry is derived** (`width + borderWidth` when the border is on), so it survives JSON restore. (#4)
 - **Document border**: the same inset model at the document edge — the stroke sits inside the edge, so exports (which render only the document area) show the full border. Off by default; edited in the stage toolbar (§5), carried in the envelope (§10). (#9)
-- Every object carries flat registered Fabric custom props: `id` (required, generated at creation, stable across save/load — undo reselects by it), `name` (optional user label), `locked` (boolean — cannot be moved, resized, edited, or deleted; survives save/load). Text adds `uppercase` and `autoFit`. Groups carry their own `id`/`name`/`locked` like any object. (ADR 0002)
+- Every object carries flat registered Fabric custom props: `id` (required, generated at creation, stable across save/load — undo reselects by it), `name` (optional user label), `locked` (boolean — cannot be moved, resized, edited, or deleted; survives save/load). Text adds `uppercase`, `uppercaseSource` and `autoFit`. Groups carry their own `id`/`name`/`locked` like any object. (ADR 0002)
 - Custom properties must be registered via Fabric's `customProperties` mechanism at app startup. (ADR 0002)
 - Object identity/type list for import validation: known Fabric types only (see §10).
 
@@ -73,9 +73,10 @@ All chrome — buttons, the Export dropdown, sidebar sections, toolbar inputs, t
 
 - Text is a Document object (Fabric **Textbox**), **not a shape** — no shape of its own, no cut line. (charting, #11)
 - **Auto-fit**: the box hugs its content (width auto-fit) at creation and re-fits at the end of each text session, while it has never been manually resized; the first manual resize hands the width to the user and multi-line text wraps at that width. Unset width would collapse to ~2px in Fabric v7 — auto-fit once at add time by measuring the longest line via `ctx.measureText`. (#4, #11)
-- **Entering edit**: Fabric v7 — a **second single-click** opens the text session (not double-click). Scale folds into `fontSize` + `width` on `object:scaling`, scale resets to 1 (v7 removed `unscaledText`); glyphs never distort. (#4, #11)
+- **Entering edit**: Fabric v7 — a **second single-click** opens the text session (not double-click). (#4, #11)
+- **Uniform scaling**: text scales like a shape (§5) — corner handles keep the aspect ratio frozen at the gesture start, so scaling up/down never distorts the glyphs; the scale persists on the object (no fold into `fontSize`). The top/bottom handles are hidden (a Y-only drag would distort the glyphs, and the ratio lock pins it dead anyway); the ml/mr handles stay for wrap width (§6). The first manual resize — a scale or a wrap-width drag — hands the width to the user: auto-fit stops. (#11)
 - **Text session** = one interaction boundary: everything typed commits as **one undoable step** at exit; commit on blur / click-away / Ctrl+Enter; **Escape reverts the session** (restores pre-session state) — in-session Ctrl+Z stays field-local. Enter = newline; empty-on-exit restores the string `"Text"`. (#11)
-- **Nine properties** in the contextual stage toolbar: family, size (px), weight/italic (**real faces only** — static 400-only families get no faux styling), underline, alignment, line-height (**1.2** default), letter-spacing, uppercase (**one-way** registered flag: stored string is uppercased while set; toggling off stops forcing case but doesn't restore it). (#11)
+- **Ten properties** in the contextual stage toolbar: family, size (px **combobox** — standard presets with free typing), color (the fill), weight/italic (**real faces only** — static 400-only families get no faux styling), underline, alignment, line-height (**1.2** default), letter-spacing, uppercase (**two-way toggle**: stored string is uppercased while set, the mixed-case original kept as `uppercaseSource`; toggling off restores it). (#11)
 - **New text box**: at the viewport center, Inter 24 px, enters edit pre-selected. (#11)
 - All 10 fonts load at startup via `@font-face`; await `document.fonts.ready` before rasterizing exports; `config.fontPaths` for SVG export (§11, §12). (#3, #11)
 
@@ -183,7 +184,7 @@ Inter, Work Sans, Barlow, Lora, Playfair Display, Bebas Neue, Anton, Pacifico, D
 From the spike (#4) and subsequent decisions — implement in this order of risk:
 
 1. **Grouping plumbing**: constructor doesn't detach children; sort by canvas index; `removeAll` to ungroup (§7).
-2. **Scale fold**: fold scale into `fontSize` + `width` on `object:scaling`, reset scale to 1 — glyphs never distort (§6).
+2. **Uniform scaling**: shapes and text scale with their aspect ratio frozen at the gesture start — corner drags never distort (§5, §6).
 3. **Auto-fit at add time**: `ctx.measureText` on the longest line; unset width collapses to ~2px in v7 (§6).
 4. **Async everything**: `loadFromJSON` and `dispose()` are async — await them.
 5. **v7 origin defaults**: `originX`/`originY` default to center — account for it in geometry math.
@@ -196,7 +197,7 @@ Suggested session boundaries (each session builds against this spec, one module 
 
 1. **Scaffold + shell**: Vite + React 19 + TS app; Tailwind CSS v4 (`@tailwindcss/vite` plugin) + shadcn/ui init (`npx shadcn@latest init`); layout (§3), Fabric canvas mount (verify no preflight style bleed), custom-property registration.
 2. **Document + shapes + toolbar**: shape model, default sizes, inset border/cut line, unit conversion, stage toolbar (§4, §5).
-3. **Text + fonts**: Textbox, auto-fit, scale fold, text session, nine properties, font loading (§6, §12).
+3. **Text + fonts**: Textbox, auto-fit, uniform scaling, text session, nine properties, font loading (§6, §12).
 4. **Undo/redo**: snapshot stack, boundaries, restore, selection restore, depth 100 (§8).
 5. **Selection & grouping**: §7 interactions, contextual toolbar, enter-group, lock levels.
 6. **Zoom & viewport**: viewportTransform adapter, Fit, presets, bottom-bar controls, resize behavior (§9).

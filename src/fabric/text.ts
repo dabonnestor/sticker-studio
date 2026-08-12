@@ -45,9 +45,11 @@ export interface TextMeasureStyle {
  */
 export type TextMeasurer = (text: string, style: TextMeasureStyle) => number
 
-/** A text-property commit against one Textbox (§6) — all nine properties. */
+/** A text-property commit against one Textbox (§6) — all ten properties. */
 export interface TextPropsPatch {
   fontFamily?: string
+  /** Text color — the object's fill (§6). */
+  fillColor?: string
   /** Size in px. */
   fontSize?: number
   /** Weight — real faces only; static 400-only families have only 400. */
@@ -60,8 +62,9 @@ export interface TextPropsPatch {
   /** Letter spacing in Fabric units — thousandths of em (§6). */
   charSpacing?: number
   /**
-   * One-way flag (§6): while set, the stored string is uppercased; toggling
-   * off stops forcing case but never restores it.
+   * Two-way uppercase flag (§6): while set, the stored string is uppercased
+   * and the mixed-case original is kept as `uppercaseSource`; toggling off
+   * restores it.
    */
   uppercase?: boolean
 }
@@ -173,11 +176,14 @@ export function fitToContent(obj: Textbox, measure: TextMeasurer): void {
 }
 
 /**
- * Force the one-way uppercase flag on the stored string (spec §6) — the
- * flag's own commit path (applyTextProps) and the session commit share it.
+ * Force the uppercase flag on the stored string (spec §6) — the flag's own
+ * commit path (applyTextProps) and the session commit share it. The mixed-case
+ * text is saved as `uppercaseSource` first, so turning the flag off later can
+ * restore it (the two-way toggle).
  */
 export function forceUppercase(obj: Textbox): void {
   if (obj.uppercase && obj.text !== obj.text.toUpperCase()) {
+    obj.uppercaseSource = obj.text
     obj.set("text", obj.text.toUpperCase())
   }
 }
@@ -208,6 +214,7 @@ export function applyTextProps(
     }
   }
   if (patch.fontSize !== undefined) obj.set("fontSize", patch.fontSize)
+  if (patch.fillColor !== undefined) obj.set("fill", patch.fillColor)
   if (patch.fontWeight !== undefined) obj.set("fontWeight", patch.fontWeight)
   if (patch.fontStyle !== undefined) obj.set("fontStyle", patch.fontStyle)
   if (patch.underline !== undefined) obj.set("underline", patch.underline)
@@ -216,9 +223,15 @@ export function applyTextProps(
   if (patch.charSpacing !== undefined) obj.set("charSpacing", patch.charSpacing)
   if (patch.uppercase !== undefined) {
     obj.uppercase = patch.uppercase
-    // One-way (§6): turning the flag on uppercases the stored string; turning
-    // it off stops forcing but leaves the current case alone.
-    forceUppercase(obj)
+    if (patch.uppercase) {
+      // Turning the flag on saves the current (mixed-case) text as the
+      // restore source and forces the case; turning it off restores the
+      // saved text (§6 — two-way toggle).
+      forceUppercase(obj)
+    } else if (typeof obj.uppercaseSource === "string") {
+      obj.set("text", obj.uppercaseSource)
+      obj.uppercaseSource = undefined
+    }
   }
   if (
     measure &&

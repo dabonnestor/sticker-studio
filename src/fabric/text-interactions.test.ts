@@ -9,7 +9,8 @@ import { wireTextInteractions } from "@/fabric/text-interactions"
  * interactive canvas in jsdom: the hidden textarea is a genuine DOM element,
  * so typing, Escape and Ctrl+Enter run through the same listeners the app
  * installs. The session commits as one boundary on exit; Escape reverts;
- * uppercase is forced while the flag is set.
+ * uppercase is forced while the flag is set and the underlying text is kept
+ * as the toggle's restore source.
  */
 
 /** The test measurer — 10 px per character (vitest.setup stub). */
@@ -135,6 +136,8 @@ describe("wireTextInteractions — session lifecycle", () => {
     edit()
     type("hello")
     expect(textbox.text).toBe("HELLO")
+    // The underlying typed text is kept as the toggle's restore source.
+    expect(textbox.uppercaseSource).toBe("hello")
     pressKey("Escape", 27)
   })
 
@@ -146,8 +149,7 @@ describe("wireTextInteractions — session lifecycle", () => {
     pressKey("Enter", 13, { ctrlKey: true }) // commit
     expect(textbox.text).toBe("HELLO")
 
-    // With the flag off, typed case is kept as-is. (The one-way "never
-    // restores" half is asserted at the model level in text.test.ts.)
+    // With the flag off, typed case is kept as-is.
     textbox.uppercase = false
     edit()
     type("world")

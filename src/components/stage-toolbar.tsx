@@ -12,6 +12,14 @@ import {
 import { useStage } from "@/components/stage-context"
 import { Button } from "@/components/ui/button"
 import {
+  Combobox,
+  ComboboxContent,
+  ComboboxEmpty,
+  ComboboxInput,
+  ComboboxItem,
+  ComboboxList,
+} from "@/components/ui/combobox"
+import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
@@ -30,6 +38,7 @@ import {
 } from "@/fabric/shapes"
 import {
   FONT_FAMILIES,
+  TEXT_FILL,
   getFontFamilySpec,
   isTextObject,
 } from "@/fabric/text"
@@ -44,6 +53,18 @@ const UNITS: { value: Unit; label: string }[] = [
 
 /** Border slider range and step — 0 (off) to 1 inch at the 96 DPI basis. */
 const BORDER_RANGE = { min: 0, max: 96, step: 1 } as const
+
+/** Line-height slider range and step — 0.5 (tight) to 3 (loose). */
+const LINE_HEIGHT_RANGE = { min: 0.5, max: 3, step: 0.05 } as const
+
+/** Letter-spacing slider range and step, in em (the §6 display unit). */
+const LETTER_SPACING_RANGE = { min: -0.2, max: 1, step: 0.01 } as const
+
+/** Standard font sizes (px) — the combobox presets; any size still types in. */
+const FONT_SIZES = [
+  8, 9, 10, 11, 12, 14, 16, 18, 20, 24, 28, 32, 36, 40, 48, 56, 64, 72, 96,
+  120, 144,
+] as const
 
 /**
  * A labeled numeric field over stored px, displayed in the active unit
@@ -297,66 +318,79 @@ function ShapeProps() {
 }
 
 /**
- * Display formatting for NumberField — trailing zeros trimmed only after the
- * decimal point, so an integer like 10 px never renders as "1" (the plain
- * `0+$` pattern would strip the zero off an integer with no decimal).
+ * Display formatting for the slider readouts — trailing zeros trimmed only
+ * after the decimal point, so an integer like 10 px never renders as "1"
+ * (the plain `0+$` pattern would strip the zero off an integer with no
+ * decimal).
  */
 function formatNumberField(value: number, scale: number, decimals: number): string {
   return (value / scale).toFixed(decimals).replace(/\.\d*?0+$/, "")
 }
 
 /**
- * A small labeled numeric field, committing on Enter/blur — the UnitField
- * pattern without unit conversion. `scale` converts the displayed value to
- * the model value (letter spacing displays in em, stores thousandths — 1000
- * × the em), `decimals` the display precision. Invalid input or a value under
- * `min` reverts to the current value.
+ * Font size as a combobox (§6) — the shadcn/ui combobox (Base UI): an
+ * editable field — any size types in and commits on Enter/blur — with a
+ * trigger chevron that opens the standard-size presets, filtered as you
+ * type. Picking a preset commits it; an invalid or sub-1 px value reverts
+ * to the current size.
  */
-function NumberField({
-  label,
+function FontSizeField({
   value,
-  scale = 1,
-  decimals = 0,
-  min,
   onCommit,
-  title,
 }: {
-  label: string
   value: number
-  scale?: number
-  decimals?: number
-  min?: number
-  onCommit: (value: number) => void
-  title?: string
+  onCommit: (size: number) => void
 }) {
-  const [text, setText] = useState(() => formatNumberField(value, scale, decimals))
+  const [input, setInput] = useState(() => String(value))
 
   useEffect(() => {
-    setText(formatNumberField(value, scale, decimals))
-  }, [value, scale, decimals])
+    setInput(String(value))
+  }, [value])
 
-  const commit = () => {
-    const parsed = Number(text)
-    if (!Number.isFinite(parsed) || (min !== undefined && parsed < min)) {
-      setText(formatNumberField(value, scale, decimals))
+  const commit = (size: number) => {
+    if (!Number.isFinite(size) || size < 1) {
+      setInput(String(value))
       return
     }
-    onCommit(scale > 1 ? Math.round(parsed * scale) : parsed)
+    onCommit(size)
   }
 
   return (
-    <label className="flex items-center gap-1.5" title={title ?? label}>
-      <span className="text-[10px] leading-none text-muted-foreground">{label}</span>
-      <Input
-        className="h-7 w-14"
-        inputMode="decimal"
-        value={text}
-        onChange={(event) => setText(event.target.value)}
-        onBlur={commit}
-        onKeyDown={(event) => {
-          if (event.key === "Enter") event.currentTarget.blur()
+    <label className="flex items-center gap-1.5">
+      <span className="text-[10px] leading-none text-muted-foreground">Size</span>
+      <Combobox
+        items={FONT_SIZES}
+        value={value}
+        onValueChange={(size) => {
+          if (size !== null) commit(size)
         }}
-      />
+        inputValue={input}
+        onInputValueChange={setInput}
+        // A numeric contains-filter — typing "2" surfaces 12, 20, 24, …
+        filter={(size, query, toString) =>
+          (toString ?? String)(size).includes(query.trim())
+        }
+      >
+        <ComboboxInput
+          className="h-7 w-16"
+          inputMode="decimal"
+          aria-label="Font size (px)"
+          onBlur={(event) => commit(Number(event.currentTarget.value))}
+          onKeyDown={(event) => {
+            if (event.key === "Enter") event.currentTarget.blur()
+          }}
+        />
+        <ComboboxContent>
+          <ComboboxList>
+            {(size) => (
+              <ComboboxItem key={size} value={size}>
+                {size}
+              </ComboboxItem>
+            )}
+          </ComboboxList>
+          <ComboboxEmpty>No matching size</ComboboxEmpty>
+        </ComboboxContent>
+      </Combobox>
     </label>
   )
 }
@@ -402,10 +436,10 @@ const ALIGNMENTS: { value: "left" | "center" | "right"; label: string; icon: typ
 
 /**
  * Contextual text-property section (build spec §6), visible only while a
- * single Text object is selected: the nine properties — family, size,
+ * single Text object is selected: the ten properties — family, size, color,
  * weight/italic (real faces only — static 400-only families show no faux
  * styling), underline, alignment, line height (1.2 default), letter spacing,
- * and the one-way uppercase flag. Values display in px (size), em
+ * and the two-way uppercase toggle. Values display in px (size), em
  * (letter spacing), or unitless (line height) and commit immediately.
  */
 function TextProps() {
@@ -450,11 +484,8 @@ function TextProps() {
         </DropdownMenu>
       </label>
 
-      <NumberField
-        label="Size"
-        title="Font size (px)"
+      <FontSizeField
         value={text.fontSize}
-        min={1}
         onCommit={(fontSize) => commitTextProps({ fontSize })}
       />
 
@@ -475,7 +506,7 @@ function TextProps() {
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="start">
-            <DropdownMenuLabel>Weight — real faces only</DropdownMenuLabel>
+            <DropdownMenuLabel>Weight</DropdownMenuLabel>
             <DropdownMenuSeparator />
             {familySpec.weights.map((w) => (
               <DropdownMenuItem
@@ -487,6 +518,16 @@ function TextProps() {
             ))}
           </DropdownMenuContent>
         </DropdownMenu>
+      </label>
+
+      <label className="flex items-center gap-1.5">
+        <span className="text-[10px] leading-none text-muted-foreground">Fill</span>
+        <ColorInput
+          value={typeof text.fill === "string" ? text.fill : TEXT_FILL}
+          ariaLabel="Text color"
+          title="Text color"
+          onChange={(fillColor) => commitTextProps({ fillColor })}
+        />
       </label>
 
       <div className="flex items-center gap-0.5">
@@ -525,28 +566,47 @@ function TextProps() {
         ))}
       </div>
 
-      <NumberField
-        label="LH"
-        title="Line height"
-        value={text.lineHeight}
-        decimals={2}
-        min={0.1}
-        onCommit={(lineHeight) => commitTextProps({ lineHeight })}
-      />
+      <label className="flex items-center gap-2" title="Line height">
+        <span className="text-[10px] leading-none text-muted-foreground">LH</span>
+        <Slider
+          className="w-28"
+          min={LINE_HEIGHT_RANGE.min}
+          max={LINE_HEIGHT_RANGE.max}
+          step={LINE_HEIGHT_RANGE.step}
+          value={[text.lineHeight]}
+          onValueChange={([lineHeight]) =>
+            // Round the float the slider may produce (0.05 steps) — the model
+            // stores lineHeight as a plain number and JSON would keep the
+            // residue.
+            commitTextProps({ lineHeight: Math.round(lineHeight * 100) / 100 })
+          }
+          aria-label="Line height"
+        />
+        <span className="w-8 text-right text-[10px] leading-none text-muted-foreground tabular-nums">
+          {formatNumberField(text.lineHeight, 1, 2)}
+        </span>
+      </label>
 
-      <NumberField
-        label="LS"
-        title="Letter spacing (em)"
-        value={charSpacing}
-        scale={1000}
-        decimals={2}
-        onCommit={(charSpacing) => commitTextProps({ charSpacing })}
-      />
+      <label className="flex items-center gap-2" title="Letter spacing (em)">
+        <span className="text-[10px] leading-none text-muted-foreground">LS</span>
+        <Slider
+          className="w-28"
+          min={LETTER_SPACING_RANGE.min}
+          max={LETTER_SPACING_RANGE.max}
+          step={LETTER_SPACING_RANGE.step}
+          value={[charSpacing / 1000]}
+          onValueChange={([em]) => commitTextProps({ charSpacing: Math.round(em * 1000) })}
+          aria-label="Letter spacing (em)"
+        />
+        <span className="w-8 text-right text-[10px] leading-none text-muted-foreground tabular-nums">
+          {formatNumberField(charSpacing, 1000, 2)}
+        </span>
+      </label>
 
       <ToggleButton
         active={!!text.uppercase}
         label="Uppercase"
-        title="Uppercase — one-way: turning it off stops forcing case but never restores it"
+        title="Uppercase — turning it off restores the original case"
         onClick={() => commitTextProps({ uppercase: !text.uppercase })}
       >
         <CaseUpper aria-hidden />
@@ -559,7 +619,10 @@ function TextProps() {
  * Stage toolbar strip (build spec §3): document properties — size with unit
  * display and the canvas look (background, border) — plus the contextual
  * shape-property section while a single shape is selected and the text
- * properties while a single Text object is selected (§6). The §7 selection
+ * properties while a single Text object is selected (§6). While a shape or
+ * text object is selected the toolbar narrows to just that object's own
+ * properties — the document controls (size, units, canvas look) are hidden,
+ * since the object's own size is what's being edited. The §7 selection
  * controls (group, arrange, flip, lock) arrive with the selection build.
  */
 export function StageToolbar() {
@@ -569,22 +632,16 @@ export function StageToolbar() {
 
   return (
     <div className="flex h-10 shrink-0 items-center gap-3 border-b bg-background px-3">
-      <DocumentSize />
-      <UnitSwitcher />
-      <Separator orientation="vertical" className="mx-1 h-5" />
-      <CanvasProps />
-      {hasShape && (
+      {!hasShape && !hasText && (
         <>
+          <DocumentSize />
+          <UnitSwitcher />
           <Separator orientation="vertical" className="mx-1 h-5" />
-          <ShapeProps />
+          <CanvasProps />
         </>
       )}
-      {hasText && (
-        <>
-          <Separator orientation="vertical" className="mx-1 h-5" />
-          <TextProps />
-        </>
-      )}
+      {hasShape && <ShapeProps />}
+      {hasText && <TextProps />}
       <div className="flex-1" />
     </div>
   )

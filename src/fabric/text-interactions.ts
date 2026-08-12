@@ -12,10 +12,10 @@ import {
  * Text interaction wiring (build spec §6) — the canvas-level behaviors that
  * make a Textbox behave like the spec's Text object:
  *
- * - **Scale fold**: scaling a textbox folds scale into `fontSize` + `width`
- *   and resets scale to 1, so glyphs never raster-distort and the JSON
- *   document always carries scale 1. Verified against 7.4.0 in the spike
- *   (v7 removed `unscaledText`).
+ * - **Uniform scaling**: text scales like a shape (§5) — corner handles only
+ *   keep the aspect ratio (the stage's uniform-scaling handler owns it, so
+ *   a corner drag never distorts the glyphs); the first manual resize (scale
+ *   or wrap-width drag) hands the width to the user — auto-fit stops.
  * - **Text session**: one interaction boundary. Entering captures the
  *   pre-session text; exiting commits — everything typed is one undoable
  *   step (the undo build snapshots on `text:editing:exited`) — unless the
@@ -25,9 +25,10 @@ import {
  *   (native). Empty-on-exit restores "Text".
  * - **Auto-fit**: the box re-fits to its content at the end of every
  *   committed session while it has never been manually resized.
- * - **Uppercase**: one-way flag — forced while set, on every keystroke, via
+ * - **Uppercase**: two-way toggle — forced while set, on every keystroke, via
  *   a capture-phase input listener on the hidden textarea (before Fabric
- *   syncs the value into the object).
+ *   syncs the value into the object); the underlying mixed-case text is kept
+ *   as `uppercaseSource` so turning the flag off restores it.
  *
  * The pure operations are exported for tests; the wiring attaches them to
  * canvas events.
@@ -74,37 +75,15 @@ export function revertTextSession(obj: Textbox, state: TextSessionState): void {
 }
 
 /**
- * The scale fold (spike, verified against 7.4.0): on `object:scaling`, scale
- * folds into `width` + `fontSize` and scale resets to 1 — height re-measures
- * from the new width's wrapping, so a corner drag grows the font, never
- * distorts the glyphs. The first manual resize hands the width to the user:
- * auto-fit stops (§6). (The width-wrap handles fire `object:resizing`
- * instead — the wiring clears autoFit there too.)
- */
-export function foldTextScale(obj: Textbox): void {
-  const sx = Math.abs(obj.scaleX)
-  if (sx !== 1) {
-    obj.set({
-      width: obj.width * sx,
-      fontSize: Math.max(1, obj.fontSize * sx),
-    })
-  }
-  obj.set({ scaleX: 1, scaleY: 1 })
-  obj.set("autoFit", false)
-}
-
-/**
- * Wire the text behaviors to the canvas: the scale fold on `object:scaling`
- * and the session lifecycle on `text:editing:entered` / `text:editing:exited`.
+ * Wire the text behaviors to the canvas: the session lifecycle on
+ * `text:editing:entered` / `text:editing:exited`, and the auto-fit handoff on
+ * the width-wrap handles. (Scaling is the stage's uniform-scaling handler —
+ * stage-canvas owns the gesture for shapes and text alike.)
  */
 export function wireTextInteractions(
   canvas: Canvas,
   measure: TextMeasurer,
 ): void {
-  canvas.on("object:scaling", (event) => {
-    if (isTextObject(event.target)) foldTextScale(event.target)
-  })
-
   // The width-wrap handles (Fabric's `mr`/`ml`, the manual wrap width) fire
   // "resizing", not "scaling" — the width is applied by Fabric directly, so
   // only the auto-fit handoff is needed: from here on the user owns the
@@ -145,6 +124,12 @@ export function wireTextInteractions(
     const onInput = (event: Event) => {
       if (!obj.uppercase) return
       const ta = event.target as HTMLTextAreaElement
+      // The textarea holds the user's actual (pre-force) input — Fabric
+      // hasn't synced it into the object yet (capture phase). Keep it as the
+      // toggle's restore source, before the forcing below destroys the case.
+      // Synced even when the value needs no forcing, so keystrokes typed on
+      // top of already-uppercase text stay accounted for.
+      obj.uppercaseSource = ta.value
       const upper = ta.value.toUpperCase()
       if (ta.value === upper) return
       const start = ta.selectionStart

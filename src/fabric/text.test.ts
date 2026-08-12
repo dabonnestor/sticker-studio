@@ -20,7 +20,6 @@ import {
 import {
   captureTextSession,
   commitTextSession,
-  foldTextScale,
   revertTextSession,
 } from "@/fabric/text-interactions"
 
@@ -29,7 +28,7 @@ import {
  * not a shape: no shape of its own, no cut line (no clipPath). Auto-fit
  * measures the longest line with the injected measurer (the jsdom stub
  * measures 10 px per character, so widths are deterministic); the session
- * commits on exit, reverts on Escape; the scale fold keeps glyphs undistorted.
+ * commits on exit, reverts on Escape; scaling is uniform (stage-owned).
  */
 
 /** The test measurer — 10 px per character (vitest.setup stub). */
@@ -154,6 +153,12 @@ describe("applyTextProps — the nine properties (§6)", () => {
     expect(t.charSpacing).toBe(120)
   })
 
+  it("sets the text color — the object's fill", () => {
+    const t = createText()
+    applyTextProps(t, { fillColor: "#ff0000" })
+    expect(t.fill).toBe("#ff0000")
+  })
+
   it("marks the object dirty — the cached render is invalidated (regression)", () => {
     const t = createText()
     t.dirty = false
@@ -161,17 +166,37 @@ describe("applyTextProps — the nine properties (§6)", () => {
     expect(t.dirty).toBe(true)
   })
 
-  describe("uppercase — one-way flag", () => {
-    it("turning the flag on uppercases the stored string", () => {
+  describe("uppercase — two-way toggle", () => {
+    it("turning the flag on uppercases the stored string and saves the source", () => {
       const t = createText()
       t.set("text", "hello sticker")
       applyTextProps(t, { uppercase: true })
       expect(t.text).toBe("HELLO STICKER")
+      expect(t.uppercaseSource).toBe("hello sticker")
     })
 
-    it("turning the flag off never restores the original case", () => {
+    it("turning the flag off restores the original case", () => {
       const t = createText()
       t.set("text", "hello sticker")
+      applyTextProps(t, { uppercase: true })
+      applyTextProps(t, { uppercase: false })
+      expect(t.text).toBe("hello sticker")
+      expect(t.uppercaseSource).toBeUndefined()
+    })
+
+    it("turning the flag on again re-uppercases from the restored base", () => {
+      const t = createText()
+      t.set("text", "hello sticker")
+      applyTextProps(t, { uppercase: true })
+      applyTextProps(t, { uppercase: false })
+      applyTextProps(t, { uppercase: true })
+      expect(t.text).toBe("HELLO STICKER")
+      expect(t.uppercaseSource).toBe("hello sticker")
+    })
+
+    it("turning the flag off without a source leaves the text alone", () => {
+      const t = createText()
+      t.set("text", "HELLO STICKER") // already upper, never forced — no source
       applyTextProps(t, { uppercase: true })
       applyTextProps(t, { uppercase: false })
       expect(t.text).toBe("HELLO STICKER")
@@ -216,56 +241,6 @@ describe("applyTextProps — the nine properties (§6)", () => {
       applyTextProps(t, { fontFamily: "Lora" }, measure)
       expect(t.width).toBe(fitTextWidth(t.text, { ...STYLE, fontFamily: "Lora" }, 0, measure))
     })
-  })
-})
-
-describe("foldTextScale — the scale fold (§6, spike #4)", () => {
-  it("folds scale into width and fontSize, resetting scale to 1", () => {
-    const t = createText(measure)
-    const width = t.width
-    const fontSize = t.fontSize
-    t.set({ scaleX: 2, scaleY: 2 })
-    foldTextScale(t)
-    expect(t.width).toBeCloseTo(width * 2, 10)
-    expect(t.fontSize).toBeCloseTo(fontSize * 2, 10)
-    expect(t.scaleX).toBe(1)
-    expect(t.scaleY).toBe(1)
-  })
-
-  it("never distorts glyphs — the JSON document carries scale 1", async () => {
-    registerCustomProperties()
-    const t = createText(measure)
-    t.set({ scaleX: 1.5, scaleY: 1.5 })
-    foldTextScale(t)
-    const revived = (await util.enlivenObjects([t.toObject()]))[0] as Textbox
-    expect(revived.scaleX).toBe(1)
-    expect(revived.fontSize).toBeCloseTo(TEXT_DEFAULT_FONT_SIZE * 1.5, 10)
-    expect(revived.width).toBeCloseTo(42 * 1.5, 10)
-  })
-
-  it("a width-wrap drag (scale 1) hands the width to the user without folding", () => {
-    const t = createText(measure)
-    const width = t.width
-    const fontSize = t.fontSize
-    t.set({ scaleX: 1, scaleY: 1 })
-    foldTextScale(t)
-    expect(t.width).toBe(width)
-    expect(t.fontSize).toBe(fontSize)
-    expect(t.autoFit).toBe(false) // first manual resize stops auto-fit
-  })
-
-  it("the first manual resize stops auto-fit", () => {
-    const t = createText(measure)
-    t.set({ scaleX: 1.2, scaleY: 1.2 })
-    foldTextScale(t)
-    expect(t.autoFit).toBe(false)
-  })
-
-  it("floors the font size — a collapsing drag cannot destroy the box", () => {
-    const t = createText(measure)
-    t.set({ scaleX: 0.01, scaleY: 0.01 })
-    foldTextScale(t)
-    expect(t.fontSize).toBeGreaterThanOrEqual(1)
   })
 })
 
@@ -321,6 +296,7 @@ describe("round-trip (§6, ADR 0002)", () => {
     const t = createText(measure)
     t.set("text", "hello")
     t.uppercase = true
+    t.uppercaseSource = "hello"
     t.fontWeight = 700
 
     const revived = (await util.enlivenObjects([t.toObject()]))[0] as Textbox
@@ -329,6 +305,7 @@ describe("round-trip (§6, ADR 0002)", () => {
     expect(revived.locked).toBe(false)
     expect(revived.text).toBe("hello")
     expect(revived.uppercase).toBe(true)
+    expect(revived.uppercaseSource).toBe("hello")
     expect(revived.autoFit).toBe(true)
     expect(revived.fontFamily).toBe(TEXT_DEFAULT_FAMILY)
     expect(revived.fontSize).toBe(TEXT_DEFAULT_FONT_SIZE)

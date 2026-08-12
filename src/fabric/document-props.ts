@@ -26,10 +26,16 @@ declare module "fabric" {
   }
   interface Textbox {
     /**
-     * One-way uppercase flag (build spec §6) — the stored string is uppercased
-     * while set; toggling off stops forcing case but does not restore it.
+     * Two-way uppercase flag (build spec §6) — the stored string is uppercased
+     * while set; toggling off restores the mixed-case `uppercaseSource`.
      */
     uppercase: boolean
+    /**
+     * The mixed-case text the uppercase flag is forcing over (build spec §6) —
+     * saved when the flag turns on / on each keystroke while on, restored when
+     * the flag turns off. Undefined while the flag is off.
+     */
+    uppercaseSource?: string
     /**
      * Auto-fit flag (build spec §6) — the box width hugs its content until the
      * user first resizes it manually.

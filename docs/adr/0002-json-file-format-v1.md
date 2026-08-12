@@ -12,7 +12,7 @@ The design file is a thin envelope around Fabric's own serialization: `{ "format
 
 ## Object identity
 
-Every object carries three flat format fields, registered as Fabric custom properties so they round-trip: `id` (required — generated at creation, stable across save/load; the undo stack reselects by it), `name` (optional user label, Fabric-native), `locked` (boolean — the object cannot be moved, edited, or deleted while set). Text objects add two more registered properties (text-editing model, ticket #11): `uppercase` (boolean — the stored string is uppercased while set; toggling off stops forcing case but does not restore it) and `autoFit` (boolean — the box width hugs content until the user first resizes it).
+Every object carries three flat format fields, registered as Fabric custom properties so they round-trip: `id` (required — generated at creation, stable across save/load; the undo stack reselects by it), `name` (optional user label, Fabric-native), `locked` (boolean — the object cannot be moved, edited, or deleted while set). Text objects add three more registered properties (text-editing model, ticket #11): `uppercase` (boolean — the stored string is uppercased while set), `uppercaseSource` (string — the mixed-case original the flag forces over, kept so toggling off restores it) and `autoFit` (boolean — the box width hugs content until the user first resizes it).
 
 ## What survives import
 
@@ -25,5 +25,5 @@ Import validates structurally and rejects loudly: the `format` marker, `version`
 ## Consequences
 
 - `loadFromJSON` is the entire import path; a JSON import is an undoable step (ADR 0001), so the envelope is stripped and re-wrapped on the way in and out.
-- Custom properties (`id`, `name`, `locked`, and the text-only `uppercase`, `autoFit`) need registration via Fabric's `customProperties` mechanism at app startup — build-spec note.
+- Custom properties (`id`, `name`, `locked`, and the text-only `uppercase`, `uppercaseSource`, `autoFit`) need registration via Fabric's `customProperties` mechanism at app startup — build-spec note.
 - The display-side of units (inch vs pixel mode in the toolbar) is the unit-model ticket's territory; this ADR fixes only what the file stores.

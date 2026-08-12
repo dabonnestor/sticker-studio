@@ -9,13 +9,14 @@ import { Object as FabricObject, Textbox } from "fabric"
  * serialized; each class's own `constructor.customProperties` array is
  * appended on top. Textbox has no own array — it inherits (and would mutate)
  * the shared base array on push — so we assign a Textbox-own array to keep
- * `uppercase`/`autoFit` serializing only on text objects.
+ * `uppercase`/`uppercaseSource`/`autoFit` serializing only on text objects.
  */
 export function registerCustomProperties(): void {
   FabricObject.customProperties.push("id", "name", "locked")
   Textbox.customProperties = [
     ...FabricObject.customProperties,
     "uppercase",
+    "uppercaseSource",
     "autoFit",
   ]
 }
