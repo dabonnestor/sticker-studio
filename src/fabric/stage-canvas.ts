@@ -11,7 +11,9 @@ import {
 } from "fabric"
 
 import { stampDocumentProps } from "@/fabric/document-props"
+import { getTextMeasurer } from "@/fabric/fonts"
 import { DEFAULT_BORDER_COLOR, getShapeKind } from "@/fabric/shapes"
+import { wireTextInteractions } from "@/fabric/text-interactions"
 
 /**
  * Initial Document size — 600×600 px at the 96 DPI display basis. The canvas
@@ -298,6 +300,10 @@ export function createStageCanvas(
   canvas.on("object:modified", (event) => {
     if (event.target) gestureRatios.delete(event.target)
   })
+
+  // Text (§6): the scale fold (glyphs never distort) and the text session
+  // lifecycle (commit on exit, Escape reverts, auto-fit re-fits, uppercase).
+  wireTextInteractions(canvas, getTextMeasurer())
 
   return canvas
 }

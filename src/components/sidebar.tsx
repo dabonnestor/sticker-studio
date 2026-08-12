@@ -32,17 +32,23 @@ function SectionHeading({ children }: { children: string }) {
 
 /**
  * Left sidebar (build spec §3): Text, Shapes, and Image Upload sections.
- * Shape buttons add shapes centered on the canvas; Text arrives with the
- * text build, Image Upload with the selection build.
+ * Shape buttons add shapes centered on the canvas; Add Text drops a box at
+ * the viewport center, already in its text session (§6). Image Upload arrives
+ * with the selection build.
  */
 export function Sidebar() {
-  const { addShape } = useStage()
+  const { addShape, addText } = useStage()
 
   return (
     <aside className="flex w-56 shrink-0 flex-col gap-5 overflow-y-auto border-r bg-background p-3">
       <section className="flex flex-col gap-1.5">
         <SectionHeading>Text</SectionHeading>
-        <Button variant="outline" size="sm" className="justify-start gap-2">
+        <Button
+          variant="outline"
+          size="sm"
+          className="justify-start gap-2"
+          onClick={addText}
+        >
           <Type aria-hidden />
           Add Text
         </Button>

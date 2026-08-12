@@ -8,6 +8,7 @@ import {
 } from "react"
 import type { Canvas, Object as FabricObject } from "fabric"
 
+import { getTextMeasurer, preloadFonts } from "@/fabric/fonts"
 import {
   DOCUMENT_BACKGROUND_COLOR,
   DOCUMENT_BORDER_COLOR,
@@ -22,6 +23,12 @@ import {
   setFillColor,
 } from "@/fabric/shapes"
 import type { ShapeKind } from "@/fabric/shapes"
+import {
+  applyTextProps,
+  createText,
+  isTextObject,
+  type TextPropsPatch,
+} from "@/fabric/text"
 import type { Unit } from "@/lib/units"
 
 /** A shape-property commit against the selected shape (build spec §5). */
@@ -76,6 +83,14 @@ interface StageContextValue {
   addShape: (kind: ShapeKind) => void
   /** Apply a property patch to the selected shape (§5). */
   commitShapeProps: (patch: ShapePropsPatch) => void
+  /**
+   * Add a Text object at the viewport center, selected and already in its
+   * text session (§6). Fonts are awaited before the width is auto-fitted —
+   * measuring an unloaded face would fit against the fallback font.
+   */
+  addText: () => void
+  /** Apply a property patch to the selected Text object (§6). */
+  commitTextProps: (patch: TextPropsPatch) => void
 }
 
 const StageContext = createContext<StageContextValue | null>(null)
@@ -151,6 +166,25 @@ export function StageProvider({ children }: { children: ReactNode }) {
     [canvas],
   )
 
+  const addText = useCallback(() => {
+    if (!canvas) return
+    void (async () => {
+      // Auto-fit measures glyphs — only meaningful once every family is
+      // loaded (§12). The preload starts at startup, so this resolves fast.
+      await preloadFonts()
+      const obj = createText(getTextMeasurer())
+      canvas.add(obj)
+      canvas.viewportCenterObject(obj)
+      canvas.setActiveObject(obj)
+      // Enters edit pre-selected: the user types immediately. The placeholder
+      // "Text" is pre-selected so typing replaces it instead of inserting
+      // before it.
+      obj.enterEditing()
+      obj.selectAll()
+      canvas.requestRenderAll()
+    })()
+  }, [canvas])
+
   const commitCanvasProps = useCallback(
     (patch: CanvasPropsPatch) => {
       if (!canvas) return
@@ -183,6 +217,18 @@ export function StageProvider({ children }: { children: ReactNode }) {
     [canvas],
   )
 
+  const commitTextProps = useCallback(
+    (patch: TextPropsPatch) => {
+      if (!canvas) return
+      const obj = canvas.getActiveObjects()[0]
+      if (!isTextObject(obj)) return
+      applyTextProps(obj, patch, getTextMeasurer())
+      canvas.requestRenderAll()
+      setSelection(canvas.getActiveObjects())
+    },
+    [canvas],
+  )
+
   return (
     <StageContext.Provider
       value={{
@@ -197,6 +243,8 @@ export function StageProvider({ children }: { children: ReactNode }) {
         setUnit,
         addShape,
         commitShapeProps,
+        addText,
+        commitTextProps,
       }}
     >
       {children}

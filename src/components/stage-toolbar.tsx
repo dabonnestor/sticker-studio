@@ -1,5 +1,13 @@
-import { useEffect, useState } from "react"
-import { ChevronDown } from "lucide-react"
+import { useEffect, useState, type ReactNode } from "react"
+import {
+  AlignCenter,
+  AlignLeft,
+  AlignRight,
+  CaseUpper,
+  ChevronDown,
+  Italic,
+  Underline,
+} from "lucide-react"
 
 import { useStage } from "@/components/stage-context"
 import { Button } from "@/components/ui/button"
@@ -20,6 +28,11 @@ import {
   getBorderWidth,
   getShapeKind,
 } from "@/fabric/shapes"
+import {
+  FONT_FAMILIES,
+  getFontFamilySpec,
+  isTextObject,
+} from "@/fabric/text"
 import { commitPx, formatPx, type Unit } from "@/lib/units"
 import { cn } from "@/lib/utils"
 
@@ -284,14 +297,275 @@ function ShapeProps() {
 }
 
 /**
+ * Display formatting for NumberField — trailing zeros trimmed only after the
+ * decimal point, so an integer like 10 px never renders as "1" (the plain
+ * `0+$` pattern would strip the zero off an integer with no decimal).
+ */
+function formatNumberField(value: number, scale: number, decimals: number): string {
+  return (value / scale).toFixed(decimals).replace(/\.\d*?0+$/, "")
+}
+
+/**
+ * A small labeled numeric field, committing on Enter/blur — the UnitField
+ * pattern without unit conversion. `scale` converts the displayed value to
+ * the model value (letter spacing displays in em, stores thousandths — 1000
+ * × the em), `decimals` the display precision. Invalid input or a value under
+ * `min` reverts to the current value.
+ */
+function NumberField({
+  label,
+  value,
+  scale = 1,
+  decimals = 0,
+  min,
+  onCommit,
+  title,
+}: {
+  label: string
+  value: number
+  scale?: number
+  decimals?: number
+  min?: number
+  onCommit: (value: number) => void
+  title?: string
+}) {
+  const [text, setText] = useState(() => formatNumberField(value, scale, decimals))
+
+  useEffect(() => {
+    setText(formatNumberField(value, scale, decimals))
+  }, [value, scale, decimals])
+
+  const commit = () => {
+    const parsed = Number(text)
+    if (!Number.isFinite(parsed) || (min !== undefined && parsed < min)) {
+      setText(formatNumberField(value, scale, decimals))
+      return
+    }
+    onCommit(scale > 1 ? Math.round(parsed * scale) : parsed)
+  }
+
+  return (
+    <label className="flex items-center gap-1.5" title={title ?? label}>
+      <span className="text-[10px] leading-none text-muted-foreground">{label}</span>
+      <Input
+        className="h-7 w-14"
+        inputMode="decimal"
+        value={text}
+        onChange={(event) => setText(event.target.value)}
+        onBlur={commit}
+        onKeyDown={(event) => {
+          if (event.key === "Enter") event.currentTarget.blur()
+        }}
+      />
+    </label>
+  )
+}
+
+/** A small toggle button — outline, filled while active (§6 property toggles). */
+function ToggleButton({
+  active,
+  disabled,
+  label,
+  title,
+  onClick,
+  children,
+}: {
+  active: boolean
+  disabled?: boolean
+  label: string
+  title?: string
+  onClick: () => void
+  children: ReactNode
+}) {
+  return (
+    <Button
+      variant="outline"
+      size="icon-sm"
+      aria-label={label}
+      title={title ?? label}
+      aria-pressed={active}
+      disabled={disabled}
+      onClick={onClick}
+      className={cn(active && "bg-accent text-accent-foreground")}
+    >
+      {children}
+    </Button>
+  )
+}
+
+/** Alignment choices (§6) — the active one reads on the button group. */
+const ALIGNMENTS: { value: "left" | "center" | "right"; label: string; icon: typeof AlignLeft }[] = [
+  { value: "left", label: "Align left", icon: AlignLeft },
+  { value: "center", label: "Align center", icon: AlignCenter },
+  { value: "right", label: "Align right", icon: AlignRight },
+]
+
+/**
+ * Contextual text-property section (build spec §6), visible only while a
+ * single Text object is selected: the nine properties — family, size,
+ * weight/italic (real faces only — static 400-only families show no faux
+ * styling), underline, alignment, line height (1.2 default), letter spacing,
+ * and the one-way uppercase flag. Values display in px (size), em
+ * (letter spacing), or unitless (line height) and commit immediately.
+ */
+function TextProps() {
+  const { selection, commitTextProps } = useStage()
+  const text = selection.length === 1 ? selection[0] : null
+  if (!isTextObject(text)) return null
+
+  const familySpec = getFontFamilySpec(text.fontFamily) ?? FONT_FAMILIES[0]
+  const weight = Number(text.fontWeight) || 400
+  const italic = text.fontStyle === "italic"
+  const charSpacing = typeof text.charSpacing === "number" ? text.charSpacing : 0
+  const onlyWeight = familySpec.weights.length === 1
+
+  return (
+    <div className="flex items-center gap-3">
+      <label className="flex items-center gap-1.5">
+        <span className="text-[10px] leading-none text-muted-foreground">Font</span>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-7 max-w-32 gap-1 px-2 text-xs font-normal"
+              aria-label="Font family"
+            >
+              <span className="truncate">{text.fontFamily}</span>
+              <ChevronDown aria-hidden className="size-3 shrink-0" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="start">
+            <DropdownMenuLabel>Font family</DropdownMenuLabel>
+            <DropdownMenuSeparator />
+            {FONT_FAMILIES.map(({ family }) => (
+              <DropdownMenuItem
+                key={family}
+                onClick={() => commitTextProps({ fontFamily: family })}
+              >
+                {family}
+              </DropdownMenuItem>
+            ))}
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </label>
+
+      <NumberField
+        label="Size"
+        title="Font size (px)"
+        value={text.fontSize}
+        min={1}
+        onCommit={(fontSize) => commitTextProps({ fontSize })}
+      />
+
+      <label className="flex items-center gap-1.5">
+        <span className="text-[10px] leading-none text-muted-foreground">Weight</span>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-7 w-12 gap-1 px-2 text-xs font-normal"
+              disabled={onlyWeight}
+              aria-label="Font weight"
+              title={onlyWeight ? "This family ships a single weight" : "Font weight"}
+            >
+              {weight}
+              {!onlyWeight && <ChevronDown aria-hidden className="size-3 shrink-0" />}
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="start">
+            <DropdownMenuLabel>Weight — real faces only</DropdownMenuLabel>
+            <DropdownMenuSeparator />
+            {familySpec.weights.map((w) => (
+              <DropdownMenuItem
+                key={w}
+                onClick={() => commitTextProps({ fontWeight: w })}
+              >
+                {w}
+              </DropdownMenuItem>
+            ))}
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </label>
+
+      <div className="flex items-center gap-0.5">
+        <ToggleButton
+          active={italic}
+          disabled={!familySpec.italic}
+          label="Italic"
+          title={
+            familySpec.italic
+              ? "Italic"
+              : "This family ships no italic face — no faux italic"
+          }
+          onClick={() => commitTextProps({ fontStyle: italic ? "normal" : "italic" })}
+        >
+          <Italic aria-hidden />
+        </ToggleButton>
+        <ToggleButton
+          active={!!text.underline}
+          label="Underline"
+          onClick={() => commitTextProps({ underline: !text.underline })}
+        >
+          <Underline aria-hidden />
+        </ToggleButton>
+      </div>
+
+      <div className="flex items-center gap-0.5" role="group" aria-label="Text alignment">
+        {ALIGNMENTS.map(({ value, label, icon: Icon }) => (
+          <ToggleButton
+            key={value}
+            active={text.textAlign === value}
+            label={label}
+            onClick={() => commitTextProps({ textAlign: value })}
+          >
+            <Icon aria-hidden />
+          </ToggleButton>
+        ))}
+      </div>
+
+      <NumberField
+        label="LH"
+        title="Line height"
+        value={text.lineHeight}
+        decimals={2}
+        min={0.1}
+        onCommit={(lineHeight) => commitTextProps({ lineHeight })}
+      />
+
+      <NumberField
+        label="LS"
+        title="Letter spacing (em)"
+        value={charSpacing}
+        scale={1000}
+        decimals={2}
+        onCommit={(charSpacing) => commitTextProps({ charSpacing })}
+      />
+
+      <ToggleButton
+        active={!!text.uppercase}
+        label="Uppercase"
+        title="Uppercase — one-way: turning it off stops forcing case but never restores it"
+        onClick={() => commitTextProps({ uppercase: !text.uppercase })}
+      >
+        <CaseUpper aria-hidden />
+      </ToggleButton>
+    </div>
+  )
+}
+
+/**
  * Stage toolbar strip (build spec §3): document properties — size with unit
  * display and the canvas look (background, border) — plus the contextual
- * shape-property section while a single shape is selected. The §7 selection
+ * shape-property section while a single shape is selected and the text
+ * properties while a single Text object is selected (§6). The §7 selection
  * controls (group, arrange, flip, lock) arrive with the selection build.
  */
 export function StageToolbar() {
   const { selection } = useStage()
   const hasShape = selection.length === 1 && getShapeKind(selection[0]) !== null
+  const hasText = selection.length === 1 && isTextObject(selection[0])
 
   return (
     <div className="flex h-10 shrink-0 items-center gap-3 border-b bg-background px-3">
@@ -303,6 +577,12 @@ export function StageToolbar() {
         <>
           <Separator orientation="vertical" className="mx-1 h-5" />
           <ShapeProps />
+        </>
+      )}
+      {hasText && (
+        <>
+          <Separator orientation="vertical" className="mx-1 h-5" />
+          <TextProps />
         </>
       )}
       <div className="flex-1" />

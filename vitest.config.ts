@@ -6,9 +6,11 @@ export default mergeConfig(
   viteConfig,
   defineConfig({
     test: {
-      // Unit seams (units, shape geometry) are pure math — no DOM needed;
-      // Fabric's isomorphic build constructs objects fine in Node.
-      environment: "node",
+      // jsdom: Fabric's text classes measure glyphs through a real DOM
+      // document; the canvas 2D context is stubbed in vitest.setup.ts (jsdom
+      // ships no canvas). Object geometry and unit math stay DOM-free.
+      environment: "jsdom",
+      setupFiles: ["./vitest.setup.ts"],
     },
   }),
 )
