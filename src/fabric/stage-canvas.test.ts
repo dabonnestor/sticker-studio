@@ -1,4 +1,4 @@
-import type { Object as FabricObject, TMat2D } from "fabric"
+import { Point, type Object as FabricObject, type TMat2D } from "fabric"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
 
 import { createShape } from "@/fabric/shapes"
@@ -137,5 +137,70 @@ describe("uniform scaling", () => {
     expect(text._controlsVisibility.tr).toBeUndefined() // corners scale uniformly
     expect(text._controlsVisibility.ml).toBeUndefined() // wrap width (§6)
     expect(text._controlsVisibility.mr).toBeUndefined()
+  })
+})
+
+/**
+ * Corner-handle cursors (build spec §5): the aspect-ratio lock makes every
+ * corner drag a diagonal gesture, so the corners show a fixed diagonal
+ * cursor instead of Fabric's quadrant-based one — which reports `n`/`s`/`e`/
+ * `w` at the corners of narrow or wide boxes (auto-fitted text!), so text
+ * corners never matched the diagonal a squarish shape shows.
+ */
+describe("corner handle cursors", () => {
+  let canvas: ReturnType<typeof createStageCanvas>
+
+  beforeEach(() => {
+    canvas = createStageCanvas(
+      document.createElement("canvas"),
+      document.createElement("canvas"),
+    )
+  })
+
+  afterEach(async () => {
+    await canvas.dispose()
+  })
+
+  /**
+   * The cursor the canvas would show over the given control: the same path
+   * `_setCursorFromEvent` takes — findControl at the control's own point,
+   * then the control's cursorStyleHandler.
+   */
+  function cursorAt(obj: FabricObject, key: string) {
+    obj.setCoords()
+    const corner = obj.findControl(
+      new Point(obj.oCoords[key].x, obj.oCoords[key].y),
+    )
+    if (!corner) throw new Error(`no control at ${key}`)
+    return corner.control.cursorStyleHandler?.(
+      undefined as never,
+      corner.control,
+      obj,
+      corner.coord,
+    )
+  }
+
+  it("shape corners show the fixed diagonal cursors", () => {
+    const shape = createShape("square")
+    canvas.add(shape)
+    canvas.setActiveObject(shape)
+    expect(cursorAt(shape, "tl")).toBe("nwse-resize")
+    expect(cursorAt(shape, "br")).toBe("nwse-resize")
+    expect(cursorAt(shape, "tr")).toBe("nesw-resize")
+    expect(cursorAt(shape, "bl")).toBe("nesw-resize")
+  })
+
+  it("text corners match shapes — even on a wide auto-fitted box", () => {
+    const text = createText()
+    text.set({ width: 300, height: 28.8 })
+    canvas.add(text)
+    canvas.setActiveObject(text)
+    // Fabric's quadrant cursor would report `w-resize` here — the corner of
+    // a 300×29 box sits ~straight left of the center. The fixed diagonal
+    // keeps the same affordance shapes show.
+    expect(cursorAt(text, "tl")).toBe("nwse-resize")
+    expect(cursorAt(text, "br")).toBe("nwse-resize")
+    expect(cursorAt(text, "tr")).toBe("nesw-resize")
+    expect(cursorAt(text, "bl")).toBe("nesw-resize")
   })
 })

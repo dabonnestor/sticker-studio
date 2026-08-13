@@ -42,6 +42,22 @@ const ROTATE_HANDLE_SIZE = 20
 const ROTATE_ICON_COLOR = "#18181b"
 
 /**
+ * Corner-handle cursor per corner (build spec §5): the stage freezes the
+ * aspect ratio at the gesture start, so every corner drag moves along the
+ * corner's own diagonal. Fabric's quadrant-based corner cursor instead
+ * reports the pointer's direction from the object's center — a narrow or
+ * wide box (an auto-fitted text!) reads its corners as `n`/`s`/`e`/`w`,
+ * so text corners never match the diagonal a squarish shape shows. A fixed
+ * per-corner diagonal says "corner resize" for shapes and text alike.
+ */
+const CORNER_CURSORS: ReadonlyArray<readonly [string, string]> = [
+  ["tl", "nwse-resize"],
+  ["tr", "nesw-resize"],
+  ["bl", "nesw-resize"],
+  ["br", "nwse-resize"],
+]
+
+/**
  * The rotation-handle icon: lucide's `rotate-cw` (24×24 viewBox, ISC) — a
  * designer-tuned circular arrow. Rendered as a stroked Fabric Path so the
  * geometry is exact at any size.
@@ -255,6 +271,13 @@ export function createStageCanvas(
       obj.setControlsVisibility({ ml: false, mt: false, mr: false, mb: false })
     } else if (isTextObject(obj)) {
       obj.setControlsVisibility({ mt: false, mb: false })
+    }
+    // Corner handles show the fixed diagonal cursor (CORNER_CURSORS) instead
+    // of Fabric's quadrant-based one — shapes and text share it, so the
+    // affordance never varies with the object's aspect.
+    for (const [key, cursor] of CORNER_CURSORS) {
+      const control = obj.controls[key]
+      if (control) control.cursorStyleHandler = () => cursor
     }
   })
 
