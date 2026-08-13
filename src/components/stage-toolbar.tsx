@@ -38,6 +38,12 @@ import {
 import { Separator } from "@/components/ui/separator"
 import { Slider } from "@/components/ui/slider"
 import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip"
+import {
   DEFAULT_BORDER_COLOR,
   DEFAULT_FILL,
   getBorderWidth,
@@ -133,24 +139,49 @@ function ColorInput({
   onChange,
   disabled,
   ariaLabel,
-  title,
+  tooltip,
 }: {
   value: string
   onChange: (color: string) => void
   disabled?: boolean
   ariaLabel: string
-  title: string
+  tooltip: string
 }) {
   return (
-    <input
-      type="color"
-      className="h-7 w-9 cursor-pointer rounded-md bg-transparent p-0.5"
-      value={value}
-      disabled={disabled}
-      aria-label={ariaLabel}
-      title={title}
-      onChange={(event) => onChange(event.target.value)}
-    />
+    <TooltipLabel label={tooltip}>
+      <input
+        type="color"
+        className="h-7 w-9 cursor-pointer rounded-md bg-transparent p-0.5"
+        value={value}
+        disabled={disabled}
+        aria-label={ariaLabel}
+        onChange={(event) => onChange(event.target.value)}
+      />
+    </TooltipLabel>
+  )
+}
+
+/**
+ * A tooltip over a toolbar control, opening below the trigger — the toolbar
+ * hugs the top of the stage, so the default top-side tooltip would float up
+ * over the top bar. The trigger sits inside a wrapper span so the tooltip
+ * also fires over disabled controls: a disabled button or input swallows its
+ * own pointer events, which would silence the hint that explains the state.
+ */
+function TooltipLabel({
+  label,
+  children,
+}: {
+  label: string
+  children: ReactNode
+}) {
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <span>{children}</span>
+      </TooltipTrigger>
+      <TooltipContent side="bottom">{label}</TooltipContent>
+    </Tooltip>
   )
 }
 
@@ -246,7 +277,7 @@ function CanvasProps() {
         <ColorInput
           value={backgroundColor}
           ariaLabel="Canvas background color"
-          title="Canvas background color"
+          tooltip="Canvas background color"
           onChange={(backgroundColor) => commitCanvasProps({ backgroundColor })}
         />
       </label>
@@ -268,7 +299,7 @@ function CanvasProps() {
           value={borderColor}
           disabled={borderWidth === 0}
           ariaLabel="Border color"
-          title={borderWidth === 0 ? "Border is off — set a width first" : "Border color"}
+          tooltip={borderWidth === 0 ? "Border is off — set a width first" : "Border color"}
           onChange={(borderColor) => commitCanvasProps({ borderColor })}
         />
       </label>
@@ -295,7 +326,7 @@ function ShapeProps() {
         <ColorInput
           value={typeof shape.fill === "string" ? shape.fill : DEFAULT_FILL}
           ariaLabel="Shape background color"
-          title="Shape background color"
+          tooltip="Shape background color"
           onChange={(fillColor) => commitShapeProps({ fillColor })}
         />
       </label>
@@ -317,7 +348,7 @@ function ShapeProps() {
           value={typeof shape.stroke === "string" ? shape.stroke : DEFAULT_BORDER_COLOR}
           disabled={borderWidth === 0}
           ariaLabel="Border color"
-          title={borderWidth === 0 ? "Border is off — set a width first" : "Border color"}
+          tooltip={borderWidth === 0 ? "Border is off — set a width first" : "Border color"}
           onChange={(borderColor) => commitShapeProps({ borderColor })}
         />
       </label>
@@ -403,35 +434,36 @@ function FontSizeField({
   )
 }
 
-/** A small toggle button — outline, filled while active (§6 property toggles). */
+/** A small toggle button — outline, filled while active, tooltip on hover (§6 property toggles). */
 function ToggleButton({
   active,
   disabled,
   label,
-  title,
+  tooltip,
   onClick,
   children,
 }: {
   active: boolean
   disabled?: boolean
   label: string
-  title?: string
+  tooltip?: string
   onClick: () => void
   children: ReactNode
 }) {
   return (
-    <Button
-      variant="outline"
-      size="icon-sm"
-      aria-label={label}
-      title={title ?? label}
-      aria-pressed={active}
-      disabled={disabled}
-      onClick={onClick}
-      className={cn(active && "bg-accent text-accent-foreground")}
-    >
-      {children}
-    </Button>
+    <TooltipLabel label={tooltip ?? label}>
+      <Button
+        variant="outline"
+        size="icon-sm"
+        aria-label={label}
+        aria-pressed={active}
+        disabled={disabled}
+        onClick={onClick}
+        className={cn(active && "bg-accent text-accent-foreground")}
+      >
+        {children}
+      </Button>
+    </TooltipLabel>
   )
 }
 
@@ -507,19 +539,22 @@ function TextProps() {
       <label className="flex items-center gap-1.5">
         <span className="text-[10px] leading-none text-muted-foreground">Weight</span>
         <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-7 w-12 gap-1 px-2 text-xs font-normal"
-              disabled={onlyWeight}
-              aria-label="Font weight"
-              title={onlyWeight ? "This family ships a single weight" : "Font weight"}
-            >
-              {weight}
-              {!onlyWeight && <ChevronDown aria-hidden className="size-3 shrink-0" />}
-            </Button>
-          </DropdownMenuTrigger>
+          <TooltipLabel
+            label={onlyWeight ? "This family ships a single weight" : "Font weight"}
+          >
+            <DropdownMenuTrigger asChild>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-7 w-12 gap-1 px-2 text-xs font-normal"
+                disabled={onlyWeight}
+                aria-label="Font weight"
+              >
+                {weight}
+                {!onlyWeight && <ChevronDown aria-hidden className="size-3 shrink-0" />}
+              </Button>
+            </DropdownMenuTrigger>
+          </TooltipLabel>
           <DropdownMenuContent align="start">
             <DropdownMenuLabel>Weight</DropdownMenuLabel>
             <DropdownMenuSeparator />
@@ -540,7 +575,7 @@ function TextProps() {
         <ColorInput
           value={typeof text.fill === "string" ? text.fill : TEXT_FILL}
           ariaLabel="Text color"
-          title="Text color"
+          tooltip="Text color"
           onChange={(fillColor) => commitTextProps({ fillColor })}
         />
       </label>
@@ -550,11 +585,7 @@ function TextProps() {
           active={bold}
           disabled={boldWeight === undefined}
           label="Bold"
-          title={
-            boldWeight === undefined
-              ? "This family ships no bold face — no faux bold"
-              : "Bold — the family's bold weight"
-          }
+          tooltip={boldWeight === undefined ? "This family ships no bold face — no faux bold" : undefined}
           onClick={() => commitTextProps({ fontWeight: bold ? 400 : boldWeight })}
         >
           <Bold aria-hidden />
@@ -563,7 +594,7 @@ function TextProps() {
           active={italic}
           disabled={!familySpec.italic}
           label="Italic"
-          title={
+          tooltip={
             familySpec.italic
               ? "Italic"
               : "This family ships no italic face — no faux italic"
@@ -595,59 +626,64 @@ function TextProps() {
       </div>
 
       <Popover>
-        <PopoverTrigger asChild>
-          <Button
-            variant="outline"
-            size="icon-sm"
-            aria-label="Text spacing"
-            title="Line height and letter spacing"
-          >
-            <BetweenHorizontalStart aria-hidden />
-          </Button>
-        </PopoverTrigger>
+        <TooltipLabel label="Line height and letter spacing">
+          <PopoverTrigger asChild>
+            <Button
+              variant="outline"
+              size="icon-sm"
+              aria-label="Text spacing"
+            >
+              <BetweenHorizontalStart aria-hidden />
+            </Button>
+          </PopoverTrigger>
+        </TooltipLabel>
         <PopoverContent align="start" className="w-64">
           <div className="flex flex-col gap-3">
-            <label className="flex items-center gap-2" title="Line height">
-              <span className="w-16 text-[10px] leading-none text-muted-foreground">
-                Line height
-              </span>
-              <Slider
-                className="w-28"
-                min={LINE_HEIGHT_RANGE.min}
-                max={LINE_HEIGHT_RANGE.max}
-                step={LINE_HEIGHT_RANGE.step}
-                value={[text.lineHeight]}
-                onValueChange={([lineHeight]) =>
-                  // Round the float the slider may produce (0.05 steps) — the
-                  // model stores lineHeight as a plain number and JSON would
-                  // keep the residue.
-                  commitTextProps({ lineHeight: Math.round(lineHeight * 100) / 100 })
-                }
-                aria-label="Line height"
-              />
-              <span className="w-8 text-right text-[10px] leading-none text-muted-foreground tabular-nums">
-                {formatNumberField(text.lineHeight, 1, 2)}
-              </span>
-            </label>
-            <label className="flex items-center gap-2" title="Letter spacing (em)">
-              <span className="w-16 text-[10px] leading-none text-muted-foreground">
-                Letter spacing
-              </span>
-              <Slider
-                className="w-28"
-                min={LETTER_SPACING_RANGE.min}
-                max={LETTER_SPACING_RANGE.max}
-                step={LETTER_SPACING_RANGE.step}
-                value={[charSpacing / 1000]}
-                onValueChange={([em]) =>
-                  commitTextProps({ charSpacing: Math.round(em * 1000) })
-                }
-                aria-label="Letter spacing (em)"
-              />
-              <span className="w-8 text-right text-[10px] leading-none text-muted-foreground tabular-nums">
-                {formatNumberField(charSpacing, 1000, 2)}
-              </span>
-            </label>
+            <TooltipLabel label="Line height">
+              <label className="flex items-center gap-2">
+                <span className="w-16 text-[10px] leading-none text-muted-foreground">
+                  Line height
+                </span>
+                <Slider
+                  className="w-28"
+                  min={LINE_HEIGHT_RANGE.min}
+                  max={LINE_HEIGHT_RANGE.max}
+                  step={LINE_HEIGHT_RANGE.step}
+                  value={[text.lineHeight]}
+                  onValueChange={([lineHeight]) =>
+                    // Round the float the slider may produce (0.05 steps) — the
+                    // model stores lineHeight as a plain number and JSON would
+                    // keep the residue.
+                    commitTextProps({ lineHeight: Math.round(lineHeight * 100) / 100 })
+                  }
+                  aria-label="Line height"
+                />
+                <span className="w-8 text-right text-[10px] leading-none text-muted-foreground tabular-nums">
+                  {formatNumberField(text.lineHeight, 1, 2)}
+                </span>
+              </label>
+            </TooltipLabel>
+            <TooltipLabel label="Letter spacing (em)">
+              <label className="flex items-center gap-2">
+                <span className="w-16 text-[10px] leading-none text-muted-foreground">
+                  Letter spacing
+                </span>
+                <Slider
+                  className="w-28"
+                  min={LETTER_SPACING_RANGE.min}
+                  max={LETTER_SPACING_RANGE.max}
+                  step={LETTER_SPACING_RANGE.step}
+                  value={[charSpacing / 1000]}
+                  onValueChange={([em]) =>
+                    commitTextProps({ charSpacing: Math.round(em * 1000) })
+                  }
+                  aria-label="Letter spacing (em)"
+                />
+                <span className="w-8 text-right text-[10px] leading-none text-muted-foreground tabular-nums">
+                  {formatNumberField(charSpacing, 1000, 2)}
+                </span>
+              </label>
+            </TooltipLabel>
           </div>
         </PopoverContent>
       </Popover>
@@ -655,7 +691,6 @@ function TextProps() {
       <ToggleButton
         active={!!text.uppercase}
         label="Uppercase"
-        title="Uppercase — turning it off restores the original case"
         onClick={() => commitTextProps({ uppercase: !text.uppercase })}
       >
         <CaseUpper aria-hidden />
@@ -680,18 +715,20 @@ export function StageToolbar() {
   const hasText = selection.length === 1 && isTextObject(selection[0])
 
   return (
-    <div className="flex h-10 shrink-0 items-center gap-3 border-b bg-background px-3">
-      {!hasShape && !hasText && (
-        <>
-          <DocumentSize />
-          <UnitSwitcher />
-          <Separator orientation="vertical" className="mx-1 h-5" />
-          <CanvasProps />
-        </>
-      )}
-      {hasShape && <ShapeProps />}
-      {hasText && <TextProps />}
-      <div className="flex-1" />
-    </div>
+    <TooltipProvider>
+      <div className="flex h-10 shrink-0 items-center gap-3 border-b bg-background px-3">
+        {!hasShape && !hasText && (
+          <>
+            <DocumentSize />
+            <UnitSwitcher />
+            <Separator orientation="vertical" className="mx-1 h-5" />
+            <CanvasProps />
+          </>
+        )}
+        {hasShape && <ShapeProps />}
+        {hasText && <TextProps />}
+        <div className="flex-1" />
+      </div>
+    </TooltipProvider>
   )
 }
