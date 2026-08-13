@@ -23,8 +23,10 @@ import {
  *   click-away / Ctrl+Enter commit; Escape reverts; in-session Ctrl+Z stays
  *   field-local (Fabric never forwards it); Enter inserts a newline
  *   (native). Empty-on-exit restores "Text".
- * - **Auto-fit**: the box re-fits to its content at the end of every
- *   committed session while it has never been manually resized.
+ * - **Auto-fit / auto width**: the box hugs its content at creation, live
+ *   on every keystroke while typing — no fixed-width wrap restriction — and
+ *   again at the end of every committed session, while it has never been
+ *   manually resized.
  * - **Uppercase**: two-way toggle — forced while set, on every keystroke, via
  *   a capture-phase input listener on the hidden textarea (before Fabric
  *   syncs the value into the object); the underlying mixed-case text is kept
@@ -138,11 +140,22 @@ export function wireTextInteractions(
       ta.setSelectionRange(Math.min(start, upper.length), Math.min(end, upper.length))
     }
 
+    // Auto width while typing (§6): Fabric fires `text:changed` on the canvas
+    // after every keystroke syncs into the object — re-fit the box there, so
+    // it grows (and shrinks) with the content instead of wrapping at the
+    // creation width. Once a manual resize has turned autoFit off the user
+    // owns the width, and the re-fit stops.
+    const onTextChanged = () => {
+      if (obj.autoFit) fitToContent(obj, measure)
+    }
+    canvas.on("text:changed", onTextChanged)
+
     textarea.addEventListener("keydown", onKeyDown, true)
     textarea.addEventListener("input", onInput, true)
     state.cleanup = () => {
       textarea.removeEventListener("keydown", onKeyDown, true)
       textarea.removeEventListener("input", onInput, true)
+      canvas.off("text:changed", onTextChanged)
     }
   })
 

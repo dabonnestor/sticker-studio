@@ -13,6 +13,8 @@ import {
   applyTextProps,
   createText,
   fitTextWidth,
+  fitToContent,
+  getBoldWeight,
   isTextObject,
   type TextMeasurer,
   type TextMeasureStyle,
@@ -67,6 +69,24 @@ describe("FONT_FAMILIES — the ten bundled families (§12)", () => {
   })
 })
 
+describe("getBoldWeight — the Bold toggle's weight (§6)", () => {
+  it("resolves every multi-weight family to 700 — the weight nearest CSS bold", () => {
+    for (const { family } of FONT_FAMILIES.filter((s) => s.weights.length > 1)) {
+      expect(getBoldWeight(family)).toBe(700)
+    }
+  })
+
+  it("is undefined for static 400-only families — no faux bold", () => {
+    for (const family of ["Bebas Neue", "Anton", "Pacifico"]) {
+      expect(getBoldWeight(family)).toBeUndefined()
+    }
+  })
+
+  it("is undefined for families outside the bundle", () => {
+    expect(getBoldWeight("Comic Sans")).toBeUndefined()
+  })
+})
+
 describe("createText — a new text box (§6)", () => {
   it("is a Textbox with the defaults: 'Text', Inter 24, line height 1.2", () => {
     const t = createText()
@@ -114,6 +134,16 @@ describe("fitTextWidth — auto-fit measures the longest line (§6)", () => {
 
   it("is empty-text safe", () => {
     expect(fitTextWidth("", STYLE, 0, measure)).toBe(2) // 0 + 2
+  })
+
+  it("re-fitting never moves the box — the top edge is pinned (regression)", () => {
+    const t = createText(measure) // "Text" → 42 wide
+    t.set({ left: 100, top: 50 })
+    t.set("text", "hello world") // wider than 42 → wraps, box grows taller
+    t.setCoords()
+    const topBefore = t.getCoords()[0].y
+    fitToContent(t, measure) // shrinks the height back — top must not pivot
+    expect(t.getCoords()[0].y).toBe(topBefore)
   })
 
   it("folds letter spacing into the width — a gap per character", () => {

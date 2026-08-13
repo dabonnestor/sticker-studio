@@ -8,12 +8,14 @@ import { stampDocumentProps } from "@/fabric/document-props"
  * Styling is per-textbox (no per-run rich text); the toolbar edits the nine
  * properties directly on the object.
  *
- * Auto-fit (§6): the box hugs its content at creation and re-fits at the end
- * of each text session while it has never been manually resized. Fabric v7
- * has no auto-width mode — an unset width collapses to `dynamicMinWidth`
- * (~2 px), so the box always carries an explicit width measured with
- * `ctx.measureText` on the longest line. The measurer is injected (browser
- * context at runtime, a stub in tests) so the model stays pure.
+ * Auto-fit (§6): the box hugs its content at creation, live while typing
+ * (auto width — the box grows with the text, never a fixed-width wrap
+ * restriction), and re-fits at the end of each text session while it has
+ * never been manually resized. Fabric v7 has no auto-width mode — an unset
+ * width collapses to `dynamicMinWidth` (~2 px), so the box always carries an
+ * explicit width measured with `ctx.measureText` on the longest line. The
+ * measurer is injected (browser context at runtime, a stub in tests) so the
+ * model stays pure.
  */
 
 /** Default text content — also what an emptied session restores to (§6). */
@@ -109,6 +111,18 @@ export function getFontFamilySpec(family: string): FontFamilySpec | undefined {
 }
 
 /**
+ * The family's bold weight for the Bold toggle — the weight nearest 700
+ * among its 500+ faces (CSS bold), or undefined when the family ships no
+ * bold face (the static 400-only families — no faux bold, like no faux
+ * italic). All ten multi-weight families land on 700.
+ */
+export function getBoldWeight(family: string): number | undefined {
+  const bolds = getFontFamilySpec(family)?.weights.filter((w) => w >= 500) ?? []
+  if (bolds.length === 0) return undefined
+  return bolds.reduce((best, w) => (Math.abs(w - 700) < Math.abs(best - 700) ? w : best))
+}
+
+/**
  * Create a Text object: "Text" in Inter 24 px, near-black, the document
  * identity stamped (id, locked=false, ADR 0002), auto-fit on. When a measurer
  * is given (the app passes one after the fonts are ready), the width is
@@ -154,11 +168,17 @@ export function fitTextWidth(
 
 /**
  * Fit the box width to its content — the auto-fit operation, used at
- * creation and at the end of every text session while `autoFit` is set.
- * Height re-measures from the new width's wrapping (Fabric's `set` re-inits
- * dimensions for text layout properties).
+ * creation, live while typing, and at the end of every text session while
+ * `autoFit` is set. Height re-measures from the new width's wrapping
+ * (Fabric's `set` re-inits dimensions for text layout properties).
+ *
+ * The top edge is pinned across the re-measure: objects anchor at their
+ * center (Fabric's default), so a changed height would pivot the box around
+ * the center and walk the text down — the same reason Fabric's own
+ * `updateFromTextArea` preserves the top-anchored position on input.
  */
 export function fitToContent(obj: Textbox, measure: TextMeasurer): void {
+  const top = obj.getPositionByOrigin(obj.originX, "top")
   obj.set(
     "width",
     fitTextWidth(
@@ -173,6 +193,8 @@ export function fitToContent(obj: Textbox, measure: TextMeasurer): void {
       measure,
     ),
   )
+  obj.setPositionByOrigin(top, obj.originX, "top")
+  obj.setCoords()
 }
 
 /**

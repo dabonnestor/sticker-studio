@@ -3,6 +3,8 @@ import {
   AlignCenter,
   AlignLeft,
   AlignRight,
+  BetweenHorizontalStart,
+  Bold,
   CaseUpper,
   ChevronDown,
   Italic,
@@ -28,6 +30,11 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { Input } from "@/components/ui/input"
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover"
 import { Separator } from "@/components/ui/separator"
 import { Slider } from "@/components/ui/slider"
 import {
@@ -39,6 +46,7 @@ import {
 import {
   FONT_FAMILIES,
   TEXT_FILL,
+  getBoldWeight,
   getFontFamilySpec,
   isTextObject,
 } from "@/fabric/text"
@@ -437,10 +445,13 @@ const ALIGNMENTS: { value: "left" | "center" | "right"; label: string; icon: typ
 /**
  * Contextual text-property section (build spec §6), visible only while a
  * single Text object is selected: the ten properties — family, size, color,
- * weight/italic (real faces only — static 400-only families show no faux
- * styling), underline, alignment, line height (1.2 default), letter spacing,
- * and the two-way uppercase toggle. Values display in px (size), em
- * (letter spacing), or unitless (line height) and commit immediately.
+ * weight (a numeric dropdown, plus a Bold toggle that reads active at 500+
+ * and writes the family's bold weight / back to 400), italic (real faces
+ * only — static 400-only families show no faux styling), underline,
+ * alignment, line height (1.2 default) and letter spacing (both behind the
+ * spacing popover button), and the two-way uppercase toggle. Values display
+ * in px (size), em (letter spacing), or unitless (line height) and commit
+ * immediately.
  */
 function TextProps() {
   const { selection, commitTextProps } = useStage()
@@ -452,6 +463,10 @@ function TextProps() {
   const italic = text.fontStyle === "italic"
   const charSpacing = typeof text.charSpacing === "number" ? text.charSpacing : 0
   const onlyWeight = familySpec.weights.length === 1
+  // Bold reads the weight: active at 500 and above (the CSS-bold range), and
+  // the toggle writes the family's bold weight or back to regular 400.
+  const boldWeight = getBoldWeight(text.fontFamily)
+  const bold = weight >= 500
 
   return (
     <div className="flex items-center gap-3">
@@ -532,6 +547,19 @@ function TextProps() {
 
       <div className="flex items-center gap-0.5">
         <ToggleButton
+          active={bold}
+          disabled={boldWeight === undefined}
+          label="Bold"
+          title={
+            boldWeight === undefined
+              ? "This family ships no bold face — no faux bold"
+              : "Bold — the family's bold weight"
+          }
+          onClick={() => commitTextProps({ fontWeight: bold ? 400 : boldWeight })}
+        >
+          <Bold aria-hidden />
+        </ToggleButton>
+        <ToggleButton
           active={italic}
           disabled={!familySpec.italic}
           label="Italic"
@@ -566,42 +594,63 @@ function TextProps() {
         ))}
       </div>
 
-      <label className="flex items-center gap-2" title="Line height">
-        <span className="text-[10px] leading-none text-muted-foreground">LH</span>
-        <Slider
-          className="w-28"
-          min={LINE_HEIGHT_RANGE.min}
-          max={LINE_HEIGHT_RANGE.max}
-          step={LINE_HEIGHT_RANGE.step}
-          value={[text.lineHeight]}
-          onValueChange={([lineHeight]) =>
-            // Round the float the slider may produce (0.05 steps) — the model
-            // stores lineHeight as a plain number and JSON would keep the
-            // residue.
-            commitTextProps({ lineHeight: Math.round(lineHeight * 100) / 100 })
-          }
-          aria-label="Line height"
-        />
-        <span className="w-8 text-right text-[10px] leading-none text-muted-foreground tabular-nums">
-          {formatNumberField(text.lineHeight, 1, 2)}
-        </span>
-      </label>
-
-      <label className="flex items-center gap-2" title="Letter spacing (em)">
-        <span className="text-[10px] leading-none text-muted-foreground">LS</span>
-        <Slider
-          className="w-28"
-          min={LETTER_SPACING_RANGE.min}
-          max={LETTER_SPACING_RANGE.max}
-          step={LETTER_SPACING_RANGE.step}
-          value={[charSpacing / 1000]}
-          onValueChange={([em]) => commitTextProps({ charSpacing: Math.round(em * 1000) })}
-          aria-label="Letter spacing (em)"
-        />
-        <span className="w-8 text-right text-[10px] leading-none text-muted-foreground tabular-nums">
-          {formatNumberField(charSpacing, 1000, 2)}
-        </span>
-      </label>
+      <Popover>
+        <PopoverTrigger asChild>
+          <Button
+            variant="outline"
+            size="icon-sm"
+            aria-label="Text spacing"
+            title="Line height and letter spacing"
+          >
+            <BetweenHorizontalStart aria-hidden />
+          </Button>
+        </PopoverTrigger>
+        <PopoverContent align="start" className="w-64">
+          <div className="flex flex-col gap-3">
+            <label className="flex items-center gap-2" title="Line height">
+              <span className="w-16 text-[10px] leading-none text-muted-foreground">
+                Line height
+              </span>
+              <Slider
+                className="w-28"
+                min={LINE_HEIGHT_RANGE.min}
+                max={LINE_HEIGHT_RANGE.max}
+                step={LINE_HEIGHT_RANGE.step}
+                value={[text.lineHeight]}
+                onValueChange={([lineHeight]) =>
+                  // Round the float the slider may produce (0.05 steps) — the
+                  // model stores lineHeight as a plain number and JSON would
+                  // keep the residue.
+                  commitTextProps({ lineHeight: Math.round(lineHeight * 100) / 100 })
+                }
+                aria-label="Line height"
+              />
+              <span className="w-8 text-right text-[10px] leading-none text-muted-foreground tabular-nums">
+                {formatNumberField(text.lineHeight, 1, 2)}
+              </span>
+            </label>
+            <label className="flex items-center gap-2" title="Letter spacing (em)">
+              <span className="w-16 text-[10px] leading-none text-muted-foreground">
+                Letter spacing
+              </span>
+              <Slider
+                className="w-28"
+                min={LETTER_SPACING_RANGE.min}
+                max={LETTER_SPACING_RANGE.max}
+                step={LETTER_SPACING_RANGE.step}
+                value={[charSpacing / 1000]}
+                onValueChange={([em]) =>
+                  commitTextProps({ charSpacing: Math.round(em * 1000) })
+                }
+                aria-label="Letter spacing (em)"
+              />
+              <span className="w-8 text-right text-[10px] leading-none text-muted-foreground tabular-nums">
+                {formatNumberField(charSpacing, 1000, 2)}
+              </span>
+            </label>
+          </div>
+        </PopoverContent>
+      </Popover>
 
       <ToggleButton
         active={!!text.uppercase}

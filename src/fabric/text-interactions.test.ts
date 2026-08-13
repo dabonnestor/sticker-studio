@@ -101,6 +101,51 @@ describe("wireTextInteractions — session lifecycle", () => {
     )
   })
 
+  it("auto width while typing: the box re-fits on every keystroke, mid-session", () => {
+    edit()
+    type("hello")
+    // 5 chars × 10 + 2 — grown live, before the session ever exits.
+    expect(textbox.width).toBe(52)
+    type("hello world")
+    expect(textbox.width).toBe(112) // 11 × 10 + 2
+    expect(textbox.isEditing).toBe(true) // still typing — no exit re-fit needed
+  })
+
+  it("typing never moves the text down — the top edge stays put (regression)", () => {
+    edit()
+    const topBefore = textbox.getCoords()[0].y
+    // Mid-keystroke the text wraps taller at the old width, then the live
+    // re-fit shrinks it back — without pinning the top edge, the center
+    // anchor would pivot the box down by half the height change.
+    type("hello world")
+    type("a\nlonger")
+    expect(textbox.getCoords()[0].y).toBe(topBefore)
+  })
+
+  it("auto width shrinks live when the longest line shortens", () => {
+    edit()
+    type("hello world")
+    expect(textbox.width).toBe(112)
+    type("hi")
+    expect(textbox.width).toBe(22)
+  })
+
+  it("a newline fits to the longest line, not the first", () => {
+    edit()
+    type("a\nlonger")
+    expect(textbox.width).toBe(62) // "longer" → 6 × 10 + 2
+  })
+
+  it("typing stops re-fitting once the user owns the width (autoFit off)", () => {
+    // The width-wrap drag handed the width over — live re-fit must not fight
+    // the manual width, exactly like the exit re-fit.
+    canvas.fire("object:resizing", { target: textbox } as never)
+    expect(textbox.autoFit).toBe(false)
+    edit()
+    type("hello world")
+    expect(textbox.width).toBe(42) // still the creation width
+  })
+
   it("plain Enter is a newline, not a commit", () => {
     edit()
     type("a\nb")
