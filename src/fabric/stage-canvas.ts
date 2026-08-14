@@ -58,6 +58,28 @@ const CORNER_CURSORS: ReadonlyArray<readonly [string, string]> = [
 ]
 
 /**
+ * Point-in-quadrilateral test — the selection box is a rotated rectangle,
+ * so an axis-aligned rect test would misfire on angled objects. The four
+ * bounding-box corners (`oCoords` tl/tr/br/bl) keep their cyclic order
+ * under rotation; the point is inside the convex quad when every edge's
+ * cross product carries the same sign (inclusive, so a point exactly on
+ * the border counts). The same polygon test Fabric's `shouldActivate` runs
+ * for its own handle hit areas.
+ */
+function isPointInQuad(
+  point: Point,
+  tl: { x: number; y: number },
+  tr: { x: number; y: number },
+  br: { x: number; y: number },
+  bl: { x: number; y: number },
+): boolean {
+  const cross = (a: { x: number; y: number }, b: { x: number; y: number }) =>
+    (b.x - a.x) * (point.y - a.y) - (b.y - a.y) * (point.x - a.x)
+  const signs = [cross(tl, tr), cross(tr, br), cross(br, bl), cross(bl, tl)]
+  return signs.every((s) => s >= 0) || signs.every((s) => s <= 0)
+}
+
+/**
  * The rotation-handle icon: lucide's `rotate-cw` (24×24 viewBox, ISC) — a
  * designer-tuned circular arrow. Rendered as a stroked Fabric Path so the
  * geometry is exact at any size.
@@ -215,7 +237,7 @@ function offsetContext(
  * `drawControls` exactly once per render (`controlsAboveOverlay` and
  * `skipControlsDrawing` stay unset) — the mirror hooks that call.
  */
-class StageCanvas extends Canvas {
+export class StageCanvas extends Canvas {
   private readonly marqueeOverlay: HTMLCanvasElement
 
   /** True while the marquee painted on the overlay in the current frame. */
@@ -357,8 +379,9 @@ class StageCanvas extends Canvas {
    * queued render runs. Hit-testing never changed — `findControl` is
    * unbounded client-coordinate math — so the mirrored handles stay
    * draggable past the Document edge through the existing workspace press
-   * routing. Hover cursor feedback over them is lost (Fabric sets the cursor
-   * on the upper canvas element, which the pointer is not over) — accepted.
+   * routing. The workspace's hover cursor over them is the canvas's own
+   * answer — `getWorkspaceCursor` — since Fabric's cursor updates stop at
+   * the upper-canvas edge, which the pointer past the Document is not over.
    */
   override drawControls(_ctx: CanvasRenderingContext2D): void {
     const activeObject = this._activeObject
@@ -374,6 +397,47 @@ class StageCanvas extends Canvas {
     // translate, so the injection restores it.
     ctx.translate(offset.x, offset.y)
     activeObject._renderControls(offsetContext(ctx, offset))
+  }
+
+  /**
+   * The cursor the workspace should show for the pointer at a client
+   * position (build spec §5, §7 extension). Fabric's own cursor updates
+   * (`_setCursorFromEvent`) stop at the upper-canvas edge — the pointer
+   * past the Document is not over it — so the mirrored chrome hanging off
+   * the Document would read `auto`. Hit-testing is Fabric's own
+   * `findControl` (unbounded DOM math, the same path the in-document
+   * cursor takes): a mirrored control answers with its own
+   * `cursorStyleHandler` — the fixed CORNER_CURSORS diagonals, the
+   * rotation crosshair, the text wrap arrows — and the selection box's
+   * interior (the visible border's box) shows the object's hoverCursor,
+   * the "move" affordance the object itself gives in-document. Returns ""
+   * when nothing mirrored is under the pointer, so the workspace keeps
+   * its default cursor. The viewport point is the client point relative
+   * to the upper canvas's rect — the same CSS-space mapping the mirror
+   * paints with.
+   */
+  getWorkspaceCursor(clientX: number, clientY: number): string {
+    const active = this._activeObject
+    if (!active || this.isMarqueeActive()) return ""
+    const rect = this.upperCanvasEl.getBoundingClientRect()
+    const viewportPoint = new Point(clientX - rect.left, clientY - rect.top)
+    const corner = active.findControl(viewportPoint)
+    if (corner) {
+      // No standard cursor handler reads eventData — the rotation and
+      // scale handlers key off the control/object, and the corner handlers
+      // ignore it entirely (CORNER_CURSORS).
+      return corner.control.cursorStyleHandler(
+        undefined as never,
+        corner.control,
+        active,
+        corner.coord,
+      )
+    }
+    const { tl, tr, br, bl } = active.oCoords
+    if (tl && tr && br && bl && isPointInQuad(viewportPoint, tl, tr, br, bl)) {
+      return active.hoverCursor || this.hoverCursor
+    }
+    return ""
   }
 }
 

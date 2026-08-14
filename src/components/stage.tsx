@@ -1,8 +1,7 @@
 import { useEffect, useRef, type MouseEvent } from "react"
-import type { Canvas } from "fabric"
 
 import { useStage } from "@/components/stage-context"
-import { createStageCanvas } from "@/fabric/stage-canvas"
+import { createStageCanvas, StageCanvas } from "@/fabric/stage-canvas"
 import { exposeStageCanvas } from "@/lib/dev"
 
 /** The previous canvas's async dispose, awaited before re-creating (§14). */
@@ -25,7 +24,7 @@ export function Stage() {
     const marqueeOverlay = marqueeOverlayRef.current
     if (!element || !marqueeOverlay) return
     let cancelled = false
-    let canvas: Canvas | null = null
+    let canvas: ReturnType<typeof createStageCanvas> | null = null
 
     const mount = async () => {
       // `dispose` is async in Fabric 7 (build spec §14): when its destroy is
@@ -79,10 +78,33 @@ export function Stage() {
     )
   }
 
+  /**
+   * The workspace's hover cursor over the mirrored selection chrome (§7
+   * extension): Fabric's own cursor updates stop at the upper-canvas edge —
+   * the pointer past the Document is not over it — so the mirrored corner
+   * handles and selection box hanging off the Document would read `auto`.
+   * The canvas hit-tests the pointer against the active selection and
+   * returns the cursor to show; the workspace container carries it, since
+   * the pointer is over the workspace, not the canvas. Over the Document
+   * itself the upper canvas's own cursor (Fabric's) still wins, so the
+   * style set here only ever shows past the edge. The "" reset keeps the
+   * workspace's default cursor everywhere else.
+   */
+  const handleMouseMove = (event: MouseEvent<HTMLDivElement>) => {
+    // The context types the canvas as the base `Canvas`; the workspace
+    // cursor is a StageCanvas-only affordance — the mirror's stage.
+    if (!(canvas instanceof StageCanvas)) return
+    event.currentTarget.style.cursor = canvas.getWorkspaceCursor(
+      event.clientX,
+      event.clientY,
+    )
+  }
+
   return (
     <div
       className="min-h-0 flex-1 overflow-auto bg-zinc-200"
       onMouseDown={handleMouseDown}
+      onMouseMove={handleMouseMove}
     >
       <div className="relative flex min-h-full min-w-full items-center justify-center p-6">
         <div className="bg-white shadow-md" ref={wrapperRef}>

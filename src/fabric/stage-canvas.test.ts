@@ -433,3 +433,100 @@ describe("selection controls mirror", () => {
     expect(lastClear).toBeLessThan(lastFill) // no clear after the marquee
   })
 })
+
+/**
+ * Mirrored-selection cursor (§7 extension): Fabric's cursor updates stop at
+ * the upper-canvas edge — the pointer past the Document is not over it — so
+ * the mirrored chrome would read `auto`. The canvas answers the cursor the
+ * workspace should show with the same path Fabric's `_setCursorFromEvent`
+ * runs in-document: `findControl` at the pointer's viewport point, then the
+ * control's own `cursorStyleHandler`. jsdom's disconnected canvases report
+ * a zero rect, so client coordinates here are viewport coordinates.
+ */
+describe("mirrored selection cursor", () => {
+  let canvas: ReturnType<typeof createStageCanvas>
+
+  beforeEach(() => {
+    canvas = createStageCanvas(
+      document.createElement("canvas"),
+      document.createElement("canvas"),
+    )
+  })
+
+  afterEach(async () => {
+    await canvas.dispose()
+  })
+
+  /** The cursor the workspace shows for the client point. */
+  function cursorAt(clientX: number, clientY: number) {
+    return canvas.getWorkspaceCursor(clientX, clientY)
+  }
+
+  it("shows the fixed diagonal cursors on corner handles past the Document edge", () => {
+    const shape = createShape("square")
+    shape.set({ left: -60, top: -60 }) // hangs off the top-left corner
+    canvas.add(shape)
+    canvas.setActiveObject(shape)
+    shape.setCoords()
+    // The controls sit at negative viewport coords — past the Document edge,
+    // where Fabric's own cursor updates can no longer reach the pointer.
+    expect(shape.oCoords.tl.x).toBeLessThan(0)
+    expect(cursorAt(shape.oCoords.tl.x, shape.oCoords.tl.y)).toBe("nwse-resize")
+    expect(cursorAt(shape.oCoords.br.x, shape.oCoords.br.y)).toBe("nwse-resize")
+    expect(cursorAt(shape.oCoords.tr.x, shape.oCoords.tr.y)).toBe("nesw-resize")
+    expect(cursorAt(shape.oCoords.bl.x, shape.oCoords.bl.y)).toBe("nesw-resize")
+  })
+
+  it("shows the rotation cursor on the mirrored rotation handle", () => {
+    const shape = createShape("square")
+    shape.set({ left: -60, top: -60 })
+    canvas.add(shape)
+    canvas.setActiveObject(shape)
+    shape.setCoords()
+    expect(cursorAt(shape.oCoords.mtr.x, shape.oCoords.mtr.y)).toBe("crosshair")
+  })
+
+  it("shows the object's hover cursor over the mirrored selection box", () => {
+    const shape = createShape("square")
+    shape.set({ left: 100, top: 100 })
+    canvas.add(shape)
+    canvas.setActiveObject(shape)
+    shape.setCoords()
+    // The box interior — off every corner's hit area — is the object's own
+    // hover affordance, the "move" an in-document hover would show.
+    const { tl, br } = shape.oCoords
+    expect(cursorAt((tl.x + br.x) / 2, (tl.y + br.y) / 2)).toBe("move")
+  })
+
+  it("keeps the workspace default cursor past no mirrored chrome", () => {
+    const shape = createShape("square")
+    // left/top are the center (Fabric 7's default origin) — a 192px square
+    // centered at (100,100) spans (4,4)-(196,196) plus the handle pads.
+    shape.set({ left: 100, top: 100 })
+    canvas.add(shape)
+    canvas.setActiveObject(shape)
+    shape.setCoords()
+    expect(cursorAt(400, 400)).toBe("") // in-document, clear of the chrome
+    expect(cursorAt(700, 700)).toBe("") // past the edge, empty workspace
+  })
+
+  it("keeps the default cursor with no selection", () => {
+    expect(cursorAt(30, 30)).toBe("")
+  })
+
+  it("keeps the default cursor while a marquee drag is in progress", () => {
+    const shape = createShape("square")
+    shape.set({ left: -60, top: -60 })
+    canvas.add(shape)
+    canvas.setActiveObject(shape)
+    shape.setCoords()
+    // The marquee fills the overlay — no selection chrome to hover, so even
+    // a point on a control must not offer its cursor mid-drag.
+    const raw = canvas as unknown as {
+      _groupSelector: { x: number; y: number; deltaX: number; deltaY: number }
+    }
+    raw._groupSelector = { x: 100, y: 100, deltaX: 150, deltaY: 120 }
+    expect(cursorAt(shape.oCoords.tl.x, shape.oCoords.tl.y)).toBe("")
+    expect(cursorAt(shape.oCoords.br.x, shape.oCoords.br.y)).toBe("")
+  })
+})
