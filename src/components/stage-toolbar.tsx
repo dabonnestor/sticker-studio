@@ -14,6 +14,7 @@ import {
   ArrowUp,
   ArrowUpToLine,
   Bold,
+  Blend,
   CaseUpper,
   ChevronDown,
   Italic,
@@ -82,6 +83,9 @@ const UNITS: { value: Unit; label: string }[] = [
 
 /** Border slider range and step — 0 (off) to 1 inch at the 96 DPI basis. */
 const BORDER_RANGE = { min: 0, max: 96, step: 1 } as const
+
+/** Opacity slider range and step — 0 (transparent) to 100% (opaque). */
+const OPACITY_RANGE = { min: 0, max: 100, step: 1 } as const
 
 /** Line-height slider range and step — 0.5 (tight) to 3 (loose). */
 const LINE_HEIGHT_RANGE = { min: 0.5, max: 3, step: 0.05 } as const
@@ -794,6 +798,63 @@ function DeleteButton() {
 }
 
 /**
+ * Opacity card — a popover like the Arrange and Align cards: the selection's
+ * transparency as a 0–100% slider, committed live to the whole selection as
+ * it moves (the readout shows the first object's value — the commit applies
+ * to every unlocked object in the selection). The card body is a single
+ * inline row, label + slider + readout, like the text-spacing card's rows.
+ * Locked objects are inert (§7 Q3 — property edits skip them), so a fully
+ * locked selection has nothing to edit — the trigger disables with an
+ * explanation, like arrange's.
+ */
+function OpacityButton() {
+  const { selection, commitOpacity } = useStage()
+  const hasUnlocked = selection.some((obj) => !obj.locked)
+  const value = selection[0]?.opacity ?? 1
+  return (
+    <Popover>
+      <TooltipLabel
+        label={
+          hasUnlocked ? "Opacity" : "Locked objects can't be edited — unlock first"
+        }
+      >
+        <PopoverTrigger asChild>
+          <Button
+            variant="outline"
+            size="icon-sm"
+            disabled={!hasUnlocked}
+            aria-label="Opacity"
+          >
+            <Blend aria-hidden />
+          </Button>
+        </PopoverTrigger>
+      </TooltipLabel>
+      <PopoverContent align="end" className="w-64">
+        <TooltipLabel label="Opacity">
+          <label className="flex items-center gap-2">
+            <span className="w-16 text-[10px] leading-none text-muted-foreground">
+              Opacity
+            </span>
+            <Slider
+              className="w-28"
+              min={OPACITY_RANGE.min}
+              max={OPACITY_RANGE.max}
+              step={OPACITY_RANGE.step}
+              value={[Math.round(value * 100)]}
+              onValueChange={([percent]) => commitOpacity(percent / 100)}
+              aria-label="Opacity"
+            />
+            <span className="w-8 text-right text-[10px] leading-none text-muted-foreground tabular-nums">
+              {Math.round(value * 100)}%
+            </span>
+          </label>
+        </TooltipLabel>
+      </PopoverContent>
+    </Popover>
+  )
+}
+
+/**
  * The four z-order commands (§7 Q6) — the Arrange card's grid, listed
  * top-of-stack first, reading left-to-right, top-to-bottom.
  */
@@ -959,10 +1020,10 @@ function AlignButton() {
  * properties while a single Text object is selected (§6). While a shape or
  * text object is selected the toolbar narrows to just that object's own
  * properties — the document controls (size, units, canvas look) are hidden,
- * since the object's own size is what's being edited. Arrange, align, lock,
- * and delete sit at the strip's end, visible for any non-empty selection
- * (§7 Q6). The remaining §7 selection controls (group, flip) arrive with
- * the selection build.
+ * since the object's own size is what's being edited. Opacity, arrange,
+ * align, lock, and delete sit at the strip's end, visible for any non-empty
+ * selection (§7 Q6). The remaining §7 selection controls (group, flip)
+ * arrive with the selection build.
  */
 export function StageToolbar() {
   const { selection } = useStage()
@@ -986,6 +1047,7 @@ export function StageToolbar() {
         {selection.length > 0 && (
           <>
             <Separator orientation="vertical" className="mx-1 h-5" />
+            <OpacityButton />
             <ArrangeButton />
             <AlignButton />
             <LockButton />

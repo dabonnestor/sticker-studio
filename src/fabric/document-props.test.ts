@@ -1,7 +1,7 @@
 import { Rect, Textbox } from "fabric"
 import { describe, expect, it } from "vitest"
 
-import { setLocked } from "@/fabric/document-props"
+import { setLocked, setOpacity } from "@/fabric/document-props"
 
 /**
  * Lock behavior (build spec §7 Q3): locked objects are selectable but inert —
@@ -41,5 +41,23 @@ describe("setLocked (§7 Q3)", () => {
     expect(text.editable).toBe(false)
     setLocked(text, false)
     expect(text.editable).toBe(true)
+  })
+})
+
+describe("setOpacity — object transparency", () => {
+  it("sets the opacity, clamped to the 0–1 range", () => {
+    const obj = new Rect()
+    setOpacity(obj, 0.4)
+    expect(obj.opacity).toBe(0.4)
+    setOpacity(obj, 2)
+    expect(obj.opacity).toBe(1)
+    setOpacity(obj, -1)
+    expect(obj.opacity).toBe(0)
+  })
+
+  it("survives serialization as a core Fabric property", () => {
+    const obj = new Rect()
+    setOpacity(obj, 0.4)
+    expect(JSON.parse(JSON.stringify(obj.toObject())).opacity).toBe(0.4)
   })
 })

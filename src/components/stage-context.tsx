@@ -30,7 +30,7 @@ import {
   setBorderWidth,
   setFillColor,
 } from "@/fabric/shapes"
-import { setLocked } from "@/fabric/document-props"
+import { setLocked, setOpacity } from "@/fabric/document-props"
 import type { ShapeKind } from "@/fabric/shapes"
 import {
   applyTextProps,
@@ -117,6 +117,13 @@ interface StageContextValue {
    * when the undo build lands (ADR 0001), like arrange.
    */
   alignSelection: (command: AlignCommand) => void
+  /**
+   * Set the selection's opacity (§7 Q3) — one commit for the whole selection,
+   * like arrange and align: locked objects are inert and skipped, so a fully
+   * locked selection is a no-op. One undoable step per commit when the undo
+   * build lands (ADR 0001), like arrange.
+   */
+  commitOpacity: (opacity: number) => void
   /**
    * Delete the selection (§13) — locked objects are skipped (§7 Q3): a mixed
    * selection keeps its locked members, a fully locked one is a no-op.
@@ -299,6 +306,23 @@ export function StageProvider({ children }: { children: ReactNode }) {
     [canvas],
   )
 
+  const commitOpacity = useCallback(
+    (opacity: number) => {
+      if (!canvas) return
+      const objects = canvas.getActiveObjects()
+      if (objects.length === 0) return
+      for (const obj of objects) {
+        // §7 Q3: locked objects are inert — property edits skip them, like
+        // arrange and delete skip them.
+        if (obj.locked) continue
+        setOpacity(obj, opacity)
+      }
+      canvas.requestRenderAll()
+      setSelection(canvas.getActiveObjects())
+    },
+    [canvas],
+  )
+
   const deleteSelection = useCallback(() => {
     if (!canvas) return
     // §7 Q3: locked objects are selectable but inert — Del skips them, so a
@@ -384,6 +408,7 @@ export function StageProvider({ children }: { children: ReactNode }) {
         commitTextProps,
         arrangeSelection,
         alignSelection,
+        commitOpacity,
         deleteSelection,
         toggleLock,
       }}

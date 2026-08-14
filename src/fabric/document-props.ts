@@ -76,3 +76,14 @@ export function setLocked(obj: FabricObject, locked: boolean): void {
   // cycle (text.ts imports this module for stampDocumentProps).
   if (obj instanceof Textbox) obj.set("editable", !locked)
 }
+
+/**
+ * Set an object's opacity — the object-level transparency, 0 (transparent) to
+ * 1 (opaque). A core Fabric property, so it serializes in the Design file and
+ * renders at export without a customProperties registration (ADR 0002
+ * registers only app-owned props). Clamped to the 0–1 range — the slider
+ * can't leave it, but a saved file could hold any number.
+ */
+export function setOpacity(obj: FabricObject, opacity: number): void {
+  obj.set("opacity", Math.min(1, Math.max(0, opacity)))
+}
