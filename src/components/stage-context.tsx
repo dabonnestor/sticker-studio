@@ -10,6 +10,10 @@ import type { Canvas, Object as FabricObject } from "fabric"
 
 import { getTextMeasurer, preloadFonts } from "@/fabric/fonts"
 import {
+  alignObjects,
+  type AlignCommand,
+} from "@/fabric/align"
+import {
   arrangeObjects,
   type ArrangeCommand,
 } from "@/fabric/arrange"
@@ -103,6 +107,16 @@ interface StageContextValue {
    * when the undo build lands (ADR 0001).
    */
   arrangeSelection: (command: ArrangeCommand) => void
+  /**
+   * Align the selection (a requested addition beyond §7 Q6's control
+   * surface) — top/middle/bottom vertically, left/center/right
+   * horizontally. A lone object aligns to the Document; two or more align
+   * relative to each other, against the selection's own bounds. Locked
+   * objects are inert (§7 Q3) and skipped — neither moving nor anchoring —
+   * so a fully locked selection is a no-op. One undoable step per command
+   * when the undo build lands (ADR 0001), like arrange.
+   */
+  alignSelection: (command: AlignCommand) => void
   /**
    * Delete the selection (§13) — locked objects are skipped (§7 Q3): a mixed
    * selection keeps its locked members, a fully locked one is a no-op.
@@ -276,6 +290,15 @@ export function StageProvider({ children }: { children: ReactNode }) {
     [canvas],
   )
 
+  const alignSelection = useCallback(
+    (command: AlignCommand) => {
+      if (!canvas) return
+      alignObjects(canvas, canvas.getActiveObjects(), command)
+      canvas.requestRenderAll()
+    },
+    [canvas],
+  )
+
   const deleteSelection = useCallback(() => {
     if (!canvas) return
     // §7 Q3: locked objects are selectable but inert — Del skips them, so a
@@ -360,6 +383,7 @@ export function StageProvider({ children }: { children: ReactNode }) {
         addText,
         commitTextProps,
         arrangeSelection,
+        alignSelection,
         deleteSelection,
         toggleLock,
       }}

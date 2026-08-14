@@ -1,8 +1,14 @@
 import { useEffect, useState, type ReactNode } from "react"
 import {
   AlignCenter,
+  AlignCenterHorizontal,
+  AlignCenterVertical,
+  AlignEndHorizontal,
+  AlignEndVertical,
   AlignLeft,
   AlignRight,
+  AlignStartHorizontal,
+  AlignStartVertical,
   ArrowDown,
   ArrowDownToLine,
   ArrowUp,
@@ -50,6 +56,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip"
+import { type AlignCommand } from "@/fabric/align"
 import { type ArrangeCommand } from "@/fabric/arrange"
 import {
   DEFAULT_BORDER_COLOR,
@@ -859,14 +866,98 @@ function ArrangeButton() {
 }
 
 /**
+ * The six alignment commands (a requested addition beyond §7 Q6's control
+ * surface) — the Align card's grid: the vertical trio (top/middle/bottom)
+ * in one column, the horizontal trio (left/center/right) in the other. The
+ * reference is the Document for a lone selection, the selection's own bounds
+ * for two or more (objects align to each other).
+ */
+const ALIGN_COMMANDS: {
+  value: AlignCommand
+  label: string
+  icon: typeof AlignStartVertical
+}[] = [
+  { value: "top", label: "Align top", icon: AlignStartVertical },
+  { value: "left", label: "Align left", icon: AlignStartHorizontal },
+  { value: "middle", label: "Align middle", icon: AlignCenterVertical },
+  { value: "center", label: "Align center", icon: AlignCenterHorizontal },
+  { value: "bottom", label: "Align bottom", icon: AlignEndVertical },
+  { value: "right", label: "Align right", icon: AlignEndHorizontal },
+]
+
+/**
+ * Align card — a popover like the Arrange card: the six alignment commands
+ * — the selection's edge or center meets a reference, vertically (top /
+ * middle / bottom) and horizontally (left / center / right) — as a two-
+ * column grid. The reference is the Document for a lone selection; for two
+ * or more it is the selection's own bounds, so the objects align relative
+ * to each other (the outermost object stays put and the rest come to it).
+ * Locked objects are inert (§7 Q3, Q7 — no arrange), so a fully locked
+ * selection has nothing to align — the trigger disables with an
+ * explanation, like arrange's. Picking a command commits and closes the
+ * card.
+ */
+function AlignButton() {
+  const { selection, alignSelection } = useStage()
+  const hasUnlocked = selection.some((obj) => !obj.locked)
+  const [open, setOpen] = useState(false)
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <TooltipLabel
+        label={
+          hasUnlocked
+            ? "Align — relative to the document or each other"
+            : "Locked objects can't be aligned — unlock first"
+        }
+      >
+        <PopoverTrigger asChild>
+          <Button
+            variant="outline"
+            size="icon-sm"
+            disabled={!hasUnlocked}
+            aria-label="Align"
+          >
+            <AlignStartVertical aria-hidden />
+          </Button>
+        </PopoverTrigger>
+      </TooltipLabel>
+      <PopoverContent align="end" className="w-56">
+        <div className="flex flex-col gap-1.5">
+          <span className="px-1 text-[10px] leading-none text-muted-foreground">
+            Align
+          </span>
+          <div className="grid grid-cols-2 gap-0.5">
+            {ALIGN_COMMANDS.map(({ value, label, icon: Icon }) => (
+              <Button
+                key={value}
+                variant="ghost"
+                size="sm"
+                className="flex h-auto items-center justify-start gap-1.5 px-2 py-1.5 text-[10px] font-normal"
+                onClick={() => {
+                  alignSelection(value)
+                  setOpen(false)
+                }}
+              >
+                <Icon aria-hidden />
+                {label}
+              </Button>
+            ))}
+          </div>
+        </div>
+      </PopoverContent>
+    </Popover>
+  )
+}
+
+/**
  * Stage toolbar strip (build spec §3): document properties — size with unit
  * display and the canvas look (background, border) — plus the contextual
  * shape-property section while a single shape is selected and the text
  * properties while a single Text object is selected (§6). While a shape or
  * text object is selected the toolbar narrows to just that object's own
  * properties — the document controls (size, units, canvas look) are hidden,
- * since the object's own size is what's being edited. Arrange, lock, and
- * delete sit at the strip's end, visible for any non-empty selection
+ * since the object's own size is what's being edited. Arrange, align, lock,
+ * and delete sit at the strip's end, visible for any non-empty selection
  * (§7 Q6). The remaining §7 selection controls (group, flip) arrive with
  * the selection build.
  */
@@ -893,6 +984,7 @@ export function StageToolbar() {
           <>
             <Separator orientation="vertical" className="mx-1 h-5" />
             <ArrangeButton />
+            <AlignButton />
             <LockButton />
             <DeleteButton />
           </>
