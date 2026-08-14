@@ -1,4 +1,9 @@
-import { Point, type Object as FabricObject, type TMat2D } from "fabric"
+import {
+  ActiveSelection,
+  Point,
+  type Object as FabricObject,
+  type TMat2D,
+} from "fabric"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
 import { createStubContext } from "@/fabric/canvas-stub"
@@ -475,6 +480,48 @@ describe("mirrored selection cursor", () => {
     expect(cursorAt(shape.oCoords.br.x, shape.oCoords.br.y)).toBe("nwse-resize")
     expect(cursorAt(shape.oCoords.tr.x, shape.oCoords.tr.y)).toBe("nesw-resize")
     expect(cursorAt(shape.oCoords.bl.x, shape.oCoords.bl.y)).toBe("nesw-resize")
+  })
+
+  it("shows the wrap arrows on a text's mirrored wrap handles past the edge", () => {
+    // The text's ml/mr wrap handles carry Fabric's stock cursor handler, not
+    // the CORNER_CURSORS override — it must not crash on the synthetic
+    // event `getWorkspaceCursor` passes (the handler reads the alt key off
+    // it), or the workspace would keep its default `auto` cursor.
+    const text = createText((s) => s.length * 10)
+    text.set({ left: -60, top: -60 }) // hangs off the top-left corner
+    canvas.add(text)
+    canvas.setActiveObject(text)
+    text.setCoords()
+    expect(cursorAt(text.oCoords.ml.x, text.oCoords.ml.y)).toBe("w-resize")
+    expect(cursorAt(text.oCoords.mr.x, text.oCoords.mr.y)).toBe("e-resize")
+  })
+
+  it("shows the fixed diagonal cursors on a mirrored multi-selection's corners", () => {
+    // The ActiveSelection wrapper never fires `object:added`, so its corners
+    // only get the CORNER_CURSORS override from the selection hooks — and
+    // without them the stock quadrant handler would crash the workspace
+    // mousemove on the synthetic event, leaving the cursor `auto`.
+    const text = createText((s) => s.length * 10)
+    text.set({ left: -60, top: -60 })
+    const shape = createShape("square")
+    shape.set({ left: -140, top: -140 })
+    canvas.add(text, shape)
+    const selection = new ActiveSelection([text, shape], { canvas })
+    canvas.setActiveObject(selection)
+    selection.setCoords()
+    expect(selection.oCoords.tl.x).toBeLessThan(0) // past the Document edge
+    expect(cursorAt(selection.oCoords.tl.x, selection.oCoords.tl.y)).toBe(
+      "nwse-resize",
+    )
+    expect(cursorAt(selection.oCoords.br.x, selection.oCoords.br.y)).toBe(
+      "nwse-resize",
+    )
+    expect(cursorAt(selection.oCoords.tr.x, selection.oCoords.tr.y)).toBe(
+      "nesw-resize",
+    )
+    expect(cursorAt(selection.oCoords.bl.x, selection.oCoords.bl.y)).toBe(
+      "nesw-resize",
+    )
   })
 
   it("shows the rotation cursor on the mirrored rotation handle", () => {

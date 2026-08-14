@@ -1,4 +1,5 @@
 import {
+  ActiveSelection,
   Canvas,
   Control,
   Path,
@@ -56,6 +57,17 @@ const CORNER_CURSORS: ReadonlyArray<readonly [string, string]> = [
   ["bl", "nesw-resize"],
   ["br", "nwse-resize"],
 ]
+
+/**
+ * The fixed diagonal cursor for an object's corner controls (CORNER_CURSORS).
+ * Idempotent — safe to re-apply when a selection forms or changes.
+ */
+function applyCornerCursors(obj: FabricObject): void {
+  for (const [key, cursor] of CORNER_CURSORS) {
+    const control = obj.controls[key]
+    if (control) control.cursorStyleHandler = () => cursor
+  }
+}
 
 /**
  * Point-in-quadrilateral test — the selection box is a rotated rectangle,
@@ -423,11 +435,17 @@ export class StageCanvas extends Canvas {
     const viewportPoint = new Point(clientX - rect.left, clientY - rect.top)
     const corner = active.findControl(viewportPoint)
     if (corner) {
-      // No standard cursor handler reads eventData — the rotation and
-      // scale handlers key off the control/object, and the corner handlers
-      // ignore it entirely (CORNER_CURSORS).
+      // A bare object stands in for the real event: the corner overrides
+      // (CORNER_CURSORS) ignore eventData entirely, and Fabric's stock
+      // scale/skew handlers only read the modifier keys off it
+      // (`canvas.uniScaleKey` / `altActionKey`) to pick uniform scaling and
+      // the skew affordance. Absent reads are the no-modifier state a plain
+      // hover has — a real event would read the same, since the cursor must
+      // not depend on keys that aren't pressed. `undefined` would crash
+      // them: the handlers dereference `eventData[key]` at the first
+      // modifier check.
       return corner.control.cursorStyleHandler(
-        undefined as never,
+        {} as never,
         corner.control,
         active,
         corner.coord,
@@ -489,11 +507,20 @@ export function createStageCanvas(
     // Corner handles show the fixed diagonal cursor (CORNER_CURSORS) instead
     // of Fabric's quadrant-based one — shapes and text share it, so the
     // affordance never varies with the object's aspect.
-    for (const [key, cursor] of CORNER_CURSORS) {
-      const control = obj.controls[key]
-      if (control) control.cursorStyleHandler = () => cursor
-    }
+    applyCornerCursors(obj)
   })
+
+  // The multi-select wrapper never fires `object:added` — Fabric builds the
+  // ActiveSelection without an add — so its corners would keep Fabric's
+  // quadrant handler while every member shows the fixed diagonals. Apply the
+  // same override whenever a selection forms or changes; re-applying is a
+  // no-op for already-fixed objects.
+  const applySelectionCornerCursors = () => {
+    const active = canvas.getActiveObject()
+    if (active instanceof ActiveSelection) applyCornerCursors(active)
+  }
+  canvas.on("selection:created", applySelectionCornerCursors)
+  canvas.on("selection:updated", applySelectionCornerCursors)
 
   // The document border (envelope-owned, ADR 0002) renders as an inset stroke
   // on the document edge — same inset model as shape borders (§4): the stroke
