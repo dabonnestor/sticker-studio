@@ -10,6 +10,10 @@ import type { Canvas, Object as FabricObject } from "fabric"
 
 import { getTextMeasurer, preloadFonts } from "@/fabric/fonts"
 import {
+  arrangeObjects,
+  type ArrangeCommand,
+} from "@/fabric/arrange"
+import {
   DOCUMENT_BACKGROUND_COLOR,
   DOCUMENT_BORDER_COLOR,
   DOCUMENT_BORDER_WIDTH,
@@ -92,6 +96,13 @@ interface StageContextValue {
   addText: () => void
   /** Apply a property patch to the selected Text object (§6). */
   commitTextProps: (patch: TextPropsPatch) => void
+  /**
+   * Rearrange the selection's z-order (§7 Q6) — one slot forward/backward,
+   * or to the very front/back. Locked objects are inert (§7 Q3) and skipped,
+   * so a fully locked selection is a no-op. One undoable step per command
+   * when the undo build lands (ADR 0001).
+   */
+  arrangeSelection: (command: ArrangeCommand) => void
   /**
    * Delete the selection (§13) — locked objects are skipped (§7 Q3): a mixed
    * selection keeps its locked members, a fully locked one is a no-op.
@@ -256,6 +267,15 @@ export function StageProvider({ children }: { children: ReactNode }) {
     [canvas],
   )
 
+  const arrangeSelection = useCallback(
+    (command: ArrangeCommand) => {
+      if (!canvas) return
+      arrangeObjects(canvas, canvas.getActiveObjects(), command)
+      canvas.requestRenderAll()
+    },
+    [canvas],
+  )
+
   const deleteSelection = useCallback(() => {
     if (!canvas) return
     // §7 Q3: locked objects are selectable but inert — Del skips them, so a
@@ -296,6 +316,33 @@ export function StageProvider({ children }: { children: ReactNode }) {
     return () => document.removeEventListener("keydown", onKeyDown)
   }, [canvas, deleteSelection])
 
+  // Arrange hotkeys (§13): Ctrl+] / Ctrl+[ step the selection forward /
+  // backward, Ctrl+Shift+] / Ctrl+Shift+[ move it to the very front / back.
+  // Keyed on `code` (BracketLeft/Right), not `key` — Shift rewrites the key
+  // to "{" / "}" on US layouts, and other layouts shift the bracket
+  // entirely; the code is the physical bracket either way. The editable gate
+  // keeps the keys native in the toolbar's fields, like Del.
+  useEffect(() => {
+    if (!canvas) return
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.code !== "BracketRight" && event.code !== "BracketLeft") return
+      if (!event.ctrlKey && !event.metaKey) return
+      if (event.altKey) return
+      if (isEditableTarget(document.activeElement)) return
+      const command: ArrangeCommand =
+        event.code === "BracketRight"
+          ? event.shiftKey
+            ? "to-front"
+            : "forward"
+          : event.shiftKey
+            ? "to-back"
+            : "backward"
+      arrangeSelection(command)
+    }
+    document.addEventListener("keydown", onKeyDown)
+    return () => document.removeEventListener("keydown", onKeyDown)
+  }, [canvas, arrangeSelection])
+
   return (
     <StageContext.Provider
       value={{
@@ -312,6 +359,7 @@ export function StageProvider({ children }: { children: ReactNode }) {
         commitShapeProps,
         addText,
         commitTextProps,
+        arrangeSelection,
         deleteSelection,
         toggleLock,
       }}

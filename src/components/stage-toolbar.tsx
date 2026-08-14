@@ -3,11 +3,16 @@ import {
   AlignCenter,
   AlignLeft,
   AlignRight,
+  ArrowDown,
+  ArrowDownToLine,
+  ArrowUp,
+  ArrowUpToLine,
   BetweenHorizontalStart,
   Bold,
   CaseUpper,
   ChevronDown,
   Italic,
+  Layers,
   Lock,
   Trash2,
   Underline,
@@ -45,6 +50,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip"
+import { type ArrangeCommand } from "@/fabric/arrange"
 import {
   DEFAULT_BORDER_COLOR,
   DEFAULT_FILL,
@@ -778,15 +784,91 @@ function DeleteButton() {
 }
 
 /**
+ * The four z-order commands (§7 Q6) — the Arrange card's grid, listed
+ * top-of-stack first, reading left-to-right, top-to-bottom.
+ */
+const ARRANGE_COMMANDS: {
+  value: ArrangeCommand
+  label: string
+  icon: typeof ArrowUp
+}[] = [
+  { value: "to-front", label: "To front", icon: ArrowUpToLine },
+  { value: "forward", label: "Forward", icon: ArrowUp },
+  { value: "backward", label: "Backward", icon: ArrowDown },
+  { value: "to-back", label: "To back", icon: ArrowDownToLine },
+]
+
+/**
+ * Arrange card (§7 Q6) — a popover like the text-spacing card: the four
+ * z-order commands — step forward or backward one slot, or to the very
+ * front or back — as a two-column grid. The selection moves as a block and
+ * locked objects are inert (§7 Q3, Q7 — no arrange), so a fully locked
+ * selection has nothing to arrange — the trigger disables with an
+ * explanation, like delete's. Picking a command commits and closes the card.
+ */
+function ArrangeButton() {
+  const { selection, arrangeSelection } = useStage()
+  const hasUnlocked = selection.some((obj) => !obj.locked)
+  const [open, setOpen] = useState(false)
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <TooltipLabel
+        label={
+          hasUnlocked
+            ? "Arrange — layer order"
+            : "Locked objects can't be rearranged — unlock first"
+        }
+      >
+        <PopoverTrigger asChild>
+          <Button
+            variant="outline"
+            size="icon-sm"
+            disabled={!hasUnlocked}
+            aria-label="Arrange"
+          >
+            <Layers aria-hidden />
+          </Button>
+        </PopoverTrigger>
+      </TooltipLabel>
+      <PopoverContent align="end" className="w-56">
+        <div className="flex flex-col gap-1.5">
+          <span className="px-1 text-[10px] leading-none text-muted-foreground">
+            Arrange
+          </span>
+          <div className="grid grid-cols-2 gap-0.5">
+            {ARRANGE_COMMANDS.map(({ value, label, icon: Icon }) => (
+              <Button
+                key={value}
+                variant="ghost"
+                size="sm"
+                className="flex h-auto items-center justify-start gap-1.5 px-2 py-1.5 text-[10px] font-normal"
+                onClick={() => {
+                  arrangeSelection(value)
+                  setOpen(false)
+                }}
+              >
+                <Icon aria-hidden />
+                {label}
+              </Button>
+            ))}
+          </div>
+        </div>
+      </PopoverContent>
+    </Popover>
+  )
+}
+
+/**
  * Stage toolbar strip (build spec §3): document properties — size with unit
  * display and the canvas look (background, border) — plus the contextual
  * shape-property section while a single shape is selected and the text
  * properties while a single Text object is selected (§6). While a shape or
  * text object is selected the toolbar narrows to just that object's own
  * properties — the document controls (size, units, canvas look) are hidden,
- * since the object's own size is what's being edited. Lock and delete sit
- * at the strip's end, visible for any non-empty selection. The §7 selection
- * controls (group, arrange, flip) arrive with the selection build.
+ * since the object's own size is what's being edited. Arrange, lock, and
+ * delete sit at the strip's end, visible for any non-empty selection
+ * (§7 Q6). The remaining §7 selection controls (group, flip) arrive with
+ * the selection build.
  */
 export function StageToolbar() {
   const { selection } = useStage()
@@ -809,6 +891,8 @@ export function StageToolbar() {
         <div className="flex-1" />
         {selection.length > 0 && (
           <>
+            <Separator orientation="vertical" className="mx-1 h-5" />
+            <ArrangeButton />
             <LockButton />
             <DeleteButton />
           </>
