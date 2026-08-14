@@ -22,6 +22,7 @@ import {
   setBorderWidth,
   setFillColor,
 } from "@/fabric/shapes"
+import { setLocked } from "@/fabric/document-props"
 import type { ShapeKind } from "@/fabric/shapes"
 import {
   applyTextProps,
@@ -91,9 +92,35 @@ interface StageContextValue {
   addText: () => void
   /** Apply a property patch to the selected Text object (§6). */
   commitTextProps: (patch: TextPropsPatch) => void
+  /**
+   * Delete the selection (§13) — locked objects are skipped (§7 Q3): a mixed
+   * selection keeps its locked members, a fully locked one is a no-op.
+   */
+  deleteSelection: () => void
+  /**
+   * Lock/unlock the selection (§7 Q3) — a whole-selection toggle: a fully
+   * locked selection unlocks, otherwise everything locks. Locked objects
+   * stay selectable but are inert.
+   */
+  toggleLock: () => void
 }
 
 const StageContext = createContext<StageContextValue | null>(null)
+
+/**
+ * True while keyboard focus is inside an editable field — the Del key is
+ * native there (build spec §13): the toolbar's size/font inputs and the text
+ * session's hidden textarea all keep their own Del behavior.
+ */
+function isEditableTarget(el: Element | null): boolean {
+  if (!el) return false
+  return (
+    el instanceof HTMLInputElement ||
+    el instanceof HTMLTextAreaElement ||
+    el instanceof HTMLSelectElement ||
+    (el as HTMLElement).isContentEditable
+  )
+}
 
 /**
  * Bridge between the Fabric canvas (confined to the Stage) and the React
@@ -229,6 +256,46 @@ export function StageProvider({ children }: { children: ReactNode }) {
     [canvas],
   )
 
+  const deleteSelection = useCallback(() => {
+    if (!canvas) return
+    // §7 Q3: locked objects are selectable but inert — Del skips them, so a
+    // mixed selection keeps its locked members.
+    const objects = canvas.getActiveObjects().filter((obj) => !obj.locked)
+    if (objects.length === 0) return
+    canvas.discardActiveObject()
+    canvas.remove(...objects)
+    canvas.requestRenderAll()
+    setSelection([])
+  }, [canvas])
+
+  const toggleLock = useCallback(() => {
+    if (!canvas) return
+    const objects = canvas.getActiveObjects()
+    if (objects.length === 0) return
+    // Whole-selection toggle (§7 Q3): a fully locked selection unlocks,
+    // otherwise everything locks.
+    const locked = !objects.every((obj) => obj.locked)
+    for (const obj of objects) setLocked(obj, locked)
+    canvas.requestRenderAll()
+    setSelection(canvas.getActiveObjects())
+  }, [canvas])
+
+  // Del deletes the selection (§13), skipping locked objects (§7 Q3). Keyed
+  // on the document so it fires from anywhere on the stage; the editable
+  // gate keeps Del native in the toolbar's fields and the text session's
+  // hidden textarea.
+  useEffect(() => {
+    if (!canvas) return
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Delete") return
+      if (event.ctrlKey || event.metaKey || event.altKey) return
+      if (isEditableTarget(document.activeElement)) return
+      deleteSelection()
+    }
+    document.addEventListener("keydown", onKeyDown)
+    return () => document.removeEventListener("keydown", onKeyDown)
+  }, [canvas, deleteSelection])
+
   return (
     <StageContext.Provider
       value={{
@@ -245,6 +312,8 @@ export function StageProvider({ children }: { children: ReactNode }) {
         commitShapeProps,
         addText,
         commitTextProps,
+        deleteSelection,
+        toggleLock,
       }}
     >
       {children}

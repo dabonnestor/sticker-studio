@@ -8,6 +8,8 @@ import {
   CaseUpper,
   ChevronDown,
   Italic,
+  Lock,
+  Trash2,
   Underline,
 } from "lucide-react"
 
@@ -318,6 +320,9 @@ function ShapeProps() {
   if (!shape) return null
 
   const borderWidth = getBorderWidth(shape)
+  // §7 Q3: a locked object's properties render read-only — unlock lives in
+  // the lock toggle next to these sections.
+  const locked = shape.locked
 
   return (
     <div className="flex items-center gap-3">
@@ -325,6 +330,7 @@ function ShapeProps() {
         <span className="text-[10px] leading-none text-muted-foreground">Fill</span>
         <ColorInput
           value={typeof shape.fill === "string" ? shape.fill : DEFAULT_FILL}
+          disabled={locked}
           ariaLabel="Shape background color"
           tooltip="Shape background color"
           onChange={(fillColor) => commitShapeProps({ fillColor })}
@@ -338,6 +344,7 @@ function ShapeProps() {
           max={BORDER_RANGE.max}
           step={BORDER_RANGE.step}
           value={[borderWidth]}
+          disabled={locked}
           onValueChange={([value]) => commitShapeProps({ borderWidth: value })}
           aria-label="Border width"
         />
@@ -346,7 +353,7 @@ function ShapeProps() {
         </span>
         <ColorInput
           value={typeof shape.stroke === "string" ? shape.stroke : DEFAULT_BORDER_COLOR}
-          disabled={borderWidth === 0}
+          disabled={locked || borderWidth === 0}
           ariaLabel="Border color"
           tooltip={borderWidth === 0 ? "Border is off — set a width first" : "Border color"}
           onChange={(borderColor) => commitShapeProps({ borderColor })}
@@ -376,9 +383,11 @@ function formatNumberField(value: number, scale: number, decimals: number): stri
 function FontSizeField({
   value,
   onCommit,
+  disabled,
 }: {
   value: number
   onCommit: (size: number) => void
+  disabled?: boolean
 }) {
   const [input, setInput] = useState(() => String(value))
 
@@ -413,6 +422,7 @@ function FontSizeField({
         <ComboboxInput
           className="h-7 w-16"
           inputMode="decimal"
+          disabled={disabled}
           aria-label="Font size (px)"
           onBlur={(event) => commit(Number(event.currentTarget.value))}
           onKeyDown={(event) => {
@@ -499,6 +509,9 @@ function TextProps() {
   // the toggle writes the family's bold weight or back to regular 400.
   const boldWeight = getBoldWeight(text.fontFamily)
   const bold = weight >= 500
+  // §7 Q3: a locked object's properties render read-only — unlock lives in
+  // the lock toggle next to these sections.
+  const locked = text.locked
 
   return (
     <div className="flex items-center gap-3">
@@ -510,6 +523,7 @@ function TextProps() {
               variant="ghost"
               size="sm"
               className="h-7 max-w-32 gap-1 px-2 text-xs font-normal"
+              disabled={locked}
               aria-label="Font family"
             >
               <span className="truncate">{text.fontFamily}</span>
@@ -533,6 +547,7 @@ function TextProps() {
 
       <FontSizeField
         value={text.fontSize}
+        disabled={locked}
         onCommit={(fontSize) => commitTextProps({ fontSize })}
       />
 
@@ -547,7 +562,7 @@ function TextProps() {
                 variant="ghost"
                 size="sm"
                 className="h-7 w-12 gap-1 px-2 text-xs font-normal"
-                disabled={onlyWeight}
+                disabled={locked || onlyWeight}
                 aria-label="Font weight"
               >
                 {weight}
@@ -574,6 +589,7 @@ function TextProps() {
         <span className="text-[10px] leading-none text-muted-foreground">Fill</span>
         <ColorInput
           value={typeof text.fill === "string" ? text.fill : TEXT_FILL}
+          disabled={locked}
           ariaLabel="Text color"
           tooltip="Text color"
           onChange={(fillColor) => commitTextProps({ fillColor })}
@@ -583,21 +599,29 @@ function TextProps() {
       <div className="flex items-center gap-0.5">
         <ToggleButton
           active={bold}
-          disabled={boldWeight === undefined}
+          disabled={locked || boldWeight === undefined}
           label="Bold"
-          tooltip={boldWeight === undefined ? "This family ships no bold face — no faux bold" : undefined}
+          tooltip={
+            locked
+              ? undefined
+              : boldWeight === undefined
+                ? "This family ships no bold face — no faux bold"
+                : undefined
+          }
           onClick={() => commitTextProps({ fontWeight: bold ? 400 : boldWeight })}
         >
           <Bold aria-hidden />
         </ToggleButton>
         <ToggleButton
           active={italic}
-          disabled={!familySpec.italic}
+          disabled={locked || !familySpec.italic}
           label="Italic"
           tooltip={
-            familySpec.italic
-              ? "Italic"
-              : "This family ships no italic face — no faux italic"
+            locked
+              ? undefined
+              : familySpec.italic
+                ? "Italic"
+                : "This family ships no italic face — no faux italic"
           }
           onClick={() => commitTextProps({ fontStyle: italic ? "normal" : "italic" })}
         >
@@ -605,6 +629,7 @@ function TextProps() {
         </ToggleButton>
         <ToggleButton
           active={!!text.underline}
+          disabled={locked}
           label="Underline"
           onClick={() => commitTextProps({ underline: !text.underline })}
         >
@@ -617,6 +642,7 @@ function TextProps() {
           <ToggleButton
             key={value}
             active={text.textAlign === value}
+            disabled={locked}
             label={label}
             onClick={() => commitTextProps({ textAlign: value })}
           >
@@ -631,6 +657,7 @@ function TextProps() {
             <Button
               variant="outline"
               size="icon-sm"
+              disabled={locked}
               aria-label="Text spacing"
             >
               <BetweenHorizontalStart aria-hidden />
@@ -690,6 +717,7 @@ function TextProps() {
 
       <ToggleButton
         active={!!text.uppercase}
+        disabled={locked}
         label="Uppercase"
         onClick={() => commitTextProps({ uppercase: !text.uppercase })}
       >
@@ -700,14 +728,65 @@ function TextProps() {
 }
 
 /**
+ * Lock toggle (§7 Q3, Q6) — the toolbar's lock control: locks the whole
+ * selection; a fully locked selection unlocks. Locked objects stay
+ * selectable but inert — no handles, no transforms, no text edit — and
+ * their property sections render read-only (§7 Q3).
+ */
+function LockButton() {
+  const { selection, toggleLock } = useStage()
+  const allLocked = selection.length > 0 && selection.every((obj) => obj.locked)
+  return (
+    <ToggleButton
+      active={allLocked}
+      label={allLocked ? "Unlock" : "Lock"}
+      onClick={toggleLock}
+    >
+      <Lock aria-hidden />
+    </ToggleButton>
+  )
+}
+
+/**
+ * Delete (§13) — the toolbar's visible face of the Del hotkey: removes every
+ * unlocked object in the selection, mirrors the key's locked-object skip
+ * (§7 Q3). A fully locked selection offers no delete — the button disables
+ * with an explanation.
+ */
+function DeleteButton() {
+  const { selection, deleteSelection } = useStage()
+  const allLocked = selection.length > 0 && selection.every((obj) => obj.locked)
+  return (
+    <TooltipLabel
+      label={
+        allLocked
+          ? "Locked objects can't be deleted — unlock first"
+          : "Delete"
+      }
+    >
+      <Button
+        variant="ghost"
+        size="icon-sm"
+        aria-label="Delete selection"
+        disabled={allLocked}
+        onClick={deleteSelection}
+      >
+        <Trash2 aria-hidden />
+      </Button>
+    </TooltipLabel>
+  )
+}
+
+/**
  * Stage toolbar strip (build spec §3): document properties — size with unit
  * display and the canvas look (background, border) — plus the contextual
  * shape-property section while a single shape is selected and the text
  * properties while a single Text object is selected (§6). While a shape or
  * text object is selected the toolbar narrows to just that object's own
  * properties — the document controls (size, units, canvas look) are hidden,
- * since the object's own size is what's being edited. The §7 selection
- * controls (group, arrange, flip, lock) arrive with the selection build.
+ * since the object's own size is what's being edited. Lock and delete sit
+ * at the strip's end, visible for any non-empty selection. The §7 selection
+ * controls (group, arrange, flip) arrive with the selection build.
  */
 export function StageToolbar() {
   const { selection } = useStage()
@@ -728,6 +807,12 @@ export function StageToolbar() {
         {hasShape && <ShapeProps />}
         {hasText && <TextProps />}
         <div className="flex-1" />
+        {selection.length > 0 && (
+          <>
+            <LockButton />
+            <DeleteButton />
+          </>
+        )}
       </div>
     </TooltipProvider>
   )

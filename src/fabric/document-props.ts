@@ -1,4 +1,4 @@
-import type { Object as FabricObject } from "fabric"
+import { Textbox, type Object as FabricObject } from "fabric"
 
 import { newId } from "@/lib/ids"
 
@@ -53,4 +53,26 @@ export function stampDocumentProps<T extends FabricObject>(obj: T): T {
   obj.id = newId()
   obj.locked = false
   return obj
+}
+
+/**
+ * Set an object's locked state (build spec §7 Q3): while locked the object is
+ * selectable but inert — no transform handles, no movement, scale, or
+ * rotation, and a Text object cannot enter its text session. The transform
+ * locks are belt-and-braces behind `hasControls` (which also hides the
+ * rotation handle). Everything reverses on unlock; the `locked` prop itself
+ * survives save/load, and Del's locked skip is the delete half of the
+ * contract (§7 Q3).
+ */
+export function setLocked(obj: FabricObject, locked: boolean): void {
+  obj.set("locked", locked)
+  obj.set("hasControls", !locked)
+  obj.set("lockMovementX", locked)
+  obj.set("lockMovementY", locked)
+  obj.set("lockScalingX", locked)
+  obj.set("lockScalingY", locked)
+  obj.set("lockRotation", locked)
+  // Directly the Fabric class — importing `isTextObject` from text.ts would
+  // cycle (text.ts imports this module for stampDocumentProps).
+  if (obj instanceof Textbox) obj.set("editable", !locked)
 }
