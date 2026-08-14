@@ -1,8 +1,14 @@
 import { Point, type Object as FabricObject, type TMat2D } from "fabric"
-import { afterEach, beforeEach, describe, expect, it } from "vitest"
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
+import { createStubContext } from "@/fabric/canvas-stub"
+import { setLocked } from "@/fabric/document-props"
 import { createShape } from "@/fabric/shapes"
-import { createStageCanvas, getMarqueeBox } from "@/fabric/stage-canvas"
+import {
+  createStageCanvas,
+  getMarqueeBox,
+  getOverlayOffset,
+} from "@/fabric/stage-canvas"
 import { createText } from "@/fabric/text"
 
 /**
@@ -202,5 +208,228 @@ describe("corner handle cursors", () => {
     expect(cursorAt(text, "br")).toBe("nwse-resize")
     expect(cursorAt(text, "tr")).toBe("nesw-resize")
     expect(cursorAt(text, "bl")).toBe("nesw-resize")
+  })
+})
+
+/**
+ * Overlay offset mapping (§7 extension). The marquee and the selection
+ * controls mirror paint on the workspace overlay; the Document's position
+ * inside the overlay — the canvas rect minus the overlay rect — is the
+ * translate that glues the paint to the scene at any zoom or scroll. Pure,
+ * so the overlay paints and the tests share one mapping.
+ */
+describe("getOverlayOffset", () => {
+  it("maps identical origins to a zero offset", () => {
+    expect(getOverlayOffset({ left: 0, top: 0 }, { left: 0, top: 0 })).toEqual({
+      x: 0,
+      y: 0,
+    })
+  })
+
+  it("maps a Document right/down of the overlay origin positively", () => {
+    expect(
+      getOverlayOffset({ left: 200, top: 100 }, { left: 100, top: 40 }),
+    ).toEqual({ x: 100, y: 60 })
+  })
+
+  it("maps an overlay larger than the Document rect negatively", () => {
+    expect(
+      getOverlayOffset({ left: 100, top: 40 }, { left: 200, top: 100 }),
+    ).toEqual({ x: -100, y: -60 })
+  })
+
+  it("uses only the rects' left/top", () => {
+    // DOMRects carry width/height too — a structurally wider rect works.
+    const documentRect = { left: 120, top: 80, width: 600, height: 600 }
+    const overlayRect = { left: 60, top: 20, width: 1200, height: 800 }
+    expect(getOverlayOffset(documentRect, overlayRect)).toEqual({ x: 60, y: 60 })
+  })
+})
+
+/**
+ * Selection controls mirror (§7 extension): a selected object's selection
+ * box, corner handles, and rotation handle paint on the workspace overlay
+ * instead of the lower canvas — whose bitmap is the Document's size, so
+ * anything past the Document edge was invisible there. The paint is
+ * Fabric's own `_renderControls` (unmodified), so locked objects mirror
+ * borders only and the handles stay draggable past the edge. Driven with
+ * per-instance 2D-context stubs, so the paint routing is observable — the
+ * shared stub in vitest.setup.ts cannot tell the surfaces apart.
+ */
+describe("selection controls mirror", () => {
+  let canvas: ReturnType<typeof createStageCanvas>
+  let lowerCtx: CanvasRenderingContext2D
+  let overlayCtx: CanvasRenderingContext2D
+  let overlayElement: HTMLCanvasElement
+
+  /**
+   * A stage canvas whose lower and overlay canvases carry distinct stubbed
+   * contexts. The lower canvas's own context is swapped before creation, so
+   * the render paints into it are observable; the overlay's context records
+   * the mirrored paint.
+   */
+  function mountMirrorHarness() {
+    const element = document.createElement("canvas")
+    overlayElement = document.createElement("canvas")
+    lowerCtx = createStubContext()
+    overlayCtx = createStubContext()
+    vi.spyOn(element, "getContext").mockReturnValue(lowerCtx)
+    vi.spyOn(overlayElement, "getContext").mockReturnValue(overlayCtx)
+    canvas = createStageCanvas(element, overlayElement)
+  }
+
+  /** The marquee internals the mirror tests drive directly. */
+  function rawCanvas() {
+    return canvas as unknown as {
+      _groupSelector: {
+        x: number
+        y: number
+        deltaX: number
+        deltaY: number
+      } | null
+      _drawSelection(ctx: CanvasRenderingContext2D): void
+    }
+  }
+
+  beforeEach(() => {
+    mountMirrorHarness()
+  })
+
+  afterEach(async () => {
+    await canvas.dispose()
+  })
+
+  it("paints a selected object's controls on the overlay, not the lower canvas", () => {
+    const shape = createShape("square")
+    canvas.add(shape)
+    canvas.setActiveObject(shape)
+    shape.setCoords()
+    canvas.renderAll()
+    // The selection border and the four transparent corners paint via
+    // strokeRect — on the overlay, where they stay visible past the edge.
+    expect(overlayCtx.strokeRect).toHaveBeenCalled()
+    expect(overlayCtx.fillRect).not.toHaveBeenCalled() // no marquee this frame
+    expect(lowerCtx.strokeRect).not.toHaveBeenCalled() // nothing clipped away
+  })
+
+  it("glues the mirrored controls to the Document's position in the overlay", () => {
+    const shape = createShape("square")
+    canvas.add(shape)
+    canvas.setActiveObject(shape)
+    shape.setCoords()
+    // Document at (200,100) inside a workspace overlay starting at (100,40).
+    vi.spyOn(canvas.upperCanvasEl, "getBoundingClientRect").mockReturnValue({
+      left: 200,
+      top: 100,
+    } as DOMRect)
+    vi.spyOn(overlayElement, "getBoundingClientRect").mockReturnValue({
+      left: 100,
+      top: 40,
+    } as DOMRect)
+    canvas.renderAll()
+    // The selection box composes with relative calls on the base — the
+    // offset rides the base translate. The handle renderer resets the
+    // transform absolutely; the shim folds the offset into that reset —
+    // dpr 1 in jsdom, so the offset is literal. Both must land at (100,60).
+    expect(overlayCtx.translate).toHaveBeenCalledWith(100, 60)
+    expect(overlayCtx.setTransform).toHaveBeenCalledWith(1, 0, 0, 1, 100, 60)
+  })
+
+  it("clears the overlay when nothing is selected", () => {
+    canvas.renderAll()
+    expect(overlayCtx.clearRect).toHaveBeenCalled()
+    expect(overlayCtx.strokeRect).not.toHaveBeenCalled()
+    expect(overlayCtx.fillRect).not.toHaveBeenCalled()
+  })
+
+  it("mirrors a locked object's border only — no handles", () => {
+    const shape = createShape("square")
+    canvas.add(shape)
+    setLocked(shape, true)
+    canvas.setActiveObject(shape)
+    shape.setCoords()
+    canvas.renderAll()
+    expect(overlayCtx.strokeRect).toHaveBeenCalled()
+    expect(overlayCtx.fillRect).not.toHaveBeenCalled()
+  })
+
+  it("a marquee commit wipes the stale rect before painting the new controls", () => {
+    const shape = createShape("square")
+    canvas.add(shape)
+    canvas.selectionColor = "rgba(0, 0, 0, 0.3)"
+    canvas.selectionBorderColor = "#000"
+    canvas.selectionLineWidth = 1
+    // A finished marquee leaves its rect on the overlay.
+    const raw = rawCanvas()
+    raw._groupSelector = { x: 100, y: 100, deltaX: 150, deltaY: 120 }
+    raw._drawSelection(canvas.getContext())
+    expect(overlayCtx.fillRect).toHaveBeenCalled() // the marquee fill
+    // The commit render (mouseup) selects the object and repaints controls.
+    raw._groupSelector = null
+    canvas.setActiveObject(shape)
+    shape.setCoords()
+    canvas.renderAll()
+    const [lastClear] = vi.mocked(overlayCtx.clearRect).mock.invocationCallOrder.slice(-1)
+    const [lastMarqueeFill] = vi.mocked(overlayCtx.fillRect).mock.invocationCallOrder.slice(-1)
+    const [lastStroke] = vi.mocked(overlayCtx.strokeRect).mock.invocationCallOrder.slice(-1)
+    expect(lastClear).toBeGreaterThan(lastMarqueeFill) // stale marquee wiped
+    expect(lastStroke).toBeGreaterThan(lastClear) // controls survive the wipe
+  })
+
+  it("a renderTop-only frame keeps the previous frame's selection chrome", () => {
+    const shape = createShape("square")
+    canvas.add(shape)
+    canvas.setActiveObject(shape)
+    shape.setCoords()
+    canvas.renderAll()
+    expect(overlayCtx.strokeRect).toHaveBeenCalled()
+    vi.mocked(overlayCtx.clearRect).mockClear()
+    // A zero-delta pointer jitter between down and up paints nothing, and
+    // Fabric's mouseup falls back to `renderTop` — whose after:render must
+    // not wipe the selection chrome from the previous frame.
+    canvas.renderTop()
+    expect(overlayCtx.clearRect).not.toHaveBeenCalled()
+  })
+
+  it("a deselect wipes the chrome before the armed-marquee commit render", () => {
+    const shape = createShape("square")
+    canvas.add(shape)
+    canvas.setActiveObject(shape)
+    shape.setCoords()
+    canvas.renderAll()
+    const strokesBefore = vi.mocked(overlayCtx.strokeRect).mock.calls.length
+    expect(strokesBefore).toBeGreaterThan(0) // chrome painted
+    // The deselect click's commit render paints nothing (drawControls
+    // early-returns with no active object) and finalizeOverlayFrame keeps
+    // the overlay while the marquee is armed by the same pointerdown — so
+    // without the wipe, a no-move click (mouse:up renders nothing) would
+    // leave the previous frame's handles on the workspace forever.
+    canvas.discardActiveObject()
+    const clearTimes = vi.mocked(overlayCtx.clearRect).mock.invocationCallOrder
+    const strokeTimes = vi.mocked(overlayCtx.strokeRect).mock.invocationCallOrder
+    expect(Math.max(...clearTimes)).toBeGreaterThan(Math.max(...strokeTimes))
+    // The armed-marquee render that follows paints nothing new.
+    const raw = rawCanvas()
+    raw._groupSelector = { x: 100, y: 100, deltaX: 0, deltaY: 0 }
+    canvas.renderAll()
+    expect(vi.mocked(overlayCtx.strokeRect).mock.calls.length).toBe(strokesBefore)
+  })
+
+  it("a render during an active marquee does not clear the marquee", () => {
+    const raw = rawCanvas()
+    raw._groupSelector = { x: 100, y: 100, deltaX: 150, deltaY: 120 }
+    raw._drawSelection(canvas.getContext())
+    expect(overlayCtx.fillRect).toHaveBeenCalled() // the marquee fill
+    // A render while the drag is still in progress — the first render runs
+    // the hasLostContext path, which repaints the marquee; the end-of-frame
+    // sweep must not erase it (the overlay holds no controls this frame).
+    canvas.renderAll()
+    const lastClear = Math.max(
+      ...vi.mocked(overlayCtx.clearRect).mock.invocationCallOrder,
+    )
+    const lastFill = Math.max(
+      ...vi.mocked(overlayCtx.fillRect).mock.invocationCallOrder,
+    )
+    expect(lastClear).toBeLessThan(lastFill) // no clear after the marquee
   })
 })

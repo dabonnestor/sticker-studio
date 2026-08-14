@@ -143,17 +143,86 @@ export function getMarqueeBox(
   }
 }
 
+/** The Document's rect in the workspace, as the overlay mapping needs it. */
+export interface OverlayRect {
+  left: number
+  top: number
+}
+
 /**
- * The stage canvas, with the marquee mirrored onto a workspace overlay
- * (§7 extension). Fabric paints the marquee on the upper canvas, whose
- * bitmap is exactly the Document's size — a marquee dragged past the
- * Document edge would be invisible there. The overlay spans the whole
- * workspace, so the marquee renders — and can select objects — beyond the
- * Document. Hit-testing stays Fabric's own (`collectObjects` does not clamp
- * to the Document); only the paint is mirrored.
+ * The Document's position inside the workspace overlay, in CSS px — the
+ * translate that glues scene-space paint to the Document at any zoom or
+ * scroll. The marquee mirror's mapping (the canvas origin offset by how far
+ * the Document sits inside the overlay), shared with the controls mirror
+ * and the tests. Pure, so the overlay paints and the tests use one mapping.
+ */
+export function getOverlayOffset(
+  viewportRect: OverlayRect,
+  overlayRect: OverlayRect,
+): { x: number; y: number } {
+  return {
+    x: viewportRect.left - overlayRect.left,
+    y: viewportRect.top - overlayRect.top,
+  }
+}
+
+/**
+ * Wrap a 2D context so every absolute `setTransform` lands offset by the
+ * Document's position inside the overlay. Fabric's handle renderer resets
+ * the transform to the retina basis before painting each handle at its
+ * viewport coordinates (`InteractiveObject.drawControls`), which would drop
+ * the translate the overlay needs — folding the offset into every reset
+ * keeps handles glued to the scene at any zoom or scroll. Relative calls
+ * (`translate`/`rotate`) pass through untouched: the selection box composes
+ * them on the injected base, exactly as it does on the upper canvas.
+ *
+ * Every method is returned bound to the real context and every property
+ * write forwards with the real context as receiver — native 2D-context
+ * methods and style accessors brand-check their receiver and throw
+ * "Illegal invocation" when invoked with the Proxy as `this`, so the paint
+ * would break without the forwarding.
+ */
+function offsetContext(
+  ctx: CanvasRenderingContext2D,
+  offset: { x: number; y: number },
+): CanvasRenderingContext2D {
+  const dpr = window.devicePixelRatio || 1
+  return new Proxy(ctx, {
+    get(target, property) {
+      if (property === "setTransform") {
+        return (a: number, b: number, c: number, d: number, e: number, f: number) =>
+          target.setTransform(a, b, c, d, e + offset.x * dpr, f + offset.y * dpr)
+      }
+      const value = Reflect.get(target, property, target)
+      return typeof value === "function" ? value.bind(target) : value
+    },
+    set(target, property, value) {
+      return Reflect.set(target, property, value, target)
+    },
+  })
+}
+
+/**
+ * The stage canvas, with the marquee and the selection controls mirrored
+ * onto a workspace overlay (§7 extension). Fabric paints the marquee on the
+ * upper canvas and the selection box/controls on the lower canvas, whose
+ * bitmaps are exactly the Document's size — either would be invisible past
+ * the Document edge. The overlay spans the whole workspace, so the marquee
+ * renders — and can select objects — beyond the Document, and a selected
+ * object's controls stay visible and draggable when they hang off it.
+ * Hit-testing stays Fabric's own (`collectObjects` and the control hit-test
+ * are unbounded DOM math); only the paint is mirrored. Fabric calls
+ * `drawControls` exactly once per render (`controlsAboveOverlay` and
+ * `skipControlsDrawing` stay unset) — the mirror hooks that call.
  */
 class StageCanvas extends Canvas {
   private readonly marqueeOverlay: HTMLCanvasElement
+
+  /** True while the marquee painted on the overlay in the current frame. */
+  private marqueePaintedThisFrame = false
+
+  /** True while the selection controls painted on the overlay this frame. */
+  private controlsPaintedThisFrame = false
 
   constructor(
     element: HTMLCanvasElement,
@@ -169,12 +238,75 @@ class StageCanvas extends Canvas {
     return this._groupSelector !== null
   }
 
-  /** Erase the marquee overlay — the marquee paint lives only on it. */
-  clearMarqueeOverlay(): void {
+  /** Erase the workspace overlay — all mirrored paint lives only on it. */
+  clearOverlay(): void {
     const ctx = this.marqueeOverlay.getContext("2d")
     if (!ctx) return
     ctx.setTransform(1, 0, 0, 1, 0, 0)
     ctx.clearRect(0, 0, this.marqueeOverlay.width, this.marqueeOverlay.height)
+  }
+
+  /**
+   * End-of-frame overlay sweep, called from every `after:render` (both
+   * `renderCanvas` and `renderTop` fire it): erase the overlay when neither
+   * the marquee nor the selection controls painted during this frame, no
+   * marquee is in progress, and no selection is active — a stale rect from
+   * a finished drag would otherwise linger on the workspace. An active
+   * selection keeps the previous frame's paint: `renderTop`-only frames
+   * (a zero-delta pointer jitter between down and up) paint nothing, and
+   * the selection is unchanged, so its chrome still holds. Resets the
+   * per-frame paint flags regardless, so each frame's decision starts
+   * clean.
+   */
+  finalizeOverlayFrame(): void {
+    const keep =
+      this.isMarqueeActive() ||
+      this.marqueePaintedThisFrame ||
+      this.controlsPaintedThisFrame ||
+      !!this._activeObject
+    this.marqueePaintedThisFrame = false
+    this.controlsPaintedThisFrame = false
+    if (!keep) this.clearOverlay()
+  }
+
+  /**
+   * Prepare the overlay context for one frame's paint: size the bitmap to
+   * the overlay's CSS size at the device pixel ratio and reset to the dpr
+   * transform, clearing unless the caller asks to keep an earlier paint of
+   * this same frame (a live marquee must not be wiped by the controls
+   * mirror). Returns the context and the Document's offset inside the
+   * overlay — the caller applies the offset the way its paint needs (the
+   * marquee translates; the controls mirror folds it into the context shim,
+   * since Fabric's handle renderer resets the transform absolutely).
+   * Returns null when no 2D context is available. Deliberately not guarded
+   * on zero size: the tests paint at jsdom's 0×0.
+   */
+  private prepareOverlay(
+    skipClear: boolean,
+  ): { ctx: CanvasRenderingContext2D; offset: { x: number; y: number } } | null {
+    const overlay = this.marqueeOverlay
+    const ctx = overlay.getContext("2d")
+    if (!ctx) return null
+    const dpr = window.devicePixelRatio || 1
+    const width = overlay.offsetWidth
+    const height = overlay.offsetHeight
+    const bitmapWidth = Math.round(width * dpr)
+    const bitmapHeight = Math.round(height * dpr)
+    // Independent dimension compares — resizing only when the width changes
+    // goes stale on a height-only resize.
+    if (overlay.width !== bitmapWidth || overlay.height !== bitmapHeight) {
+      overlay.width = bitmapWidth
+      overlay.height = bitmapHeight
+    }
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
+    if (!skipClear) ctx.clearRect(0, 0, width, height)
+    return {
+      ctx,
+      offset: getOverlayOffset(
+        this.upperCanvasEl.getBoundingClientRect(),
+        overlay.getBoundingClientRect(),
+      ),
+    }
   }
 
   /**
@@ -185,29 +317,15 @@ class StageCanvas extends Canvas {
    * the scene at any zoom or scroll.
    */
   override _drawSelection(_ctx: CanvasRenderingContext2D): void {
-    const overlay = this.marqueeOverlay
-    const ctx = overlay.getContext("2d")
-    if (!ctx) return
-    // Size the bitmap to the overlay's CSS size at the device pixel ratio —
-    // the overlay spans the workspace, which resizes with the window.
-    const dpr = window.devicePixelRatio || 1
-    const width = overlay.offsetWidth
-    const height = overlay.offsetHeight
-    const bitmapWidth = Math.round(width * dpr)
-    if (overlay.width !== bitmapWidth) {
-      overlay.width = bitmapWidth
-      overlay.height = Math.round(height * dpr)
-    }
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
-    ctx.clearRect(0, 0, width, height)
+    const prepared = this.prepareOverlay(false)
+    if (!prepared) return
+    const { ctx, offset } = prepared
+    // The marquee paints in viewport coordinates — the canvas origin offset
+    // by how far the Document sits inside the overlay glues it to the scene.
+    ctx.translate(offset.x, offset.y)
+    this.marqueePaintedThisFrame = true
 
     const box = getMarqueeBox(this._groupSelector!, this.viewportTransform)
-    const canvasRect = this.upperCanvasEl.getBoundingClientRect()
-    const overlayRect = overlay.getBoundingClientRect()
-    ctx.translate(
-      canvasRect.left - overlayRect.left,
-      canvasRect.top - overlayRect.top,
-    )
 
     if (this.selectionColor) {
       ctx.fillStyle = this.selectionColor
@@ -225,14 +343,46 @@ class StageCanvas extends Canvas {
       box.height - this.selectionLineWidth,
     )
   }
+
+  /**
+   * Mirror the selection controls onto the workspace overlay instead of the
+   * lower canvas (§7 extension — the lower bitmap is the Document's size, so
+   * a selection box, corner handle, or rotation handle past the Document
+   * edge was invisible there). The paint is Fabric's own `_renderControls`,
+   * which applies the viewport and object transforms against a base context,
+   * so locked objects (borders only), the custom rotation handle, and
+   * ActiveSelection member boxes all mirror as-is. The skip-clear guard keeps
+   * a live marquee: its paint lives on the same overlay, and `renderTop`'s
+   * `after:render` already reset this frame's marquee flag by the time a
+   * queued render runs. Hit-testing never changed — `findControl` is
+   * unbounded client-coordinate math — so the mirrored handles stay
+   * draggable past the Document edge through the existing workspace press
+   * routing. Hover cursor feedback over them is lost (Fabric sets the cursor
+   * on the upper canvas element, which the pointer is not over) — accepted.
+   */
+  override drawControls(_ctx: CanvasRenderingContext2D): void {
+    const activeObject = this._activeObject
+    if (!activeObject) return
+    const prepared = this.prepareOverlay(this.isMarqueeActive())
+    if (!prepared) return
+    const { ctx, offset } = prepared
+    this.controlsPaintedThisFrame = true
+    // The offset rides twice: a base translate, and the shim's injection
+    // into absolute `setTransform` resets. The selection box composes its
+    // position with relative calls on the base — it needs the translate.
+    // The handle renderer resets the transform absolutely — it wipes that
+    // translate, so the injection restores it.
+    ctx.translate(offset.x, offset.y)
+    activeObject._renderControls(offsetContext(ctx, offset))
+  }
 }
 
 /**
  * Create the stage Canvas on a fresh canvas element. The white Document
  * background is a document property (serialized, honored at export, build
  * spec §11) — set it here so the stage shows the Document, not CSS paint.
- * The marquee overlay is the workspace-spanning transparent canvas the
- * marquee mirror paints on (§7 extension).
+ * The overlay is the workspace-spanning transparent canvas the marquee and
+ * selection-controls mirrors paint on (§7 extension).
  */
 export function createStageCanvas(
   element: HTMLCanvasElement,
@@ -302,12 +452,27 @@ export function createStageCanvas(
     ctx.restore()
   })
 
-  // The marquee mirror lives on the workspace overlay, not the upper canvas
-  // (whose bitmap is the Document's size), so Fabric never clears it. Clear
-  // it at the end of every render while no marquee is active — the rect from
-  // a finished drag would otherwise linger on the workspace.
+  // Both mirrors live on the workspace overlay, not on Fabric's canvases
+  // (whose bitmaps are the Document's size), so Fabric never clears it. The
+  // end-of-render sweep erases it when neither the marquee nor the selection
+  // controls painted this frame — a rect from a finished drag would
+  // otherwise linger on the workspace.
   canvas.on("after:render", () => {
-    if (!canvas.isMarqueeActive()) canvas.clearMarqueeOverlay()
+    canvas.finalizeOverlayFrame()
+  })
+
+  // A deselect must wipe the mirrored chrome at once, not wait for the
+  // commit render: that render (renderAll → renderCanvas) early-returns
+  // from `drawControls` with no active object, and `finalizeOverlayFrame`
+  // keeps the overlay while the marquee is armed — the same pointerdown
+  // starts it — so a click on empty space whose mouse:up renders nothing
+  // (a no-move click: `isClick` stays true, no renderTop) would leave the
+  // previous frame's handles on the workspace forever. `selection:cleared`
+  // fires synchronously inside the discard, before any render, so the wipe
+  // always precedes whatever paints next — a new selection's controls, or
+  // nothing.
+  canvas.on("selection:cleared", () => {
+    canvas.clearOverlay()
   })
 
   // Shapes and text scale uniformly — the aspect ratio is frozen at the
