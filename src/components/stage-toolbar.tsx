@@ -878,14 +878,14 @@ const ARRANGE_COMMANDS: {
  * front or back — as a two-column grid. The selection moves as a block and
  * locked objects are inert (§7 Q3, Q7 — no arrange), so a fully locked
  * selection has nothing to arrange — the trigger disables with an
- * explanation, like delete's. Picking a command commits and closes the card.
+ * explanation, like delete's. The card stays open — commands pick in a row,
+ * and it closes on outside click or Escape.
  */
 function ArrangeButton() {
   const { selection, arrangeSelection } = useStage()
   const hasUnlocked = selection.some((obj) => !obj.locked)
-  const [open, setOpen] = useState(false)
   return (
-    <Popover open={open} onOpenChange={setOpen}>
+    <Popover>
       <TooltipLabel
         label={
           hasUnlocked
@@ -916,10 +916,7 @@ function ArrangeButton() {
                 variant="ghost"
                 size="sm"
                 className="flex h-auto items-center justify-start gap-1.5 px-2 py-1.5 text-[10px] font-normal"
-                onClick={() => {
-                  arrangeSelection(value)
-                  setOpen(false)
-                }}
+                onClick={() => arrangeSelection(value)}
               >
                 <Icon aria-hidden />
                 {label}
@@ -961,15 +958,14 @@ const ALIGN_COMMANDS: {
  * to each other (the outermost object stays put and the rest come to it).
  * Locked objects are inert (§7 Q3, Q7 — no arrange), so a fully locked
  * selection has nothing to align — the trigger disables with an
- * explanation, like arrange's. Picking a command commits and closes the
- * card.
+ * explanation, like arrange's. The card stays open — commands pick in a
+ * row, and it closes on outside click or Escape.
  */
 function AlignButton() {
   const { selection, alignSelection } = useStage()
   const hasUnlocked = selection.some((obj) => !obj.locked)
-  const [open, setOpen] = useState(false)
   return (
-    <Popover open={open} onOpenChange={setOpen}>
+    <Popover>
       <TooltipLabel
         label={
           hasUnlocked
@@ -1000,10 +996,7 @@ function AlignButton() {
                 variant="ghost"
                 size="sm"
                 className="flex h-auto items-center justify-start gap-1.5 px-2 py-1.5 text-[10px] font-normal"
-                onClick={() => {
-                  alignSelection(value)
-                  setOpen(false)
-                }}
+                onClick={() => alignSelection(value)}
               >
                 <Icon aria-hidden />
                 {label}
@@ -1036,14 +1029,14 @@ const FLIP_COMMANDS: {
  * selection flips as a unit, each object around its own center; locked
  * objects are inert (§7 Q3, Q7 — no flip), so a fully locked selection has
  * nothing to flip — the trigger disables with an explanation, like
- * arrange's. Picking a command commits and closes the card.
+ * arrange's. The card stays open — commands pick in a row, and it closes on
+ * outside click or Escape.
  */
 function FlipButton() {
   const { selection, flipSelection } = useStage()
   const hasUnlocked = selection.some((obj) => !obj.locked)
-  const [open, setOpen] = useState(false)
   return (
-    <Popover open={open} onOpenChange={setOpen}>
+    <Popover>
       <TooltipLabel
         label={
           hasUnlocked ? "Flip" : "Locked objects can't be flipped — unlock first"
@@ -1072,10 +1065,7 @@ function FlipButton() {
                 variant="ghost"
                 size="sm"
                 className="flex h-auto items-center justify-start gap-1.5 px-2 py-1.5 text-[10px] font-normal"
-                onClick={() => {
-                  flipSelection(value)
-                  setOpen(false)
-                }}
+                onClick={() => flipSelection(value)}
               >
                 <Icon aria-hidden />
                 {label}
