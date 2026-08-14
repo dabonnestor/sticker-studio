@@ -10,9 +10,11 @@ import { createStubContext } from "@/fabric/canvas-stub"
 import { setLocked } from "@/fabric/document-props"
 import { createShape } from "@/fabric/shapes"
 import {
+  ROTATE_HANDLE_SIZE,
   createStageCanvas,
   getMarqueeBox,
   getOverlayOffset,
+  renderRotateHandle,
 } from "@/fabric/stage-canvas"
 import { createText } from "@/fabric/text"
 
@@ -358,6 +360,22 @@ describe("selection controls mirror", () => {
     expect(overlayCtx.fillRect).not.toHaveBeenCalled()
   })
 
+  it("paints the rotation badge on the overlay for a multi-selection", () => {
+    const shape = createShape("square")
+    shape.set({ left: 100, top: 100 })
+    const text = createText((s) => s.length * 10)
+    text.set({ left: 300, top: 300 })
+    canvas.add(shape, text)
+    const selection = new ActiveSelection([shape, text], { canvas })
+    canvas.setActiveObject(selection)
+    selection.setCoords()
+    canvas.renderAll()
+    // The badge's white circle is the only `fill` in the selection chrome —
+    // the member boxes stroke and the transparent corners stroke — so a fill
+    // on the overlay proves the badge painted with the controls.
+    expect(overlayCtx.fill).toHaveBeenCalled()
+  })
+
   it("a marquee commit wipes the stale rect before painting the new controls", () => {
     const shape = createShape("square")
     canvas.add(shape)
@@ -575,5 +593,92 @@ describe("mirrored selection cursor", () => {
     raw._groupSelector = { x: 100, y: 100, deltaX: 150, deltaY: 120 }
     expect(cursorAt(shape.oCoords.tl.x, shape.oCoords.tl.y)).toBe("")
     expect(cursorAt(shape.oCoords.br.x, shape.oCoords.br.y)).toBe("")
+  })
+})
+
+/**
+ * Multi-selection chrome — the ActiveSelection wrapper never fires
+ * `object:added`, so the add-time chrome (the rotation badge, the fixed
+ * diagonal corner cursors, corners-only visibility) would skip it and it
+ * would keep Fabric's stock controls: a plain square rotation handle, the
+ * quadrant corner cursor, and the side handles that stretch the set
+ * non-uniformly. The selection hooks apply the same chrome the members got.
+ */
+describe("multi-selection chrome", () => {
+  let canvas: ReturnType<typeof createStageCanvas>
+
+  beforeEach(() => {
+    canvas = createStageCanvas(
+      document.createElement("canvas"),
+      document.createElement("canvas"),
+    )
+  })
+
+  afterEach(async () => {
+    await canvas.dispose()
+  })
+
+  /** A two-object ActiveSelection, as a Shift-click multi-select builds it. */
+  function buildSelection() {
+    const shape = createShape("square")
+    shape.set({ left: 100, top: 100 })
+    const text = createText((s) => s.length * 10)
+    text.set({ left: 300, top: 300 })
+    canvas.add(shape, text)
+    const selection = new ActiveSelection([shape, text], { canvas })
+    canvas.setActiveObject(selection) // fires selection:created
+    selection.setCoords()
+    return selection
+  }
+
+  it("shows the rotation badge on the multi-selection handle", () => {
+    const selection = buildSelection()
+    const rotate = selection.controls.mtr
+    expect(rotate.render).toBe(renderRotateHandle)
+    expect(rotate.sizeX).toBe(ROTATE_HANDLE_SIZE)
+    expect(rotate.sizeY).toBe(ROTATE_HANDLE_SIZE)
+  })
+
+  it("keeps the chrome when the selection changes", () => {
+    const selection = buildSelection()
+    canvas.fire("selection:updated", {} as never) // re-applied — a no-op, not a reset
+    expect(selection.controls.mtr.render).toBe(renderRotateHandle)
+    expect(selection.isControlVisible("tl")).toBe(true)
+  })
+
+  it("hides the side handles — the set scales uniformly from corners only", () => {
+    const selection = buildSelection()
+    for (const key of ["ml", "mt", "mr", "mb"]) {
+      expect(selection.isControlVisible(key)).toBe(false)
+    }
+    expect(selection.isControlVisible("tl")).toBe(true)
+    expect(selection.isControlVisible("br")).toBe(true)
+    expect(selection.isControlVisible("mtr")).toBe(true)
+  })
+
+  it("scales a multi-selection up from its corner handle", () => {
+    const selection = buildSelection()
+    const raw = canvas as unknown as {
+      calcOffset(): void
+      _offset: { left: number; top: number }
+      __onMouseDown(e: MouseEvent): void
+      __onMouseMove(e: MouseEvent): void
+      __onMouseUp(e: MouseEvent): void
+    }
+    // jsdom's disconnected canvases report a zero wrapper rect, so
+    // `calcOffset` lands on the wrapper's default-margin offsets — client
+    // coordinates are viewport coordinates plus that offset, exactly the
+    // browser's mapping of a press on the canvas.
+    raw.calcOffset()
+    const { left, top } = raw._offset
+    const br = selection.oCoords.br
+    const at = (x: number, y: number) =>
+      ({ clientX: x + left, clientY: y + top, shiftKey: false }) as MouseEvent
+    raw.__onMouseDown(at(br.x + 1, br.y + 1))
+    raw.__onMouseMove(at(br.x + 61, br.y + 61))
+    raw.__onMouseMove(at(br.x + 121, br.y + 121))
+    raw.__onMouseUp(at(br.x + 121, br.y + 121))
+    expect(selection.scaleX).toBeGreaterThan(1)
+    expect(selection.scaleX).toBeCloseTo(selection.scaleY, 10)
   })
 })

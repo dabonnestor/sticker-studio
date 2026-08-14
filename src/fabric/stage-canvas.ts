@@ -37,7 +37,7 @@ export const DOCUMENT_BORDER_WIDTH = 0
 export const DOCUMENT_BORDER_COLOR = DEFAULT_BORDER_COLOR
 
 /** Rotation-handle size — larger than the 13px corner handles so the icon reads. */
-const ROTATE_HANDLE_SIZE = 20
+export const ROTATE_HANDLE_SIZE = 20
 
 /** Handle accent color — matches the app's border color (DEFAULT_BORDER_COLOR). */
 const ROTATE_ICON_COLOR = "#18181b"
@@ -67,6 +67,20 @@ function applyCornerCursors(obj: FabricObject): void {
     const control = obj.controls[key]
     if (control) control.cursorStyleHandler = () => cursor
   }
+}
+
+/**
+ * The custom rotation handle (build spec §7): the white circular badge with
+ * the rotate arrow (renderRotateHandle), sized above the 13px corner handles
+ * so the icon reads. Idempotent — safe to re-apply when a selection forms or
+ * changes.
+ */
+function applyRotateHandle(obj: FabricObject): void {
+  const rotate = obj.controls.mtr
+  if (!rotate) return
+  rotate.sizeX = ROTATE_HANDLE_SIZE
+  rotate.sizeY = ROTATE_HANDLE_SIZE
+  rotate.render = renderRotateHandle
 }
 
 /**
@@ -119,7 +133,7 @@ function getRotateIcon(): Path {
  * with a dark outline — so it reads on any canvas — and the rotate icon
  * centered inside it. The arrow rotates with the object.
  */
-function renderRotateHandle(
+export function renderRotateHandle(
   this: Control,
   ctx: CanvasRenderingContext2D,
   left: number,
@@ -493,12 +507,7 @@ export function createStageCanvas(
     const obj = event.target
     if (!obj) return
     if (!obj.id) stampDocumentProps(obj)
-    const rotate = obj.controls.mtr
-    if (rotate) {
-      rotate.sizeX = ROTATE_HANDLE_SIZE
-      rotate.sizeY = ROTATE_HANDLE_SIZE
-      rotate.render = renderRotateHandle
-    }
+    applyRotateHandle(obj)
     if (getShapeKind(obj)) {
       obj.setControlsVisibility({ ml: false, mt: false, mr: false, mb: false })
     } else if (isTextObject(obj)) {
@@ -511,16 +520,22 @@ export function createStageCanvas(
   })
 
   // The multi-select wrapper never fires `object:added` — Fabric builds the
-  // ActiveSelection without an add — so its corners would keep Fabric's
-  // quadrant handler while every member shows the fixed diagonals. Apply the
-  // same override whenever a selection forms or changes; re-applying is a
-  // no-op for already-fixed objects.
-  const applySelectionCornerCursors = () => {
+  // ActiveSelection without an add — so it would keep the stock chrome: the
+  // quadrant corner cursor, the plain square rotation handle (no badge), and
+  // the side handles that would stretch the set non-uniformly. Apply the same
+  // chrome the members got at add time — the fixed diagonal corner cursors,
+  // the rotation badge, and corners-only visibility, so the set scales
+  // uniformly from corners like a single object — whenever a selection forms
+  // or changes; re-applying is a no-op for already-chromed selections.
+  const applySelectionChrome = () => {
     const active = canvas.getActiveObject()
-    if (active instanceof ActiveSelection) applyCornerCursors(active)
+    if (!(active instanceof ActiveSelection)) return
+    applyCornerCursors(active)
+    applyRotateHandle(active)
+    active.setControlsVisibility({ ml: false, mt: false, mr: false, mb: false })
   }
-  canvas.on("selection:created", applySelectionCornerCursors)
-  canvas.on("selection:updated", applySelectionCornerCursors)
+  canvas.on("selection:created", applySelectionChrome)
+  canvas.on("selection:updated", applySelectionChrome)
 
   // The document border (envelope-owned, ADR 0002) renders as an inset stroke
   // on the document edge — same inset model as shape borders (§4): the stroke
