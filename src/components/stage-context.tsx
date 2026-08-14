@@ -300,14 +300,14 @@ export function StageProvider({ children }: { children: ReactNode }) {
     setSelection(canvas.getActiveObjects())
   }, [canvas])
 
-  // Del deletes the selection (§13), skipping locked objects (§7 Q3). Keyed
-  // on the document so it fires from anywhere on the stage; the editable
-  // gate keeps Del native in the toolbar's fields and the text session's
-  // hidden textarea.
+  // Del / Backspace deletes the selection (§13), skipping locked objects
+  // (§7 Q3). Keyed on the document so it fires from anywhere on the stage;
+  // the editable gate keeps the keys native in the toolbar's fields and the
+  // text session's hidden textarea.
   useEffect(() => {
     if (!canvas) return
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key !== "Delete") return
+      if (event.key !== "Delete" && event.key !== "Backspace") return
       if (event.ctrlKey || event.metaKey || event.altKey) return
       if (isEditableTarget(document.activeElement)) return
       deleteSelection()
