@@ -17,6 +17,7 @@ import {
   arrangeObjects,
   type ArrangeCommand,
 } from "@/fabric/arrange"
+import { flipObjects, type FlipCommand } from "@/fabric/flip"
 import {
   DOCUMENT_BACKGROUND_COLOR,
   DOCUMENT_BORDER_COLOR,
@@ -117,6 +118,14 @@ interface StageContextValue {
    * when the undo build lands (ADR 0001), like arrange.
    */
   alignSelection: (command: AlignCommand) => void
+  /**
+   * Flip the selection (§7 Q6) — horizontally or vertically, each object
+   * mirroring around its own center (a toggle: applying the same command
+   * again un-flips). Locked objects are inert (§7 Q3, Q7 — no flip) and
+   * skipped, so a fully locked selection is a no-op. One undoable step per
+   * command when the undo build lands (ADR 0001), like arrange.
+   */
+  flipSelection: (command: FlipCommand) => void
   /**
    * Set the selection's opacity (§7 Q3) — one commit for the whole selection,
    * like arrange and align: locked objects are inert and skipped, so a fully
@@ -306,6 +315,15 @@ export function StageProvider({ children }: { children: ReactNode }) {
     [canvas],
   )
 
+  const flipSelection = useCallback(
+    (command: FlipCommand) => {
+      if (!canvas) return
+      flipObjects(canvas.getActiveObjects(), command)
+      canvas.requestRenderAll()
+    },
+    [canvas],
+  )
+
   const commitOpacity = useCallback(
     (opacity: number) => {
       if (!canvas) return
@@ -408,6 +426,7 @@ export function StageProvider({ children }: { children: ReactNode }) {
         commitTextProps,
         arrangeSelection,
         alignSelection,
+        flipSelection,
         commitOpacity,
         deleteSelection,
         toggleLock,

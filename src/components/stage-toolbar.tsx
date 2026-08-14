@@ -17,6 +17,8 @@ import {
   Blend,
   CaseUpper,
   ChevronDown,
+  FlipHorizontal2,
+  FlipVertical2,
   Italic,
   Layers,
   Lock,
@@ -59,6 +61,7 @@ import {
 } from "@/components/ui/tooltip"
 import { type AlignCommand } from "@/fabric/align"
 import { type ArrangeCommand } from "@/fabric/arrange"
+import { type FlipCommand } from "@/fabric/flip"
 import {
   DEFAULT_BORDER_COLOR,
   DEFAULT_FILL,
@@ -1014,16 +1017,88 @@ function AlignButton() {
 }
 
 /**
+ * The two flip commands (§7 Q6) — the Flip card's row: mirror the selection
+ * horizontally or vertically. Each command is a toggle — applying it again
+ * un-flips.
+ */
+const FLIP_COMMANDS: {
+  value: FlipCommand
+  label: string
+  icon: typeof FlipHorizontal2
+}[] = [
+  { value: "horizontal", label: "Flip horizontal", icon: FlipHorizontal2 },
+  { value: "vertical", label: "Flip vertical", icon: FlipVertical2 },
+]
+
+/**
+ * Flip card (§7 Q6) — a popover like the Arrange and Align cards: the two
+ * mirror commands — horizontal or vertical — as a two-column grid. The
+ * selection flips as a unit, each object around its own center; locked
+ * objects are inert (§7 Q3, Q7 — no flip), so a fully locked selection has
+ * nothing to flip — the trigger disables with an explanation, like
+ * arrange's. Picking a command commits and closes the card.
+ */
+function FlipButton() {
+  const { selection, flipSelection } = useStage()
+  const hasUnlocked = selection.some((obj) => !obj.locked)
+  const [open, setOpen] = useState(false)
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <TooltipLabel
+        label={
+          hasUnlocked ? "Flip" : "Locked objects can't be flipped — unlock first"
+        }
+      >
+        <PopoverTrigger asChild>
+          <Button
+            variant="outline"
+            size="icon-sm"
+            disabled={!hasUnlocked}
+            aria-label="Flip"
+          >
+            <FlipVertical2 aria-hidden />
+          </Button>
+        </PopoverTrigger>
+      </TooltipLabel>
+      <PopoverContent align="end" className="w-56">
+        <div className="flex flex-col gap-1.5">
+          <span className="px-1 text-[10px] leading-none text-muted-foreground">
+            Flip
+          </span>
+          <div className="grid grid-cols-2 gap-0.5">
+            {FLIP_COMMANDS.map(({ value, label, icon: Icon }) => (
+              <Button
+                key={value}
+                variant="ghost"
+                size="sm"
+                className="flex h-auto items-center justify-start gap-1.5 px-2 py-1.5 text-[10px] font-normal"
+                onClick={() => {
+                  flipSelection(value)
+                  setOpen(false)
+                }}
+              >
+                <Icon aria-hidden />
+                {label}
+              </Button>
+            ))}
+          </div>
+        </div>
+      </PopoverContent>
+    </Popover>
+  )
+}
+
+/**
  * Stage toolbar strip (build spec §3): document properties — size with unit
  * display and the canvas look (background, border) — plus the contextual
  * shape-property section while a single shape is selected and the text
  * properties while a single Text object is selected (§6). While a shape or
  * text object is selected the toolbar narrows to just that object's own
  * properties — the document controls (size, units, canvas look) are hidden,
- * since the object's own size is what's being edited. Opacity, arrange,
- * align, lock, and delete sit at the strip's end, visible for any non-empty
- * selection (§7 Q6). The remaining §7 selection controls (group, flip)
- * arrive with the selection build.
+ * since the object's own size is what's being edited. Opacity, flip,
+ * arrange, align, lock, and delete sit at the strip's end, visible for any
+ * non-empty selection (§7 Q6). The remaining §7 selection control (group)
+ * arrives with the selection build.
  */
 export function StageToolbar() {
   const { selection } = useStage()
@@ -1048,6 +1123,7 @@ export function StageToolbar() {
           <>
             <Separator orientation="vertical" className="mx-1 h-5" />
             <OpacityButton />
+            <FlipButton />
             <ArrangeButton />
             <AlignButton />
             <LockButton />
