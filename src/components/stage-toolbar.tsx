@@ -13,7 +13,6 @@ import {
   ArrowDownToLine,
   ArrowUp,
   ArrowUpToLine,
-  BetweenHorizontalStart,
   Bold,
   CaseUpper,
   ChevronDown,
@@ -21,6 +20,7 @@ import {
   Layers,
   Lock,
   Trash2,
+  Type,
   Underline,
 } from "lucide-react"
 
@@ -665,7 +665,7 @@ function TextProps() {
       </div>
 
       <Popover>
-        <TooltipLabel label="Line height and letter spacing">
+        <TooltipLabel label="Spacing">
           <PopoverTrigger asChild>
             <Button
               variant="outline"
@@ -673,12 +673,15 @@ function TextProps() {
               disabled={locked}
               aria-label="Text spacing"
             >
-              <BetweenHorizontalStart aria-hidden />
+              <Type aria-hidden />
             </Button>
           </PopoverTrigger>
         </TooltipLabel>
         <PopoverContent align="start" className="w-64">
           <div className="flex flex-col gap-3">
+            <span className="text-[10px] leading-none text-muted-foreground">
+              Spacing
+            </span>
             <TooltipLabel label="Line height">
               <label className="flex items-center gap-2">
                 <span className="w-16 text-[10px] leading-none text-muted-foreground">
@@ -822,7 +825,7 @@ function ArrangeButton() {
       <TooltipLabel
         label={
           hasUnlocked
-            ? "Arrange — layer order"
+            ? "Arrange"
             : "Locked objects can't be rearranged — unlock first"
         }
       >
@@ -906,7 +909,7 @@ function AlignButton() {
       <TooltipLabel
         label={
           hasUnlocked
-            ? "Align — relative to the document or each other"
+            ? "Align"
             : "Locked objects can't be aligned — unlock first"
         }
       >
