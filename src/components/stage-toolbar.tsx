@@ -155,29 +155,52 @@ function UnitField({
   )
 }
 
-/** A color swatch input — shared by the shape and canvas property sections. */
+/**
+ * A color swatch input — shared by the text, shape and canvas property
+ * sections. React's onChange maps to the native `input` event, which fires
+ * on every drag step inside the picker popup — recording per step would
+ * pollute the undo stack. The commit signal is the native `change` event
+ * (the popup closed with a choice), so it is listened for directly: onApply
+ * previews live without recording, onCommit records exactly one undoable
+ * step (ADR 0001, §8).
+ */
 function ColorInput({
   value,
-  onChange,
+  onApply,
+  onCommit,
   disabled,
   ariaLabel,
   tooltip,
 }: {
   value: string
-  onChange: (color: string) => void
+  onApply: (color: string) => void
+  onCommit: (color: string) => void
   disabled?: boolean
   ariaLabel: string
   tooltip: string
 }) {
+  const onApplyRef = useRef(onApply)
+  onApplyRef.current = onApply
+  const onCommitRef = useRef(onCommit)
+  onCommitRef.current = onCommit
+  const inputRef = useRef<HTMLInputElement>(null)
+  useEffect(() => {
+    const input = inputRef.current
+    if (!input) return
+    const onNativeChange = () => onCommitRef.current(input.value)
+    input.addEventListener("change", onNativeChange)
+    return () => input.removeEventListener("change", onNativeChange)
+  }, [])
   return (
     <TooltipLabel label={tooltip}>
       <input
+        ref={inputRef}
         type="color"
         className="h-7 w-9 cursor-pointer rounded-md bg-transparent p-0.5"
         value={value}
         disabled={disabled}
         aria-label={ariaLabel}
-        onChange={(event) => onChange(event.target.value)}
+        onInput={(event) => onApplyRef.current(event.currentTarget.value)}
       />
     </TooltipLabel>
   )
@@ -300,7 +323,8 @@ function CanvasProps() {
           value={backgroundColor}
           ariaLabel="Canvas background color"
           tooltip="Canvas background color"
-          onChange={(backgroundColor) => commitCanvasProps({ backgroundColor })}
+          onApply={(backgroundColor) => commitCanvasProps({ backgroundColor }, false)}
+          onCommit={(backgroundColor) => commitCanvasProps({ backgroundColor })}
         />
       </label>
       <label className="flex items-center gap-2">
@@ -322,7 +346,8 @@ function CanvasProps() {
           disabled={borderWidth === 0}
           ariaLabel="Border color"
           tooltip={borderWidth === 0 ? "Border is off — set a width first" : "Border color"}
-          onChange={(borderColor) => commitCanvasProps({ borderColor })}
+          onApply={(borderColor) => commitCanvasProps({ borderColor }, false)}
+          onCommit={(borderColor) => commitCanvasProps({ borderColor })}
         />
       </label>
     </div>
@@ -353,7 +378,8 @@ function ShapeProps() {
           disabled={locked}
           ariaLabel="Shape background color"
           tooltip="Shape background color"
-          onChange={(fillColor) => commitShapeProps({ fillColor })}
+          onApply={(fillColor) => commitShapeProps({ fillColor }, false)}
+          onCommit={(fillColor) => commitShapeProps({ fillColor })}
         />
       </label>
       <label className="flex items-center gap-2">
@@ -376,7 +402,8 @@ function ShapeProps() {
           disabled={locked || borderWidth === 0}
           ariaLabel="Border color"
           tooltip={borderWidth === 0 ? "Border is off — set a width first" : "Border color"}
-          onChange={(borderColor) => commitShapeProps({ borderColor })}
+          onApply={(borderColor) => commitShapeProps({ borderColor }, false)}
+          onCommit={(borderColor) => commitShapeProps({ borderColor })}
         />
       </label>
     </div>
@@ -777,7 +804,8 @@ function TextProps() {
           disabled={locked}
           ariaLabel="Text color"
           tooltip="Text color"
-          onChange={(fillColor) => commitTextProps({ fillColor })}
+          onApply={(fillColor) => commitTextProps({ fillColor }, false)}
+          onCommit={(fillColor) => commitTextProps({ fillColor })}
         />
       </label>
 
