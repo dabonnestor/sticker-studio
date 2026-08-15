@@ -1,6 +1,6 @@
 # Sticker Studio — MVP Build Spec
 
-Build-ready specification for the client-side sticker design editor MVP, assembled 2026-08-11 from the wayfinder map's ten resolved decision tickets (issues #2–#12) and ADRs 0001–0003. Each section cites its source decision. The app is **not** built yet; this document is the contract the build sessions implement. Where a decision leaves implementation freedom, the build session picks the concrete markup/UX details within the stated behavior — do not silently change behavior.
+Build-ready specification for the client-side sticker design editor MVP, assembled 2026-08-11 from the wayfinder map's ten resolved decision tickets (issues #2–#12) and ADRs 0001–0003. The Smart guides section (§17) was added 2026-08-15 from the Smart guides map (issue #21) and issues #22–#25, recorded in ADR 0004. Each section cites its source decision. The app is **not** built yet; this document is the contract the build sessions implement. Where a decision leaves implementation freedom, the build session picks the concrete markup/UX details within the stated behavior — do not silently change behavior.
 
 ## 1. Overview & scope
 
@@ -204,6 +204,7 @@ Suggested session boundaries (each session builds against this spec, one module 
 6. **Zoom & viewport**: viewportTransform adapter, Fit, presets, bottom-bar controls, resize behavior (§9).
 7. **Design file**: envelope, validation, migrators pattern, Import/Save (§10).
 8. **Export pipeline**: shared pipeline, four formats, naming, ceiling, font readiness (§11).
+9. **Smart guides**: the `SmartGuides` wrapper, target filter + fabricated document targets, Alt-suppression, overlay painting (§17, ADR 0004).
 
 ## 16. Acceptance checklist
 
@@ -218,3 +219,43 @@ Suggested session boundaries (each session builds against this spec, one module 
 - [ ] Save → JSON envelope v1; Import validates loudly (unknown types rejected); import is undoable.
 - [ ] Export: all four formats at 300 DPI (3.125 multiplier), document rotation applied, text flushed first, fonts ready awaited, 8192 px ceiling enforced, naming per spec.
 - [ ] Every hotkey in §13 works; text-session keys never leak to the document stack.
+- [ ] Smart guides: the §17 acceptance items all pass.
+
+## 17. Smart guides
+
+Sourced from the Smart guides map (issue #21) and issues #22–#25; recorded in ADR 0004; glossary terms **Smart guide**, **Snap**, **Snap target**, **Snap suppression**. Reference research: `research/fabric-v7-native-snapping.md` (branch `research/fabric-v7-native-snapping`).
+
+**Behavior (ADR 0004 — implement without re-deciding):**
+
+- **Reference points** on the moved object: left / center-x / right on x, top / middle / bottom on y (the object's corners + center; rotated objects align by corner, not AABB edge — engine-native, accepted).
+- **Targets**: every other object with a bounding box — Locked, Text, and Group (one whole box, not children) — plus the Document's four edges and its center. Off-screen and invisible objects are not targets. The moved object's own members (ActiveSelection children) are never targets.
+- **Multi-drag**: 2+ objects move as the union box (ActiveSelection); its edges/center align; its members are excluded.
+- **Move-only v1**: no snapping or guides while scaling or resizing.
+- **Tolerance**: flat 6 screen px — named constant (e.g. `SNAP_TOLERANCE_PX = 6`) — snap in at ≤6, out beyond 6; no hysteresis. Alt/Option mid-drag suppresses the snap; guides stay at the would-be alignment.
+- **Guides**: 1 px, full-workspace extent, periwinkle — dashed `rgb(178,204,255)` while near, solid `rgb(100,100,255)` when snapped; coincident coordinates render one line.
+- **Snap resolution**: per-axis nearest-wins, both axes engage at once (crosshair); equidistant ties show every line — the snapped one solid, the rest dashed — tie-break = collection order (canvas object order, deterministic — accepted). Tautological alignments skipped (below).
+
+**Architecture:**
+
+- `src/fabric/smart-guides.ts`: `class SmartGuides extends AligningGuidelines` (import `{ AligningGuidelines } from "fabric/extensions"`, v7.4.0 exact-pinned). Constructed with the StageCanvas in the stage factory, `margin: 6`. Four overrides:
+  1. `getObjectsByTarget(target)` — Groups as whole boxes (`getCoords()` bbox; skip the default's child-unpacking); four 0-thickness rects fabricated at the Document edges (`x=0` / `x=W` / `y=0` / `y=H`) plus one tiny rect at the Document center — constructed once, **never added to the canvas** (no render/serialization/selection side effects; detached `getCoords` works via lazy `aCoords`); keep the default's exclusions (off-screen, invisible, ActiveSelection members); plus the tautological skip.
+  2. `scalingOrResizing` → no-op.
+  3. `afterRender` → no-op (`beforeRender` may keep the default — it clears the unused `contextTop`).
+  4. `moving(e)` — snapshot `left`/`top` + `originX`/`originY`; call `super.moving(e)`; restore + `setCoords()` when Alt/Option (`e.e.altKey`) is held (**the origin reset is required** — the extension's `setXY` → `setPositionByOrigin` mutates origin). Record per-axis snapped flags (position after `super.moving` vs the snapshot — before the Alt revert). On the drag's first tick, snapshot the moved object's five reference coordinates (reset on `mouse:up`) — the tautological skip reads them.
+- **Tautological skip**: on an axis the drag does not move (accumulated |position − drag-start| within a sub-pixel tolerance, e.g. 1 px), drop targets whose alignment coordinate coincides (same tolerance) with the moved object's own drag-start reference coordinate on that axis. Kills the perpetual full-span guides (a full-width object's edges and center permanently coincide with the Document's); keeps flush-alignments to nearly-covered targets. (Measure against drag-start references, not per-tick positions — the extension records pre-snap points, so per-tick equality would leak the perpetual guides back in under pointer jitter.)
+- **Painting**: repo `after:render` handler reads `verticalLines` / `horizontalLines` (Sets of JSON strings, entries `{origin, target}`, scene coordinates — line coordinate = `target.x` / `target.y`), paints full-extent guides on the workspace overlay through a public paint seam: make `StageCanvas`'s private `prepareOverlay` (`src/fabric/stage-canvas.ts:332`) public — `_drawSelection`'s mirror (`:367`) is the precedent (clear-then-paint per frame, skip-clear while a marquee is live). Paint under the viewport transform (identity today — zoom-ready). Per axis: first cache entry solid, rest dashed; suppressed axes (Alt) all dashed. `finalizeOverlayFrame`'s keep-rule (`:309`) gains a "guides painted this frame" flag.
+- **Lifecycle**: `dispose()` = `super.dispose()` (unbinds the extension's six canvas listeners) + removal of the wrapper's own (the `after:render` painter, `mouse:down` / `mouse:up` for the drag snapshot) — pinned for the canvas-rebuild lifecycle.
+- **Undo/integration**: snapping yields ordinary move gestures — one undoable step per drag (`object:modified`, ADR 0001); guides are view state — never serialized (ADR 0002), never undoable steps.
+
+**Acceptance items:**
+
+- [ ] Dragging a shape within 6 px of another object's edge or center shows a dashed periwinkle guide (1 px, full workspace extent); within tolerance the object snaps per axis; a corner approach lands both axes (crosshair) with both guides solid.
+- [ ] Targets include locked objects, Text, Groups (whole box — no per-child guides), the four Document edges, and the Document center; off-screen/invisible objects never guide.
+- [ ] 2+ objects drag as a union box; the box's edges/center guide; selection members are never targets.
+- [ ] Two equidistant alignments on one axis: both lines show, the snapped one solid, the other dashed; identical coordinates render one line.
+- [ ] Alt/Option mid-drag: no snap, guides stay (all dashed); release Alt within tolerance → the object jumps to the alignment.
+- [ ] Flat boundary: snap at exactly 6 px; nothing at 6.1 px; no snap-back or stickiness beyond the threshold.
+- [ ] Full-span: a full-width object dragged vertically shows no vertical guides at its own edges or center; a horizontal drag aligns to the Document edges normally; a nearly-covered target's edge alignment still shows.
+- [ ] Move-only: no guides or snapping while scaling or resizing.
+- [ ] Dispose/rebuild: listeners, caches, and fabricated targets fully released; no leaked listeners or stale guides.
+- [ ] Zoom-ready (early-verify): at non-100% zoom, guides stay glued to the scene and the tolerance stays 6 screen px.

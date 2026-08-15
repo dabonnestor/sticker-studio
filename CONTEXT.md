@@ -66,3 +66,19 @@ _Avoid_: scale, magnification
 **Fit**:
 The zoom level at which the whole Document fits inside the workspace with a margin — the default zoom on load, whether the Document is smaller or larger than the workspace.
 _Avoid_: fit-to-window, zoom to fit
+
+**Smart guide**:
+A vertical or horizontal guide line shown on the workspace while dragging, marking an alignment the moved object can Snap to — dashed while near, solid while snapped.
+_Avoid_: alignment line, guide line
+
+**Snap**:
+The state of a moved object held to an alignment: a reference point of the object coincides with the Snap target's, resolved per axis independently — the nearest alignment per axis engages, both axes at once if both are within tolerance, and the engaged Smart guide turns solid.
+_Avoid_: magnetic snap, stick, dock
+
+**Snap target**:
+Anything a moved object can align to: every other object — Locked, Text, and Group included — plus the Document's four edges and its center.
+_Avoid_: anchor, alignment source
+
+**Snap suppression**:
+The state of a drag in which Snap is suspended but the Smart guides stay visible — entered by holding Alt/Option mid-drag, letting the object sit freely within an alignment's tolerance while the guide still marks it.
+_Avoid_: snap toggle, snap override
