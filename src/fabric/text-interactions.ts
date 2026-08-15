@@ -41,6 +41,10 @@ export interface TextSessionState {
   text: string
   /** Per-character styles — paste can import rich styles. */
   styles: Textbox["styles"]
+  /** The box's auto-fit width at session start — typing re-fits it. */
+  width: number
+  /** The pre-session uppercase source — typing while the flag is set updates it. */
+  uppercaseSource: Textbox["uppercaseSource"]
   /** Escape was pressed: the session must revert, not commit. */
   revert: boolean
   /** Removes the session's textarea listeners. */
@@ -52,6 +56,8 @@ export function captureTextSession(obj: Textbox): TextSessionState {
   return {
     text: obj.text,
     styles: structuredClone(obj.styles) as Textbox["styles"],
+    width: obj.width,
+    uppercaseSource: obj.uppercaseSource,
     revert: false,
   }
 }
@@ -71,15 +77,22 @@ export function commitTextSession(
 }
 
 /**
- * The revert path of a session exit: restore the pre-session text. The top
- * edge is pinned across the restore — the session's longer text grew the
- * box, and shrinking it back would pivot the center-anchored object and
- * walk the text vertically by Δh/2 (the same capture-restore as
- * `applyTextProps`).
+ * The revert path of a session exit: restore the pre-session state — the
+ * text, the per-character styles, the auto-fit width (typing re-fits it on
+ * every keystroke, so the box is wider than it started) and the uppercase
+ * source (typing while the flag is set overwrites it). The top edge is
+ * pinned across the restore — the session's longer text grew the box, and
+ * shrinking it back would pivot the center-anchored object and walk the
+ * text vertically by Δh/2 (the same capture-restore as `applyTextProps`).
  */
 export function revertTextSession(obj: Textbox, state: TextSessionState): void {
   const top = obj.getPositionByOrigin(obj.originX, "top")
-  obj.set({ text: state.text, styles: state.styles })
+  obj.set({
+    text: state.text,
+    styles: state.styles,
+    width: state.width,
+    uppercaseSource: state.uppercaseSource,
+  })
   obj.setPositionByOrigin(top, obj.originX, "top")
   obj.setCoords()
 }

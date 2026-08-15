@@ -9,6 +9,7 @@ import {
   Undo2,
 } from "lucide-react"
 
+import { useStage } from "@/components/stage-context"
 import { Button } from "@/components/ui/button"
 import {
   DropdownMenu,
@@ -34,11 +35,13 @@ const ZOOM_RANGE = { min: 10, max: 800, step: 10 } as const
 /**
  * Bottom bar (build spec §3): undo/redo, zoom controls (− / % ▾ / + / slider),
  * Preview, fullscreen, and the status area where export progress and errors
- * surface. Undo/redo is wired by the undo build, zoom by the zoom build; the
- * zoom cluster keeps local state so the widget is alive, without touching
- * the canvas yet. The status area is live from the export build on.
+ * surface. Undo/redo (Build 4, ADR 0001) walks the document-state stack;
+ * zoom is wired by the zoom build, so the zoom cluster keeps local state
+ * without touching the canvas yet. The status area is live from the export
+ * build on.
  */
 export function BottomBar() {
+  const { canUndo, canRedo, undo, redo } = useStage()
   const [zoom, setZoom] = useState(100)
 
   const zoomOut = () => setZoom((z) => Math.max(ZOOM_RANGE.min, z - ZOOM_RANGE.step))
@@ -46,10 +49,22 @@ export function BottomBar() {
 
   return (
     <footer className="flex h-10 shrink-0 items-center gap-1 border-t bg-background px-3">
-      <Button variant="ghost" size="icon" disabled aria-label="Undo">
+      <Button
+        variant="ghost"
+        size="icon"
+        disabled={!canUndo}
+        onClick={() => void undo()}
+        aria-label="Undo"
+      >
         <Undo2 aria-hidden />
       </Button>
-      <Button variant="ghost" size="icon" disabled aria-label="Redo">
+      <Button
+        variant="ghost"
+        size="icon"
+        disabled={!canRedo}
+        onClick={() => void redo()}
+        aria-label="Redo"
+      >
         <Redo2 aria-hidden />
       </Button>
 

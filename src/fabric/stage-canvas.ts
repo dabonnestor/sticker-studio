@@ -13,6 +13,7 @@ import {
 
 import { stampDocumentProps } from "@/fabric/document-props"
 import { getTextMeasurer } from "@/fabric/fonts"
+import { History } from "@/fabric/history"
 import { DEFAULT_BORDER_COLOR, getShapeKind } from "@/fabric/shapes"
 import { SNAP_TOLERANCE_PX, SmartGuides } from "@/fabric/smart-guides"
 import { wireTextInteractions } from "@/fabric/text-interactions"
@@ -282,6 +283,15 @@ export class StageCanvas extends Canvas {
    */
   smartGuides?: SmartGuides
 
+  /**
+   * Build 4's undo/redo stack — created by the stage factory (the only
+   * construction path), disposed with the canvas (the canvas-rebuild
+   * lifecycle disposes and re-creates, so each rebuild starts a fresh
+   * history). `declare`: set after the constructor — the factory creates it
+   * last, so the seed snapshot carries the final border defaults.
+   */
+  declare history: History
+
   constructor(
     element: HTMLCanvasElement,
     marqueeOverlay: HTMLCanvasElement,
@@ -392,13 +402,14 @@ export class StageCanvas extends Canvas {
   }
 
   /**
-   * Dispose the Build 9 smart-guides wrapper (its extension listeners and
-   * the overlay painter) before the canvas's own async dispose — the
+   * Dispose the Build 9 smart-guides wrapper and Build 4's undo/redo stack
+   * (their extension listeners) before the canvas's own async dispose — the
    * canvas-rebuild lifecycle in the stage component disposes and re-creates,
-   * so a rebuild must not leak the old guides' listeners or caches.
+   * so a rebuild must not leak the old listeners or caches.
    */
   override dispose(): Promise<boolean> {
     this.smartGuides?.dispose()
+    this.history.dispose()
     return super.dispose()
   }
 
@@ -661,6 +672,13 @@ export function createStageCanvas(
   // session lifecycle (commit on exit, Escape reverts, auto-fit re-fits,
   // uppercase) wires here.
   wireTextInteractions(canvas, getTextMeasurer())
+
+  // Build 4: undo/redo (ADR 0001) — the snapshot stack. Created last so the
+  // seed snapshot (the initial empty Document) carries the final border and
+  // background defaults; it listens for gesture-end boundaries itself, and
+  // the StageProvider commits its structural commands (add, delete, arrange,
+  // lock, property commits) through it.
+  canvas.history = new History(canvas)
 
   return canvas
 }

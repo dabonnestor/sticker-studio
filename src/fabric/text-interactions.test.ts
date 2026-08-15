@@ -164,6 +164,22 @@ describe("wireTextInteractions — session lifecycle", () => {
     expect(textbox.text).toBe("before")
   })
 
+  it("Escape reverts the full pre-session state — the auto-fit width and the uppercase source", () => {
+    textbox.set("text", "before")
+    const width = textbox.width
+    expect(textbox.uppercaseSource).toBeUndefined()
+    textbox.uppercase = true
+    edit()
+    type("much longer text than before")
+    // Typing re-fits the width live (auto width, §6) and records the source.
+    expect(textbox.width).toBeGreaterThan(width)
+    expect(textbox.uppercaseSource).toBe("much longer text than before")
+    pressKey("Escape", 27)
+    expect(textbox.text).toBe("before")
+    expect(textbox.width).toBe(width)
+    expect(textbox.uppercaseSource).toBeUndefined()
+  })
+
   it("empty-on-exit restores 'Text'", () => {
     textbox.set("text", "before")
     edit()
