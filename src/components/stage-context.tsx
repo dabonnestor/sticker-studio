@@ -96,15 +96,25 @@ interface StageContextValue {
    * document); this is what the toolbar edits.
    */
   canvasProps: { backgroundColor: string; borderWidth: number; borderColor: string }
-  /** Apply a property patch to the Document (§5). */
-  commitCanvasProps: (patch: CanvasPropsPatch) => void
+  /**
+   * Apply a property patch to the Document (§5). One undoable step (ADR
+   * 0001) unless recordHistory is false — the color-picker drag preview
+   * applies without recording, so skimming the picker never pollutes the
+   * undo stack (§8).
+   */
+  commitCanvasProps: (patch: CanvasPropsPatch, recordHistory?: boolean) => void
   /** Active display unit — a label swap over stored px (§5). */
   unit: Unit
   setUnit: (unit: Unit) => void
   /** Add a shape of the given kind, centered and selected (§5). */
   addShape: (kind: ShapeKind) => void
-  /** Apply a property patch to the selected shape (§5). */
-  commitShapeProps: (patch: ShapePropsPatch) => void
+  /**
+   * Apply a property patch to the selected shape (§5). One undoable step
+   * (ADR 0001) unless recordHistory is false — the color-picker drag preview
+   * applies without recording, so skimming the picker never pollutes the
+   * undo stack (§8).
+   */
+  commitShapeProps: (patch: ShapePropsPatch, recordHistory?: boolean) => void
   /**
    * Add a Text object at the viewport center, selected and already in its
    * text session (§6). Fonts are awaited before the width is auto-fitted —
@@ -322,7 +332,7 @@ export function StageProvider({ children }: { children: ReactNode }) {
   }, [canvas])
 
   const commitCanvasProps = useCallback(
-    (patch: CanvasPropsPatch) => {
+    (patch: CanvasPropsPatch, recordHistory = true) => {
       if (!canvas?.history) return
       if (patch.backgroundColor !== undefined) {
         canvas.backgroundColor = patch.backgroundColor
@@ -335,13 +345,15 @@ export function StageProvider({ children }: { children: ReactNode }) {
         borderWidth: canvas.borderWidth,
         borderColor: canvas.borderColor,
       })
-      canvas.history.commit()
+      // The color-picker drag preview applies without recording — only the
+      // dialog close commits (ADR 0001, §8).
+      if (recordHistory) canvas.history.commit()
     },
     [canvas],
   )
 
   const commitShapeProps = useCallback(
-    (patch: ShapePropsPatch) => {
+    (patch: ShapePropsPatch, recordHistory = true) => {
       if (!canvas?.history) return
       const obj = canvas.getActiveObjects()[0]
       if (!obj) return
@@ -350,7 +362,9 @@ export function StageProvider({ children }: { children: ReactNode }) {
       if (patch.borderColor !== undefined) setBorderColor(obj, patch.borderColor)
       canvas.requestRenderAll()
       setSelection(canvas.getActiveObjects())
-      canvas.history.commit()
+      // The color-picker drag preview applies without recording — only the
+      // dialog close commits (ADR 0001, §8).
+      if (recordHistory) canvas.history.commit()
     },
     [canvas],
   )
