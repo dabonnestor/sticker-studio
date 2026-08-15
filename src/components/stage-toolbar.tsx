@@ -159,18 +159,18 @@ function UnitField({
  * A color swatch input — shared by the text, shape and canvas property
  * sections. Skimming the dialog previews live through onApply — applied
  * without recording, so dragging never pollutes the undo stack (§8). The
- * session commits exactly one undoable step when the dialog closes: the
- * native `change` event covers a committed close (OK/Enter). A cancelled
- * close (Escape/Cancel) fires no change — but the dialog is a separate
- * window, so the page window refocuses when it closes either way, and the
- * session is committed there instead, turning the color the user actually
- * saw into one step instead of a never-recorded preview (where one undo
- * would pop the pre-add state). The dirty flag — set by the drag `input`
- * events — scopes that refocus to sessions that touched the value, so
- * unrelated refocuses (alt-tab) never record, and the history commit's
- * dedup makes the double-commit on a committed close a no-op. React's
- * onChange maps to the native `input` event (every drag step), so the
- * native change listener is attached directly.
+ * session commits exactly one undoable step when the dialog closes, by any
+ * gesture: the native `change` event covers a committed close (OK/Enter);
+ * a click outside the dialog is a dismissal that fires no change, but the
+ * click itself lands on the page and commits the session there; and a
+ * cancelled close that touches no page (Escape on a separate-window
+ * dialog) is caught by the page window refocusing when the dialog closes
+ * either way. All three fallbacks commit through the dirty flag — set by
+ * the drag `input` events — so unrelated clicks or refocuses (alt-tab)
+ * never record, and the history commit's dedup makes a double-commit on a
+ * committed close a no-op. React's onChange maps to the native `input`
+ * event (every drag step), so the native change listener is attached
+ * directly.
  */
 function ColorInput({
   value,
@@ -196,21 +196,27 @@ function ColorInput({
   useEffect(() => {
     const input = inputRef.current
     if (!input) return
-    const onNativeChange = () => {
-      onChangeRef.current(input.value)
-      dirtyRef.current = false
-    }
-    input.addEventListener("change", onNativeChange)
-    const onWindowFocus = () => {
+    const commitIfTouched = () => {
       if (dirtyRef.current) {
         onChangeRef.current(input.value)
         dirtyRef.current = false
       }
     }
-    window.addEventListener("focus", onWindowFocus)
+    const onNativeChange = () => {
+      onChangeRef.current(input.value)
+      dirtyRef.current = false
+    }
+    input.addEventListener("change", onNativeChange)
+    // The three dismissal gestures, all committing the session once: the
+    // change event (OK/Enter), a click outside the dialog (the click lands
+    // on the page), and the page window refocusing after a close that
+    // touched no page (Escape on a separate-window dialog).
+    document.addEventListener("pointerdown", commitIfTouched)
+    window.addEventListener("focus", commitIfTouched)
     return () => {
       input.removeEventListener("change", onNativeChange)
-      window.removeEventListener("focus", onWindowFocus)
+      document.removeEventListener("pointerdown", commitIfTouched)
+      window.removeEventListener("focus", commitIfTouched)
     }
   }, [])
   return (
