@@ -157,16 +157,17 @@ function UnitField({
 
 /**
  * A color swatch input — shared by the text, shape and canvas property
- * sections. The color is applied only on the native `change` event — the
- * picker dialog closed with a choice — recording exactly one undoable step
- * (ADR 0001, §8). React's onChange maps to the native `input` event instead
- * (it fires on every drag step inside the dialog), so the native change
- * listener is attached directly. Applying per drag step is wrong in both
- * directions: recording each step pollutes the undo stack, and applying
- * without recording leaves a never-committed preview on the canvas when the
- * dialog is cancelled — undo then pops the pre-add state and the object
- * vanishes. The dialog is modal anyway, so a per-step canvas preview is
- * never visible.
+ * sections. The color applies only when the picker dialog closes, exactly
+ * one undoable step per session (ADR 0001, §8): the native `change` event
+ * covers a committed close (OK/Enter). A cancelled close (Escape/Cancel)
+ * fires no change — but the dialog is a separate window, so the page
+ * window refocuses when it closes either way, and the session is committed
+ * there instead. The dirty flag — set by the drag `input` events — scopes
+ * that refocus to sessions that actually touched the value, so unrelated
+ * refocuses (alt-tab) never record, and the history commit's dedup makes
+ * the double-commit on a committed close a no-op. React's onChange maps to
+ * the native `input` event (every drag step), so the native change
+ * listener is attached directly.
  */
 function ColorInput({
   value,
@@ -184,12 +185,26 @@ function ColorInput({
   const onChangeRef = useRef(onChange)
   onChangeRef.current = onChange
   const inputRef = useRef<HTMLInputElement>(null)
+  const dirtyRef = useRef(false)
   useEffect(() => {
     const input = inputRef.current
     if (!input) return
-    const onNativeChange = () => onChangeRef.current(input.value)
+    const onNativeChange = () => {
+      onChangeRef.current(input.value)
+      dirtyRef.current = false
+    }
     input.addEventListener("change", onNativeChange)
-    return () => input.removeEventListener("change", onNativeChange)
+    const onWindowFocus = () => {
+      if (dirtyRef.current) {
+        onChangeRef.current(input.value)
+        dirtyRef.current = false
+      }
+    }
+    window.addEventListener("focus", onWindowFocus)
+    return () => {
+      input.removeEventListener("change", onNativeChange)
+      window.removeEventListener("focus", onWindowFocus)
+    }
   }, [])
   return (
     <TooltipLabel label={tooltip}>
@@ -200,6 +215,9 @@ function ColorInput({
         value={value}
         disabled={disabled}
         aria-label={ariaLabel}
+        onInput={() => {
+          dirtyRef.current = true
+        }}
       />
     </TooltipLabel>
   )
