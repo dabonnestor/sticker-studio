@@ -215,12 +215,20 @@ export function forceUppercase(obj: Textbox): void {
  * `set()` — Fabric re-measures text layout and marks the object dirty.
  * Auto-fit survives family/size changes: while the box has never been
  * manually resized it still hugs its content, so the width re-fits.
+ *
+ * The top edge is pinned across the whole commit: a family/size/line-height
+ * set re-wraps the box against the current width, and a changed line count
+ * changes the height — without a pin, the center-anchored object pivots
+ * around its center and the text visibly walks vertically by Δh/2. The edge
+ * is captured before any set and restored after the re-fit (the same
+ * capture-restore Fabric's own `updateFromTextArea` uses while typing).
  */
 export function applyTextProps(
   obj: Textbox,
   patch: TextPropsPatch,
   measure?: TextMeasurer,
 ): void {
+  const top = obj.getPositionByOrigin(obj.originX, "top")
   if (patch.fontFamily !== undefined) {
     obj.set("fontFamily", patch.fontFamily)
     // Real faces only (§6): a weight or italic the new family doesn't bundle
@@ -262,4 +270,6 @@ export function applyTextProps(
   ) {
     fitToContent(obj, measure)
   }
+  obj.setPositionByOrigin(top, obj.originX, "top")
+  obj.setCoords()
 }

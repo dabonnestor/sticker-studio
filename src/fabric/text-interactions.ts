@@ -70,9 +70,17 @@ export function commitTextSession(
   if (obj.autoFit) fitToContent(obj, measure)
 }
 
-/** The revert path of a session exit: restore the pre-session text. */
+/**
+ * The revert path of a session exit: restore the pre-session text. The top
+ * edge is pinned across the restore — the session's longer text grew the
+ * box, and shrinking it back would pivot the center-anchored object and
+ * walk the text vertically by Δh/2 (the same capture-restore as
+ * `applyTextProps`).
+ */
 export function revertTextSession(obj: Textbox, state: TextSessionState): void {
+  const top = obj.getPositionByOrigin(obj.originX, "top")
   obj.set({ text: state.text, styles: state.styles })
+  obj.setPositionByOrigin(top, obj.originX, "top")
   obj.setCoords()
 }
 

@@ -274,6 +274,50 @@ describe("applyTextProps — the nine properties (§6)", () => {
   })
 })
 
+describe("top-edge pinning — property commits never nudge the box (§6)", () => {
+  it("keeps the top edge across a family change that re-wraps the box", () => {
+    // Family-sensitive widths (Pacifico measures half of Inter): switching
+    // to a wider family re-wraps the 2-line box against the old width
+    // (4 lines) before the re-fit — without the pin, the center-anchored
+    // box pivots and the text walks up by Δh/2. The shared stub context is
+    // mutated (and restored) so Fabric's own per-char measurement agrees
+    // with the injected measurer. Widths are proportional to the measuring
+    // font size — Fabric measures glyphs at its 400 px cache size and
+    // scales by fontSize/400, so a linear per-character stub would never
+    // re-wrap.
+    const ctx = document.createElement("canvas").getContext("2d")!
+    const original = ctx.measureText
+    const perChar = (family: string | undefined) => (family === "Pacifico" ? 2000 : 4000)
+    ctx.measureText = ((text: string) => {
+      const family = /\b(Inter|Pacifico)\b/.exec(ctx.font)?.[1]
+      const size = /(\d+)px/.exec(ctx.font)?.[1]
+      return { width: text.length * perChar(family) * (Number(size) / 400) } as TextMetrics
+    }) as typeof ctx.measureText
+    try {
+      const familyMeasure: TextMeasurer = (text, style) =>
+        text.length * perChar(style.fontFamily) * (style.fontSize / 400)
+      const t = createText(familyMeasure)
+      t.set("text", "line one\nline two")
+      fitToContent(t, familyMeasure) // Inter → 1922 px, 2 lines
+      applyTextProps(t, { fontFamily: "Pacifico" }, familyMeasure) // narrower → 962 px
+      const topBefore = t.getCoords()[0].y
+      applyTextProps(t, { fontFamily: "Inter" }, familyMeasure) // re-wraps at 962, fits to 1922
+      expect(t.getCoords()[0].y).toBe(topBefore)
+    } finally {
+      ctx.measureText = original
+    }
+  })
+
+  it("keeps the top edge across a size change that pivots the height", () => {
+    const t = createText(measure)
+    t.set("text", "line one\nline two")
+    fitToContent(t, measure)
+    const topBefore = t.getCoords()[0].y
+    applyTextProps(t, { fontSize: 48 }, measure)
+    expect(t.getCoords()[0].y).toBe(topBefore)
+  })
+})
+
 describe("text session — one interaction boundary (§6)", () => {
   it("captures the pre-session text and styles", () => {
     const t = createText()
@@ -316,6 +360,21 @@ describe("text session — one interaction boundary (§6)", () => {
       t.set("text", "after")
       revertTextSession(t, state)
       expect(t.text).toBe("before")
+    })
+
+    it("keeps the top edge across the restore — the box does not pivot (§6)", () => {
+      // The session grew the box (2 lines); reverting to the short
+      // pre-session text shrinks it — without the pin, the center-anchored
+      // box pivots and the text walks down by Δh/2.
+      const t = createText(measure)
+      t.set({ left: 100, top: 200 })
+      t.setCoords()
+      const state = captureTextSession(t) // pre-session: "Text", one line
+      t.set("text", "line one\nline two")
+      fitToContent(t, measure)
+      const topBefore = t.getCoords()[0].y
+      revertTextSession(t, state)
+      expect(t.getCoords()[0].y).toBe(topBefore)
     })
   })
 })
