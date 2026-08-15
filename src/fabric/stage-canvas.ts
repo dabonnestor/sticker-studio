@@ -14,6 +14,7 @@ import {
 import { stampDocumentProps } from "@/fabric/document-props"
 import { getTextMeasurer } from "@/fabric/fonts"
 import { DEFAULT_BORDER_COLOR, getShapeKind } from "@/fabric/shapes"
+import { SNAP_TOLERANCE_PX, SmartGuides } from "@/fabric/smart-guides"
 import { wireTextInteractions } from "@/fabric/text-interactions"
 import { isTextObject } from "@/fabric/text"
 
@@ -272,6 +273,15 @@ export class StageCanvas extends Canvas {
   /** True while the selection controls painted on the overlay this frame. */
   private controlsPaintedThisFrame = false
 
+  /** True while the smart guides painted on the overlay this frame. */
+  private guidesPaintedThisFrame = false
+
+  /**
+   * Build 9's smart-guides wrapper — created by the stage factory, disposed
+   * with the canvas (the canvas-rebuild lifecycle disposes and re-creates).
+   */
+  smartGuides?: SmartGuides
+
   constructor(
     element: HTMLCanvasElement,
     marqueeOverlay: HTMLCanvasElement,
@@ -284,6 +294,21 @@ export class StageCanvas extends Canvas {
   /** True while a marquee drag is in progress. */
   isMarqueeActive(): boolean {
     return this._groupSelector !== null
+  }
+
+  /**
+   * True while the selection controls painted on the overlay this frame —
+   * the smart-guides painter's skip-clear probe: the controls mirror's own
+   * per-frame clear already wipes stale paint, so a clear at this point
+   * would only ever wipe the chrome painted moments earlier.
+   */
+  didPaintControlsThisFrame(): boolean {
+    return this.controlsPaintedThisFrame
+  }
+
+  /** Marks this frame as painting smart guides — the sweep keeps the overlay. */
+  markGuidesPainted(): void {
+    this.guidesPaintedThisFrame = true
   }
 
   /** Erase the workspace overlay — all mirrored paint lives only on it. */
@@ -311,9 +336,11 @@ export class StageCanvas extends Canvas {
       this.isMarqueeActive() ||
       this.marqueePaintedThisFrame ||
       this.controlsPaintedThisFrame ||
+      this.guidesPaintedThisFrame ||
       !!this._activeObject
     this.marqueePaintedThisFrame = false
     this.controlsPaintedThisFrame = false
+    this.guidesPaintedThisFrame = false
     if (!keep) this.clearOverlay()
   }
 
@@ -329,9 +356,14 @@ export class StageCanvas extends Canvas {
    * Returns null when no 2D context is available. Deliberately not guarded
    * on zero size: the tests paint at jsdom's 0×0.
    */
-  private prepareOverlay(
+  prepareOverlay(
     skipClear: boolean,
-  ): { ctx: CanvasRenderingContext2D; offset: { x: number; y: number } } | null {
+  ): {
+    ctx: CanvasRenderingContext2D
+    offset: { x: number; y: number }
+    width: number
+    height: number
+  } | null {
     const overlay = this.marqueeOverlay
     const ctx = overlay.getContext("2d")
     if (!ctx) return null
@@ -354,7 +386,20 @@ export class StageCanvas extends Canvas {
         this.upperCanvasEl.getBoundingClientRect(),
         overlay.getBoundingClientRect(),
       ),
+      width,
+      height,
     }
+  }
+
+  /**
+   * Dispose the Build 9 smart-guides wrapper (its extension listeners and
+   * the overlay painter) before the canvas's own async dispose — the
+   * canvas-rebuild lifecycle in the stage component disposes and re-creates,
+   * so a rebuild must not leak the old guides' listeners or caches.
+   */
+  override dispose(): Promise<boolean> {
+    this.smartGuides?.dispose()
+    return super.dispose()
   }
 
   /**
@@ -558,11 +603,19 @@ export function createStageCanvas(
     ctx.restore()
   })
 
+  // Build 9: smart guides (ADR 0004) — the AligningGuidelines subclass
+  // wires its own listeners (the six extension handlers plus the overlay
+  // painter and the drag-snapshot resets); dispose() releases them, pinned
+  // for the canvas-rebuild lifecycle. Constructed before the sweep below so
+  // its after:render painter runs first — the sweep's keep-rule reads the
+  // guides-painted flag it sets.
+  canvas.smartGuides = new SmartGuides(canvas, { margin: SNAP_TOLERANCE_PX })
+
   // Both mirrors live on the workspace overlay, not on Fabric's canvases
   // (whose bitmaps are the Document's size), so Fabric never clears it. The
-  // end-of-render sweep erases it when neither the marquee nor the selection
-  // controls painted this frame — a rect from a finished drag would
-  // otherwise linger on the workspace.
+  // end-of-render sweep erases it when neither the marquee, the selection
+  // controls, nor the smart guides painted this frame — a rect from a
+  // finished drag would otherwise linger on the workspace.
   canvas.on("after:render", () => {
     canvas.finalizeOverlayFrame()
   })

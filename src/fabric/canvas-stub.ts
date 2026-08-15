@@ -37,7 +37,11 @@ export function createStubContext(): CanvasRenderingContext2D {
     lineDashOffset: 0,
   }
   for (const property of Object.keys(styleStore)) {
+    // Configurable so tests can spy on the setters (e.g. which strokeStyle
+    // the smart-guides painter stroked with); a spy replaces the descriptor
+    // for that test, which is the point.
     Object.defineProperty(context, property, {
+      configurable: true,
       get(this: unknown) {
         if (this !== context) throw new TypeError("Illegal invocation")
         return styleStore[property]
