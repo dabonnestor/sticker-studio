@@ -157,37 +157,37 @@ function UnitField({
 
 /**
  * A color swatch input — shared by the text, shape and canvas property
- * sections. React's onChange maps to the native `input` event, which fires
- * on every drag step inside the picker popup — recording per step would
- * pollute the undo stack. The commit signal is the native `change` event
- * (the popup closed with a choice), so it is listened for directly: onApply
- * previews live without recording, onCommit records exactly one undoable
- * step (ADR 0001, §8).
+ * sections. The color is applied only on the native `change` event — the
+ * picker dialog closed with a choice — recording exactly one undoable step
+ * (ADR 0001, §8). React's onChange maps to the native `input` event instead
+ * (it fires on every drag step inside the dialog), so the native change
+ * listener is attached directly. Applying per drag step is wrong in both
+ * directions: recording each step pollutes the undo stack, and applying
+ * without recording leaves a never-committed preview on the canvas when the
+ * dialog is cancelled — undo then pops the pre-add state and the object
+ * vanishes. The dialog is modal anyway, so a per-step canvas preview is
+ * never visible.
  */
 function ColorInput({
   value,
-  onApply,
-  onCommit,
+  onChange,
   disabled,
   ariaLabel,
   tooltip,
 }: {
   value: string
-  onApply: (color: string) => void
-  onCommit: (color: string) => void
+  onChange: (color: string) => void
   disabled?: boolean
   ariaLabel: string
   tooltip: string
 }) {
-  const onApplyRef = useRef(onApply)
-  onApplyRef.current = onApply
-  const onCommitRef = useRef(onCommit)
-  onCommitRef.current = onCommit
+  const onChangeRef = useRef(onChange)
+  onChangeRef.current = onChange
   const inputRef = useRef<HTMLInputElement>(null)
   useEffect(() => {
     const input = inputRef.current
     if (!input) return
-    const onNativeChange = () => onCommitRef.current(input.value)
+    const onNativeChange = () => onChangeRef.current(input.value)
     input.addEventListener("change", onNativeChange)
     return () => input.removeEventListener("change", onNativeChange)
   }, [])
@@ -200,7 +200,6 @@ function ColorInput({
         value={value}
         disabled={disabled}
         aria-label={ariaLabel}
-        onInput={(event) => onApplyRef.current(event.currentTarget.value)}
       />
     </TooltipLabel>
   )
@@ -323,8 +322,7 @@ function CanvasProps() {
           value={backgroundColor}
           ariaLabel="Canvas background color"
           tooltip="Canvas background color"
-          onApply={(backgroundColor) => commitCanvasProps({ backgroundColor }, false)}
-          onCommit={(backgroundColor) => commitCanvasProps({ backgroundColor })}
+          onChange={(backgroundColor) => commitCanvasProps({ backgroundColor })}
         />
       </label>
       <label className="flex items-center gap-2">
@@ -346,8 +344,7 @@ function CanvasProps() {
           disabled={borderWidth === 0}
           ariaLabel="Border color"
           tooltip={borderWidth === 0 ? "Border is off — set a width first" : "Border color"}
-          onApply={(borderColor) => commitCanvasProps({ borderColor }, false)}
-          onCommit={(borderColor) => commitCanvasProps({ borderColor })}
+          onChange={(borderColor) => commitCanvasProps({ borderColor })}
         />
       </label>
     </div>
@@ -378,8 +375,7 @@ function ShapeProps() {
           disabled={locked}
           ariaLabel="Shape background color"
           tooltip="Shape background color"
-          onApply={(fillColor) => commitShapeProps({ fillColor }, false)}
-          onCommit={(fillColor) => commitShapeProps({ fillColor })}
+          onChange={(fillColor) => commitShapeProps({ fillColor })}
         />
       </label>
       <label className="flex items-center gap-2">
@@ -402,8 +398,7 @@ function ShapeProps() {
           disabled={locked || borderWidth === 0}
           ariaLabel="Border color"
           tooltip={borderWidth === 0 ? "Border is off — set a width first" : "Border color"}
-          onApply={(borderColor) => commitShapeProps({ borderColor }, false)}
-          onCommit={(borderColor) => commitShapeProps({ borderColor })}
+          onChange={(borderColor) => commitShapeProps({ borderColor })}
         />
       </label>
     </div>
@@ -804,8 +799,7 @@ function TextProps() {
           disabled={locked}
           ariaLabel="Text color"
           tooltip="Text color"
-          onApply={(fillColor) => commitTextProps({ fillColor }, false)}
-          onCommit={(fillColor) => commitTextProps({ fillColor })}
+          onChange={(fillColor) => commitTextProps({ fillColor })}
         />
       </label>
 
