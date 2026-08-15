@@ -156,10 +156,11 @@ interface StageContextValue {
   /**
    * Set the selection's opacity (§7 Q3) — one commit for the whole selection,
    * like arrange and align: locked objects are inert and skipped, so a fully
-   * locked selection is a no-op. One undoable step per commit (ADR 0001),
-   * like arrange.
+   * locked selection is a no-op. One undoable step (ADR 0001) unless
+   * recordHistory is false — the slider drag preview applies without
+   * recording, so dragging never pollutes the undo stack (§8).
    */
-  commitOpacity: (opacity: number) => void
+  commitOpacity: (opacity: number, recordHistory?: boolean) => void
   /**
    * Delete the selection (§13) — locked objects are skipped (§7 Q3): a mixed
    * selection keeps its locked members, a fully locked one is a no-op. One
@@ -415,7 +416,7 @@ export function StageProvider({ children }: { children: ReactNode }) {
   )
 
   const commitOpacity = useCallback(
-    (opacity: number) => {
+    (opacity: number, recordHistory = true) => {
       if (!canvas?.history) return
       const objects = canvas.getActiveObjects()
       if (objects.length === 0) return
@@ -427,7 +428,9 @@ export function StageProvider({ children }: { children: ReactNode }) {
       }
       canvas.requestRenderAll()
       setSelection(canvas.getActiveObjects())
-      canvas.history.commit()
+      // The slider drag preview applies without recording — only the release
+      // commits one undoable step (ADR 0001, §8).
+      if (recordHistory) canvas.history.commit()
     },
     [canvas],
   )

@@ -366,7 +366,10 @@ function CanvasProps() {
           max={BORDER_RANGE.max}
           step={BORDER_RANGE.step}
           value={[borderWidth]}
-          onValueChange={([value]) => commitCanvasProps({ borderWidth: value })}
+          // Dragging previews live without recording; releasing the thumb
+          // commits the whole drag as ONE undoable step (ADR 0001, §8).
+          onValueChange={([value]) => commitCanvasProps({ borderWidth: value }, false)}
+          onValueCommit={([value]) => commitCanvasProps({ borderWidth: value })}
           aria-label="Border width"
         />
         <span className="w-8 text-right text-[10px] leading-none text-muted-foreground tabular-nums">
@@ -422,7 +425,10 @@ function ShapeProps() {
           step={BORDER_RANGE.step}
           value={[borderWidth]}
           disabled={locked}
-          onValueChange={([value]) => commitShapeProps({ borderWidth: value })}
+          // Dragging previews live without recording; releasing the thumb
+          // commits the whole drag as ONE undoable step (ADR 0001, §8).
+          onValueChange={([value]) => commitShapeProps({ borderWidth: value }, false)}
+          onValueCommit={([value]) => commitShapeProps({ borderWidth: value })}
           aria-label="Border width"
         />
         <span className="w-8 text-right text-[10px] leading-none text-muted-foreground tabular-nums">
@@ -924,10 +930,15 @@ function TextProps() {
                   max={LINE_HEIGHT_RANGE.max}
                   step={LINE_HEIGHT_RANGE.step}
                   value={[text.lineHeight]}
+                  // Dragging previews live without recording; releasing the
+                  // thumb commits the drag as ONE undoable step (ADR 0001, §8).
                   onValueChange={([lineHeight]) =>
                     // Round the float the slider may produce (0.05 steps) — the
                     // model stores lineHeight as a plain number and JSON would
                     // keep the residue.
+                    commitTextProps({ lineHeight: Math.round(lineHeight * 100) / 100 }, false)
+                  }
+                  onValueCommit={([lineHeight]) =>
                     commitTextProps({ lineHeight: Math.round(lineHeight * 100) / 100 })
                   }
                   aria-label="Line height"
@@ -948,7 +959,12 @@ function TextProps() {
                   max={LETTER_SPACING_RANGE.max}
                   step={LETTER_SPACING_RANGE.step}
                   value={[charSpacing / 1000]}
+                  // Dragging previews live without recording; releasing the
+                  // thumb commits the drag as ONE undoable step (ADR 0001, §8).
                   onValueChange={([em]) =>
+                    commitTextProps({ charSpacing: Math.round(em * 1000) }, false)
+                  }
+                  onValueCommit={([em]) =>
                     commitTextProps({ charSpacing: Math.round(em * 1000) })
                   }
                   aria-label="Letter spacing (em)"
@@ -1068,7 +1084,10 @@ function OpacityButton() {
               max={OPACITY_RANGE.max}
               step={OPACITY_RANGE.step}
               value={[Math.round(value * 100)]}
-              onValueChange={([percent]) => commitOpacity(percent / 100)}
+              // Dragging previews live without recording; releasing the thumb
+              // commits the whole drag as ONE undoable step (ADR 0001, §8).
+              onValueChange={([percent]) => commitOpacity(percent / 100, false)}
+              onValueCommit={([percent]) => commitOpacity(percent / 100)}
               aria-label="Opacity"
             />
             <span className="w-8 text-right text-[10px] leading-none text-muted-foreground tabular-nums">
