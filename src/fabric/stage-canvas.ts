@@ -555,17 +555,25 @@ export function createStageCanvas(
   // document boundary so every creation path — sidebar, console-added
   // objects, imports — carries a stable id. Objects restored from a Design
   // file already have their ids and are left untouched. The rotation handle
-  // is replaced with the icon version on every add path; shapes expose
-  // corner handles only (uniform scaling), and text hides the top/bottom
+  // is replaced with the icon version on every add path; shapes hide the
+  // side handles — square/rectangle keep all four (ml/mr scale the width,
+  // mt/mb the height, freely, §5), while circle/oval/triangle stay
+  // corner-handles-only (uniform scaling) — and text hides the top/bottom
   // handles — a Y-only drag would distort the glyphs, and the uniform-scaling
-  // lock (§5) pins it dead anyway. Text keeps the ml/mr wrap handles (§6).
+  // lock pins it dead anyway. Text keeps the ml/mr wrap handles (§6).
   canvas.on("object:added", (event) => {
     const obj = event.target
     if (!obj) return
     if (!obj.id) stampDocumentProps(obj)
     applyRotateHandle(obj)
-    if (getShapeKind(obj)) {
-      obj.setControlsVisibility({ ml: false, mt: false, mr: false, mb: false })
+    const kind = getShapeKind(obj)
+    if (kind) {
+      // Square and rectangle keep every side handle — a drag on one scales
+      // that axis freely (the scaling handler below skips the ratio lock for
+      // them); the other shapes stay corner-handles-only.
+      if (kind !== "square" && kind !== "rectangle") {
+        obj.setControlsVisibility({ ml: false, mt: false, mr: false, mb: false })
+      }
     } else if (isTextObject(obj)) {
       obj.setControlsVisibility({ mt: false, mb: false })
     }
@@ -645,18 +653,29 @@ export function createStageCanvas(
     canvas.clearOverlay()
   })
 
-  // Shapes and text scale uniformly — the aspect ratio is frozen at the
-  // gesture start, so a corner drag never distorts the object (§5 shapes,
-  // §6 text: the scale fold is gone — text scales like a shape, scale stays
-  // on the object). The first `object:scaling` tick records the ratio; later
-  // ticks keep it; the end of the gesture (any transform commit) clears it
-  // for the next one. Scaling also hands a text's width to the user — a
-  // re-fit at session exit would measure in local units and fight the scale.
+  // Shapes and text scale uniformly from a corner — the aspect ratio is
+  // frozen at the gesture start, so a corner drag never distorts the object
+  // (§5 shapes, §6 text: the scale fold is gone — text scales like a shape,
+  // scale stays on the object). Square/rectangle also expose the side
+  // handles: a drag on one (mt/mb scale the height, ml/mr the width) scales
+  // that axis freely, outside the ratio lock — so a square can grow into a
+  // taller or wider rectangle. The first `object:scaling` tick records the
+  // ratio; later ticks keep it; the end of the gesture (any transform
+  // commit) clears it for the next one. Scaling also hands a text's width to
+  // the user — a re-fit at session exit would measure in local units and
+  // fight the scale.
   const gestureRatios = new WeakMap<FabricObject, number>()
   canvas.on("object:scaling", (event) => {
     const obj = event.target
-    if (!obj || (!getShapeKind(obj) && !isTextObject(obj))) return
+    const kind = getShapeKind(obj)
+    if (!kind && !isTextObject(obj)) return
     if (isTextObject(obj)) obj.set("autoFit", false)
+    const corner = event.transform?.corner
+    const axisHandle = corner === "mt" || corner === "mb" || corner === "ml" || corner === "mr"
+    if (axisHandle && (kind === "square" || kind === "rectangle")) {
+      gestureRatios.delete(obj) // a stale corner-drag ratio must not pin the axis
+      return
+    }
     const ratio = gestureRatios.get(obj)
     if (ratio === undefined) {
       gestureRatios.set(obj, obj.scaleX / obj.scaleY)

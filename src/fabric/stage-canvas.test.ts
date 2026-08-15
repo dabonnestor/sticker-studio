@@ -87,9 +87,12 @@ describe("uniform scaling", () => {
     await canvas.dispose()
   })
 
-  /** A synthetic scaling tick — only `target` matters to the handler. */
-  function scale(obj: FabricObject) {
-    canvas.fire("object:scaling", { target: obj } as never)
+  /** A synthetic scaling tick — `corner` picks the handle (mt/mb vs corners). */
+  function scale(obj: FabricObject, corner?: string) {
+    canvas.fire("object:scaling", {
+      target: obj,
+      transform: corner ? { corner } : undefined,
+    } as never)
   }
 
   it("freezes a shape's aspect ratio at the gesture start", () => {
@@ -129,15 +132,25 @@ describe("uniform scaling", () => {
     expect(shape.scaleY).toBeCloseTo(3, 10)
   })
 
-  it("shapes expose corner handles only — every side handle is hidden", () => {
+  it("square/rectangle keep the side handles — corners and sides scale", () => {
     const shape = createShape("square")
     canvas.add(shape)
-    // Fabric 7.4 keeps per-control visibility in `_controlsVisibility`
-    // (undefined = visible by default).
-    for (const handle of ["ml", "mt", "mr", "mb"] as const) {
-      expect(shape._controlsVisibility[handle]).toBe(false)
+    // No `_controlsVisibility` overrides were ever set, so every handle is
+    // visible by default: ml/mr scale the width, mt/mb the height, freely
+    // (§5), and the corners scale uniformly.
+    expect(shape._controlsVisibility).toBeUndefined()
+    for (const key of ["ml", "mr", "mt", "mb", "tl", "tr", "br", "bl"] as const) {
+      expect(shape.isControlVisible(key)).toBe(true)
     }
-    expect(shape._controlsVisibility.tr).toBeUndefined() // corners scale
+  })
+
+  it("circle/oval/triangle stay corner-handles-only — every side hidden", () => {
+    const circle = createShape("circle")
+    canvas.add(circle)
+    for (const handle of ["ml", "mt", "mr", "mb"] as const) {
+      expect(circle._controlsVisibility[handle]).toBe(false)
+    }
+    expect(circle._controlsVisibility.tr).toBeUndefined() // corners scale
   })
 
   it("text hides the top/bottom handles — corners scale, the wrap handles stay", () => {
@@ -150,6 +163,117 @@ describe("uniform scaling", () => {
     expect(text._controlsVisibility.tr).toBeUndefined() // corners scale uniformly
     expect(text._controlsVisibility.ml).toBeUndefined() // wrap width (§6)
     expect(text._controlsVisibility.mr).toBeUndefined()
+  })
+})
+
+/**
+ * Free axis scaling (build spec §5): square and rectangle expose all four
+ * side handles, so a drag on one scales that axis freely — mt/mb change the
+ * height, ml/mr the width — and a square can grow into a taller or wider
+ * rectangle. The `object:scaling` handler reads the dragged corner off the
+ * transform and lets the side handles through without freezing the aspect
+ * ratio; corner drags keep the uniform lock.
+ */
+describe("free axis scaling (square/rectangle)", () => {
+  let canvas: ReturnType<typeof createStageCanvas>
+
+  beforeEach(() => {
+    canvas = createStageCanvas(
+      document.createElement("canvas"),
+      document.createElement("canvas"),
+    )
+  })
+
+  afterEach(async () => {
+    await canvas.dispose()
+  })
+
+  /** A synthetic scaling tick — `corner` picks the handle (mt/mb vs corners). */
+  function scale(obj: FabricObject, corner?: string) {
+    canvas.fire("object:scaling", {
+      target: obj,
+      transform: corner ? { corner } : undefined,
+    } as never)
+  }
+
+  it("a top-handle drag scales the height freely — no ratio frozen", () => {
+    const shape = createShape("square")
+    canvas.add(shape)
+    shape.set({ scaleX: 2, scaleY: 1 })
+    scale(shape, "mt") // vertical drag — the ratio lock never engages
+    shape.set({ scaleY: 1.75 })
+    scale(shape, "mt")
+    expect(shape.scaleY).toBeCloseTo(1.75, 10) // not derived from scaleX
+    expect(shape.scaleX / shape.scaleY).not.toBeCloseTo(2, 10)
+  })
+
+  it("a bottom-handle drag works the same as the top handle", () => {
+    const shape = createShape("rectangle")
+    canvas.add(shape)
+    shape.set({ scaleX: 1, scaleY: 1 })
+    scale(shape, "mb")
+    shape.set({ scaleY: 0.5 })
+    scale(shape, "mb")
+    expect(shape.scaleY).toBeCloseTo(0.5, 10)
+  })
+
+  it("a left-handle drag scales the width freely — no ratio frozen", () => {
+    const shape = createShape("square")
+    canvas.add(shape)
+    shape.set({ scaleX: 1, scaleY: 2 })
+    scale(shape, "ml") // horizontal drag — the ratio lock never engages
+    shape.set({ scaleX: 1.5 })
+    scale(shape, "ml")
+    expect(shape.scaleX).toBeCloseTo(1.5, 10) // not derived from scaleY
+    expect(shape.scaleX / shape.scaleY).not.toBeCloseTo(0.5, 10)
+  })
+
+  it("a right-handle drag scales the width freely on a rectangle", () => {
+    const shape = createShape("rectangle")
+    canvas.add(shape)
+    shape.set({ scaleX: 1, scaleY: 1 })
+    scale(shape, "mr")
+    shape.set({ scaleX: 2.5 })
+    scale(shape, "mr")
+    expect(shape.scaleX).toBeCloseTo(2.5, 10)
+  })
+
+  it("a horizontal drag after a vertical drag keeps both axes free", () => {
+    const shape = createShape("square")
+    canvas.add(shape)
+    shape.set({ scaleX: 1, scaleY: 2 }) // height already scaled via mt
+    scale(shape, "mt")
+    shape.set({ scaleX: 3 }) // now a width-only gesture
+    scale(shape, "mr")
+    shape.set({ scaleX: 4 })
+    scale(shape, "mr")
+    expect(shape.scaleX).toBeCloseTo(4, 10)
+    expect(shape.scaleY).toBeCloseTo(2, 10) // untouched by the width drag
+  })
+
+  it("a corner drag after a vertical drag freezes the new aspect", () => {
+    const shape = createShape("square")
+    canvas.add(shape)
+    shape.set({ scaleX: 2, scaleY: 1.5 }) // taller than wide from a mt drag
+    scale(shape, "mt") // no ratio recorded
+    shape.set({ scaleX: 4 }) // corner gesture tick 1 — records the ratio
+    scale(shape, "br")
+    shape.set({ scaleX: 5 }) // later tick — scaleY derives from the frozen ratio
+    scale(shape, "br")
+    expect(shape.scaleX / shape.scaleY).toBeCloseTo(4 / 1.5, 10)
+  })
+
+  it("a vertical drag on a circle stays ratio-locked like every corner drag", () => {
+    const circle = createShape("circle")
+    canvas.add(circle)
+    circle.set({ scaleX: 2, scaleY: 2 })
+    scale(circle, "mt")
+    circle.set({ scaleX: 3 })
+    scale(circle, "mt")
+    // mt/mb are hidden on a circle — a tick with that corner still cannot
+    // break the lock, so scaleY keeps deriving from the frozen ratio.
+    expect(circle.scaleX / circle.scaleY).toBeCloseTo(1, 10)
+    expect(circle.scaleY).toBeCloseTo(3, 10)
   })
 })
 
