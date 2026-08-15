@@ -5,7 +5,12 @@ import { registerCustomProperties } from "@/fabric/custom-properties"
 import { HISTORY_DEPTH } from "@/fabric/history"
 import { createShape, DEFAULT_FILL } from "@/fabric/shapes"
 import { createStageCanvas } from "@/fabric/stage-canvas"
-import { createText, type TextMeasurer } from "@/fabric/text"
+import {
+  applyTextProps,
+  createText,
+  TEXT_DEFAULT_FAMILY,
+  type TextMeasurer,
+} from "@/fabric/text"
 
 // The app registers the document custom properties at startup (main.tsx);
 // the tests that exercise id round-trips (the history's selection restore
@@ -298,6 +303,33 @@ describe("history — text sessions", () => {
       .getObjects()
       .find((o) => o.id === id) as ReturnType<typeof createText>
     expect(redone.text).toBe("longer content")
+  })
+
+  it("a session exit mid-skim records nothing — only the click does", async () => {
+    const id = textbox.id
+    textbox.enterEditing()
+    textbox.selectAll()
+
+    // The toolbar's hover preview: a face applies immediately without
+    // recording history (§8 — only a click is a step).
+    applyTextProps(textbox, { fontFamily: "Work Sans" }, measure)
+
+    // The dropdown interaction blurs the hidden textarea mid-skim — the
+    // session exits and Fabric fires object:modified inside exitEditing. The
+    // boundary commit must not capture the hovered, never-clicked face.
+    textbox.exitEditing()
+
+    // The click commits the picked face.
+    applyTextProps(textbox, { fontFamily: "Bebas Neue" }, measure)
+    canvas.history.commit()
+
+    // One undo lands on the pre-click state — the add boundary (the default
+    // family), not the hovered "Work Sans".
+    await canvas.history.undo()
+    const restored = canvas
+      .getObjects()
+      .find((o) => o.id === id) as ReturnType<typeof createText>
+    expect(restored.fontFamily).toBe(TEXT_DEFAULT_FAMILY)
   })
 
   it("a reverted session pushes nothing", async () => {

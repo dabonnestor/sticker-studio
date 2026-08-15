@@ -396,21 +396,29 @@ function formatNumberField(value: number, scale: number, decimals: number): stri
 /**
  * Hover-preview state for a dropdown of property values (§6) — the Font
  * family and Weight controls share it: previewing applies a candidate to the
- * selection immediately, restore commits the anchored value (the committed
+ * selection immediately, restore applies the anchored value (the committed
  * one when the menu opened or was last clicked), and commit anchors a click.
  * A preview that ends with the menu (Escape, outside click, unmount) restores
  * too.
  *
+ * Only a click records history — preview and restore apply through onApply
+ * without recording, so skimming a face or weight never pollutes the undo
+ * stack (ADR 0001, §8): restoring the anchored value returns to a state the
+ * stack already ends at, so the apply is a no-op step.
+ *
  * Anchoring lives in a ref, not state: the restore runs from event handlers
  * that may fire in the same tick as the anchoring click, where a stale
- * closure would see the pre-click value. The unmount insurance commits
+ * closure would see the pre-click value. The unmount insurance applies
  * through refs, and only on unmount — React batches a leave + enter into one
  * render, so hovered jumps straight between two candidates and a
- * transition-triggered cleanup would commit the restore point right after
+ * transition-triggered cleanup would apply the restore point right after
  * the new preview and revert it.
  */
 function useHoverPreview<T>(
   value: T,
+  /** Preview/restore — apply the candidate without recording history. */
+  onApply: (candidate: T) => void,
+  /** Click — apply and record one undoable step. */
   onCommit: (candidate: T) => void,
 ): {
   preview: (candidate: T) => void
@@ -431,31 +439,31 @@ function useHoverPreview<T>(
     if (hovered === null) anchoredRef.current = value
   }, [value, hovered])
 
-  // Latest-value refs for the unmount-only cleanup: onCommit is a fresh
+  // Latest-value refs for the unmount-only cleanup: onApply is a fresh
   // closure every TextProps render, and hovered must stay visible to a
   // cleanup that runs after the final render.
-  const onCommitRef = useRef(onCommit)
+  const onApplyRef = useRef(onApply)
   const hoveredRef = useRef<T | null>(null)
   useEffect(() => {
-    onCommitRef.current = onCommit
+    onApplyRef.current = onApply
     hoveredRef.current = hovered
   })
   useEffect(() => {
     return () => {
       // A preview that survives the menu's unmount without an item-leave
       // (the selection dies under the menu) would stick on the text —
-      // commit the restore point so no hovered value outlives the menu.
-      if (hoveredRef.current !== null) onCommitRef.current(anchoredRef.current)
+      // apply the restore point so no hovered value outlives the menu.
+      if (hoveredRef.current !== null) onApplyRef.current(anchoredRef.current)
     }
   }, [])
 
   const preview = (candidate: T) => {
     setHovered(candidate)
-    onCommit(candidate)
+    onApply(candidate)
   }
   const restore = () => {
     setHovered(null)
-    onCommit(anchoredRef.current)
+    onApply(anchoredRef.current)
   }
   const commit = (candidate: T) => {
     // Anchor the click: the menu closes and restore() runs on the same
@@ -471,17 +479,22 @@ function useHoverPreview<T>(
  * option applies it to the selection immediately, and moving off restores
  * the committed family — the face reads on the trigger throughout, so the
  * user can skim faces without committing; clicking picks the hovered face.
+ * Skimming records no undo step — only the click does (§8).
  */
 function FontFamilyField({
   family,
+  onApply,
   onCommit,
   disabled,
 }: {
   family: string
+  /** Preview/restore — apply the family without recording history (§8). */
+  onApply: (family: string) => void
+  /** Click — apply the family and record one undoable step. */
   onCommit: (family: string) => void
   disabled?: boolean
 }) {
-  const { preview, restore, commit } = useHoverPreview(family, onCommit)
+  const { preview, restore, commit } = useHoverPreview(family, onApply, onCommit)
 
   return (
     <DropdownMenu
@@ -523,13 +536,15 @@ function FontFamilyField({
  * Font weight as a dropdown menu (§6) — the same hover preview as the family
  * picker (both share useHoverPreview): pointing at a weight applies it to
  * the selection immediately, moving off restores the committed weight,
- * clicking picks the hovered one. The trigger offers no chevron and reads
- * plain when the family ships a single weight.
+ * clicking picks the hovered one. Skimming records no undo step — only the
+ * click does (§8). The trigger offers no chevron and reads plain when the
+ * family ships a single weight.
  */
 function WeightField({
   weight,
   weights,
   onlyWeight,
+  onApply,
   onCommit,
   disabled,
 }: {
@@ -537,10 +552,13 @@ function WeightField({
   weights: readonly number[]
   /** The family ships a single weight — nothing to pick, no chevron. */
   onlyWeight: boolean
+  /** Preview/restore — apply the weight without recording history (§8). */
+  onApply: (weight: number) => void
+  /** Click — apply the weight and record one undoable step. */
   onCommit: (weight: number) => void
   disabled?: boolean
 }) {
-  const { preview, restore, commit } = useHoverPreview(weight, onCommit)
+  const { preview, restore, commit } = useHoverPreview(weight, onApply, onCommit)
 
   return (
     <DropdownMenu
@@ -729,6 +747,7 @@ function TextProps() {
         <FontFamilyField
           family={text.fontFamily}
           disabled={locked}
+          onApply={(fontFamily) => commitTextProps({ fontFamily }, false)}
           onCommit={(fontFamily) => commitTextProps({ fontFamily })}
         />
       </label>
@@ -746,6 +765,7 @@ function TextProps() {
           weights={familySpec.weights}
           onlyWeight={onlyWeight}
           disabled={locked}
+          onApply={(fontWeight) => commitTextProps({ fontWeight }, false)}
           onCommit={(fontWeight) => commitTextProps({ fontWeight })}
         />
       </label>

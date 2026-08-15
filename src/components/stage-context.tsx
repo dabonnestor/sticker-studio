@@ -111,8 +111,13 @@ interface StageContextValue {
    * measuring an unloaded face would fit against the fallback font.
    */
   addText: () => void
-  /** Apply a property patch to the selected Text object (§6). */
-  commitTextProps: (patch: TextPropsPatch) => void
+  /**
+   * Apply a property patch to the selected Text object (§6). One undoable
+   * step (ADR 0001) unless recordHistory is false — the family/weight
+   * dropdown hover previews apply without recording, so skimming a face or
+   * weight never pollutes the undo stack (§8).
+   */
+  commitTextProps: (patch: TextPropsPatch, recordHistory?: boolean) => void
   /**
    * Rearrange the selection's z-order (§7 Q6) — one slot forward/backward,
    * or to the very front/back. Locked objects are inert (§7 Q3) and skipped,
@@ -351,14 +356,16 @@ export function StageProvider({ children }: { children: ReactNode }) {
   )
 
   const commitTextProps = useCallback(
-    (patch: TextPropsPatch) => {
+    (patch: TextPropsPatch, recordHistory = true) => {
       if (!canvas?.history) return
       const obj = canvas.getActiveObjects()[0]
       if (!isTextObject(obj)) return
       applyTextProps(obj, patch, getTextMeasurer())
       canvas.requestRenderAll()
       setSelection(canvas.getActiveObjects())
-      canvas.history.commit()
+      // The family/weight dropdown hover previews apply without recording —
+      // only a click is one undoable step (ADR 0001, §8).
+      if (recordHistory) canvas.history.commit()
     },
     [canvas],
   )
