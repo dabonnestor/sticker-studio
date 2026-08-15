@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from "react"
+import { useEffect, useRef, useState, type ReactNode } from "react"
 import {
   AlignCenter,
   AlignCenterHorizontal,
@@ -394,6 +394,195 @@ function formatNumberField(value: number, scale: number, decimals: number): stri
 }
 
 /**
+ * Hover-preview state for a dropdown of property values (§6) — the Font
+ * family and Weight controls share it: previewing applies a candidate to the
+ * selection immediately, restore commits the anchored value (the committed
+ * one when the menu opened or was last clicked), and commit anchors a click.
+ * A preview that ends with the menu (Escape, outside click, unmount) restores
+ * too.
+ *
+ * Anchoring lives in a ref, not state: the restore runs from event handlers
+ * that may fire in the same tick as the anchoring click, where a stale
+ * closure would see the pre-click value. The unmount insurance commits
+ * through refs, and only on unmount — React batches a leave + enter into one
+ * render, so hovered jumps straight between two candidates and a
+ * transition-triggered cleanup would commit the restore point right after
+ * the new preview and revert it.
+ */
+function useHoverPreview<T>(
+  value: T,
+  onCommit: (candidate: T) => void,
+): {
+  preview: (candidate: T) => void
+  restore: () => void
+  commit: (candidate: T) => void
+} {
+  // The candidate a hover preview restores to — the committed value when the
+  // menu opened or last clicked.
+  const anchoredRef = useRef(value)
+  // The hovered candidate — null while the pointer isn't over an option.
+  const [hovered, setHovered] = useState<T | null>(null)
+
+  // Re-anchor the restore point to the committed value whenever no preview
+  // is active — covers commits from other controls and selection changes.
+  // A live preview must not clobber it: the prop already reads the previewed
+  // value while hovering.
+  useEffect(() => {
+    if (hovered === null) anchoredRef.current = value
+  }, [value, hovered])
+
+  // Latest-value refs for the unmount-only cleanup: onCommit is a fresh
+  // closure every TextProps render, and hovered must stay visible to a
+  // cleanup that runs after the final render.
+  const onCommitRef = useRef(onCommit)
+  const hoveredRef = useRef<T | null>(null)
+  useEffect(() => {
+    onCommitRef.current = onCommit
+    hoveredRef.current = hovered
+  })
+  useEffect(() => {
+    return () => {
+      // A preview that survives the menu's unmount without an item-leave
+      // (the selection dies under the menu) would stick on the text —
+      // commit the restore point so no hovered value outlives the menu.
+      if (hoveredRef.current !== null) onCommitRef.current(anchoredRef.current)
+    }
+  }, [])
+
+  const preview = (candidate: T) => {
+    setHovered(candidate)
+    onCommit(candidate)
+  }
+  const restore = () => {
+    setHovered(null)
+    onCommit(anchoredRef.current)
+  }
+  const commit = (candidate: T) => {
+    // Anchor the click: the menu closes and restore() runs on the same
+    // tick, so the restore point must be the clicked value already.
+    anchoredRef.current = candidate
+    onCommit(candidate)
+  }
+  return { preview, restore, commit }
+}
+
+/**
+ * Font family as a dropdown menu (§6) with hover preview: pointing at an
+ * option applies it to the selection immediately, and moving off restores
+ * the committed family — the face reads on the trigger throughout, so the
+ * user can skim faces without committing; clicking picks the hovered face.
+ */
+function FontFamilyField({
+  family,
+  onCommit,
+  disabled,
+}: {
+  family: string
+  onCommit: (family: string) => void
+  disabled?: boolean
+}) {
+  const { preview, restore, commit } = useHoverPreview(family, onCommit)
+
+  return (
+    <DropdownMenu
+      onOpenChange={(open) => {
+        if (!open) restore()
+      }}
+    >
+      <DropdownMenuTrigger asChild>
+        <Button
+          variant="ghost"
+          size="sm"
+          className="h-7 max-w-32 gap-1 px-2 text-xs font-normal"
+          disabled={disabled}
+          aria-label="Font family"
+        >
+          <span className="truncate">{family}</span>
+          <ChevronDown aria-hidden className="size-3 shrink-0" />
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="start">
+        <DropdownMenuLabel>Font family</DropdownMenuLabel>
+        <DropdownMenuSeparator />
+        {FONT_FAMILIES.map(({ family: name }) => (
+          <DropdownMenuItem
+            key={name}
+            onMouseEnter={() => preview(name)}
+            onMouseLeave={restore}
+            onClick={() => commit(name)}
+          >
+            {name}
+          </DropdownMenuItem>
+        ))}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  )
+}
+
+/**
+ * Font weight as a dropdown menu (§6) — the same hover preview as the family
+ * picker (both share useHoverPreview): pointing at a weight applies it to
+ * the selection immediately, moving off restores the committed weight,
+ * clicking picks the hovered one. The trigger offers no chevron and reads
+ * plain when the family ships a single weight.
+ */
+function WeightField({
+  weight,
+  weights,
+  onlyWeight,
+  onCommit,
+  disabled,
+}: {
+  weight: number
+  weights: readonly number[]
+  /** The family ships a single weight — nothing to pick, no chevron. */
+  onlyWeight: boolean
+  onCommit: (weight: number) => void
+  disabled?: boolean
+}) {
+  const { preview, restore, commit } = useHoverPreview(weight, onCommit)
+
+  return (
+    <DropdownMenu
+      onOpenChange={(open) => {
+        if (!open) restore()
+      }}
+    >
+      <TooltipLabel
+        label={onlyWeight ? "This family ships a single weight" : "Font weight"}
+      >
+        <DropdownMenuTrigger asChild>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-7 w-12 gap-1 px-2 text-xs font-normal"
+            disabled={disabled || onlyWeight}
+            aria-label="Font weight"
+          >
+            {weight}
+            {!onlyWeight && <ChevronDown aria-hidden className="size-3 shrink-0" />}
+          </Button>
+        </DropdownMenuTrigger>
+      </TooltipLabel>
+      <DropdownMenuContent align="start">
+        <DropdownMenuLabel>Weight</DropdownMenuLabel>
+        <DropdownMenuSeparator />
+        {weights.map((w) => (
+          <DropdownMenuItem
+            key={w}
+            onMouseEnter={() => preview(w)}
+            onMouseLeave={restore}
+            onClick={() => commit(w)}
+          >
+            {w}
+          </DropdownMenuItem>
+        ))}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  )
+}
+
+/**
  * Font size as a combobox (§6) — the shadcn/ui combobox (Base UI): an
  * editable field — any size types in and commits on Enter/blur — with a
  * trigger chevron that opens the standard-size presets, filtered as you
@@ -537,32 +726,11 @@ function TextProps() {
     <div className="flex items-center gap-3">
       <label className="flex items-center gap-1.5">
         <span className="text-[10px] leading-none text-muted-foreground">Font</span>
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-7 max-w-32 gap-1 px-2 text-xs font-normal"
-              disabled={locked}
-              aria-label="Font family"
-            >
-              <span className="truncate">{text.fontFamily}</span>
-              <ChevronDown aria-hidden className="size-3 shrink-0" />
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="start">
-            <DropdownMenuLabel>Font family</DropdownMenuLabel>
-            <DropdownMenuSeparator />
-            {FONT_FAMILIES.map(({ family }) => (
-              <DropdownMenuItem
-                key={family}
-                onClick={() => commitTextProps({ fontFamily: family })}
-              >
-                {family}
-              </DropdownMenuItem>
-            ))}
-          </DropdownMenuContent>
-        </DropdownMenu>
+        <FontFamilyField
+          family={text.fontFamily}
+          disabled={locked}
+          onCommit={(fontFamily) => commitTextProps({ fontFamily })}
+        />
       </label>
 
       <FontSizeField
@@ -573,36 +741,13 @@ function TextProps() {
 
       <label className="flex items-center gap-1.5">
         <span className="text-[10px] leading-none text-muted-foreground">Weight</span>
-        <DropdownMenu>
-          <TooltipLabel
-            label={onlyWeight ? "This family ships a single weight" : "Font weight"}
-          >
-            <DropdownMenuTrigger asChild>
-              <Button
-                variant="ghost"
-                size="sm"
-                className="h-7 w-12 gap-1 px-2 text-xs font-normal"
-                disabled={locked || onlyWeight}
-                aria-label="Font weight"
-              >
-                {weight}
-                {!onlyWeight && <ChevronDown aria-hidden className="size-3 shrink-0" />}
-              </Button>
-            </DropdownMenuTrigger>
-          </TooltipLabel>
-          <DropdownMenuContent align="start">
-            <DropdownMenuLabel>Weight</DropdownMenuLabel>
-            <DropdownMenuSeparator />
-            {familySpec.weights.map((w) => (
-              <DropdownMenuItem
-                key={w}
-                onClick={() => commitTextProps({ fontWeight: w })}
-              >
-                {w}
-              </DropdownMenuItem>
-            ))}
-          </DropdownMenuContent>
-        </DropdownMenu>
+        <WeightField
+          weight={weight}
+          weights={familySpec.weights}
+          onlyWeight={onlyWeight}
+          disabled={locked}
+          onCommit={(fontWeight) => commitTextProps({ fontWeight })}
+        />
       </label>
 
       <label className="flex items-center gap-1.5">
