@@ -1,4 +1,4 @@
-import { useState } from "react"
+import { useState, type ReactNode } from "react"
 import {
   ChevronDown,
   Eye,
@@ -21,6 +21,12 @@ import {
 } from "@/components/ui/dropdown-menu"
 import { Separator } from "@/components/ui/separator"
 import { Slider } from "@/components/ui/slider"
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip"
 
 /** Zoom presets (build spec §9); Fit arrives with the zoom build. */
 const ZOOM_PRESETS = [
@@ -31,6 +37,31 @@ const ZOOM_PRESETS = [
 
 /** Zoom range and step (build spec §9). */
 const ZOOM_RANGE = { min: 10, max: 800, step: 10 } as const
+
+/**
+ * A tooltip over a bottom-bar control, opening above the trigger — the bar
+ * hugs the bottom of the stage, so the tooltip must not float off-screen
+ * below it. The trigger sits inside a wrapper span so the tooltip also fires
+ * over disabled controls: a disabled button swallows its own pointer events,
+ * which would silence the hint that explains the state (undo/redo are
+ * disabled while the stack has nothing to walk).
+ */
+function TooltipLabel({
+  label,
+  children,
+}: {
+  label: string
+  children: ReactNode
+}) {
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <span>{children}</span>
+      </TooltipTrigger>
+      <TooltipContent side="top">{label}</TooltipContent>
+    </Tooltip>
+  )
+}
 
 /**
  * Bottom bar (build spec §3): undo/redo, zoom controls (− / % ▾ / + / slider),
@@ -48,25 +79,30 @@ export function BottomBar() {
   const zoomIn = () => setZoom((z) => Math.min(ZOOM_RANGE.max, z + ZOOM_RANGE.step))
 
   return (
-    <footer className="flex h-10 shrink-0 items-center gap-1 border-t bg-background px-3">
-      <Button
-        variant="ghost"
-        size="icon"
-        disabled={!canUndo}
-        onClick={() => void undo()}
-        aria-label="Undo"
-      >
-        <Undo2 aria-hidden />
-      </Button>
-      <Button
-        variant="ghost"
-        size="icon"
-        disabled={!canRedo}
-        onClick={() => void redo()}
-        aria-label="Redo"
-      >
-        <Redo2 aria-hidden />
-      </Button>
+    <TooltipProvider>
+      <footer className="flex h-10 shrink-0 items-center gap-1 border-t bg-background px-3">
+        <TooltipLabel label="Undo">
+          <Button
+            variant="ghost"
+            size="icon"
+            disabled={!canUndo}
+            onClick={() => void undo()}
+            aria-label="Undo"
+          >
+            <Undo2 aria-hidden />
+          </Button>
+        </TooltipLabel>
+        <TooltipLabel label="Redo">
+          <Button
+            variant="ghost"
+            size="icon"
+            disabled={!canRedo}
+            onClick={() => void redo()}
+            aria-label="Redo"
+          >
+            <Redo2 aria-hidden />
+          </Button>
+        </TooltipLabel>
 
       <Separator orientation="vertical" className="mx-1 h-5" />
 
@@ -118,12 +154,13 @@ export function BottomBar() {
 
       <Separator orientation="vertical" className="mx-1 h-5" />
 
-      <span
-        className="min-w-0 text-xs text-muted-foreground"
-        data-testid="status-area"
-      >
-        Ready
-      </span>
-    </footer>
+        <span
+          className="min-w-0 text-xs text-muted-foreground"
+          data-testid="status-area"
+        >
+          Ready
+        </span>
+      </footer>
+    </TooltipProvider>
   )
 }
