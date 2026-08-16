@@ -12,17 +12,24 @@ import { stampDocumentProps } from "@/fabric/document-props"
  * Shape model (build spec §4, §5). One Fabric object per shape:
  * fill = background, stroke = border, clipPath = cut line.
  *
- * Inset border model (§4): the object geometry is the area *inside* the
- * border — turning the border on shrinks it by half the stroke per side
- * (`width − border`, `radius − border/2`) so the stroke's outer edge sits
- * exactly on the cut path. The clipPath always sits at the original (cut)
- * edge and never moves; the cut geometry is derived as `width + borderWidth`
- * (scale-inclusive), which is why it survives JSON restore.
+ * Border model (§4): the object geometry IS the cut area — turning the
+ * border on never changes the geometry. The stroke is centered on the cut
+ * edge (middle alignment): half of it sits on the fill, the other half lies
+ * beyond the cut, where the clipPath clips it away — so a border of width w
+ * renders at w/2, and the cut line runs through the border's middle, exactly
+ * as a cut sticker behaves. The border renders at a fixed pixel width
+ * (`strokeUniform`): scaling the shape never thickens it — the fill and the
+ * cut line scale, the border stays put, the design-tool standard. The
+ * strokeUniform compensation is baked into the object's cache, so the shape
+ * re-renders its cache every frame of a live scale gesture (`noScaleCache`
+ * off) — a stale gesture-start cache would stretch the baked stroke and the
+ * border would grow with the shape until the gesture commits. The clipPath
+ * always sits at the cut edge and never moves — the geometry never does
+ * either — and the cut geometry is the geometry itself (scale-inclusive),
+ * which is why it survives JSON restore.
  *
  * All mutations go through `obj.set()` — Fabric marks the object dirty from
- * there; direct assignment would leave the cached render stale (the inset
- * model keeps `width + borderWidth` constant, so the cache canvas dimensions
- * never change and Fabric would never notice).
+ * there; a direct assignment would leave the cached render stale.
  */
 export type ShapeKind =
   | "square"
@@ -99,6 +106,8 @@ export function createShape(kind: ShapeKind): FabricObject {
   obj.fill = DEFAULT_FILL
   obj.stroke = DEFAULT_BORDER_COLOR
   obj.strokeWidth = 0 // border off — a stroke would sit exactly on the cut path
+  obj.strokeUniform = true // border renders at fixed px — scaling never thickens it
+  obj.noScaleCache = false // live cache re-render while scaling — the fixed px holds mid-gesture
   obj.clipPath = buildShape(spec) // cut line, fixed at the original edge
   return stampDocumentProps(obj)
 }
@@ -120,23 +129,24 @@ export function getShapeKind(obj: FabricObject): ShapeKind | null {
 }
 
 /**
- * The cut extent (scale-inclusive): `width + borderWidth` when the border is
- * on, plain `width` when it's off — one formula for both, per §4.
+ * The cut extent (scale-inclusive) — the geometry itself: the border is
+ * centered on the cut edge and never moves it, so one formula for both,
+ * border on or off.
  */
 export function getCutExtent(obj: FabricObject): CutExtent {
   if (obj instanceof Circle) {
-    const diameter = 2 * obj.radius + obj.strokeWidth
+    const diameter = 2 * obj.radius
     return { width: diameter * obj.scaleX, height: diameter * obj.scaleY }
   }
   if (obj instanceof Ellipse) {
     return {
-      width: (2 * obj.rx + obj.strokeWidth) * obj.scaleX,
-      height: (2 * obj.ry + obj.strokeWidth) * obj.scaleY,
+      width: 2 * obj.rx * obj.scaleX,
+      height: 2 * obj.ry * obj.scaleY,
     }
   }
   return {
-    width: (obj.width + obj.strokeWidth) * obj.scaleX,
-    height: (obj.height + obj.strokeWidth) * obj.scaleY,
+    width: obj.width * obj.scaleX,
+    height: obj.height * obj.scaleY,
   }
 }
 
@@ -146,32 +156,17 @@ export function getBorderWidth(obj: FabricObject): number {
 }
 
 /**
- * Set the border width (0 = off). The cut extent never changes: the interior
- * geometry shrinks/grows by half the stroke per side so the stroke's outer
- * edge stays exactly on the cut path, and the clipPath is never touched.
- * Clamped so the interior geometry never inverts.
- *
- * Mutations go through `set()` so Fabric marks the object dirty: the inset
- * model keeps the bounding box (`width + borderWidth`) constant, so the cache
- * canvas dimensions never change and a direct assignment would leave the
- * stale cache rendering the old border.
+ * Set the border width (0 = off). The cut extent never changes — the
+ * geometry doesn't either: the stroke is centered on the cut edge (middle
+ * alignment), half over the fill, half beyond the cut where the clipPath
+ * clips it away. Clamped so the border never exceeds the shape's smallest
+ * side. Goes through `set()` so Fabric marks the object dirty and the cached
+ * render repaints.
  */
 export function setBorderWidth(obj: FabricObject, width: number): void {
   const cut = getCutExtent(obj)
   const localMinSide = Math.min(cut.width / obj.scaleX, cut.height / obj.scaleY)
-  const stroke = Math.min(width, localMinSide)
-  const delta = stroke - obj.strokeWidth
-  if (obj instanceof Circle) {
-    obj.set("radius", obj.radius - delta / 2)
-  } else if (obj instanceof Ellipse) {
-    obj.set({ rx: obj.rx - delta / 2, ry: obj.ry - delta / 2 })
-  } else if (obj instanceof Rect || obj instanceof Triangle) {
-    obj.set({ width: obj.width - delta, height: obj.height - delta })
-    if (obj instanceof Rect && obj.rx > 0) {
-      obj.set("rx", Math.max(0, obj.rx - delta / 2))
-    }
-  }
-  obj.set("strokeWidth", stroke)
+  obj.set("strokeWidth", Math.min(width, localMinSide))
 }
 
 /**

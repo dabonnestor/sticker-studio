@@ -906,6 +906,58 @@ describe("multi-selection chrome", () => {
 })
 
 /**
+ * Fixed-border cache policy — shapes, groups, and the multi-selection set
+ * `noScaleCache` off, so their cache re-renders every frame of a live scale
+ * gesture and the strokeUniform border holds its fixed px while dragging
+ * (a stale gesture-start cache would stretch the baked stroke and the border
+ * would grow with the shape until the gesture commits). The flag is not
+ * serialized, so the add boundary re-stamps it on shapes and groups — a JSON
+ * restore (undo/redo) would otherwise revive them with the stock
+ * artifact-prone default — and the selection hooks stamp the ActiveSelection
+ * (never serialized; built fresh per selection).
+ */
+describe("fixed-border cache policy", () => {
+  let canvas: ReturnType<typeof createStageCanvas>
+
+  beforeEach(() => {
+    canvas = createStageCanvas(
+      document.createElement("canvas"),
+      document.createElement("canvas"),
+    )
+  })
+
+  afterEach(async () => {
+    await canvas.dispose()
+  })
+
+  it("shapes re-render live while scaling — restored shapes re-stamp on add", () => {
+    // A bare Rect stands in for a JSON-restored shape: the policy is not
+    // serialized, so it arrives with the stock artifact-prone default.
+    const shape = new Rect({ width: 100, height: 100, strokeWidth: 8 })
+    expect(shape.noScaleCache).toBe(true)
+    canvas.add(shape) // fires object:added — the add boundary re-stamps
+    expect(shape.noScaleCache).toBe(false)
+  })
+
+  it("groups re-render live while scaling — children keep fixed borders", () => {
+    const group = new Group([createShape("square"), createShape("circle")])
+    expect(group.noScaleCache).toBe(true)
+    canvas.add(group)
+    expect(group.noScaleCache).toBe(false)
+  })
+
+  it("the multi-selection re-renders live while scaling", () => {
+    const a = createShape("square")
+    const b = createShape("square")
+    canvas.add(a, b)
+    const selection = new ActiveSelection([a, b], { canvas })
+    expect(selection.noScaleCache).toBe(true)
+    canvas.setActiveObject(selection) // fires selection:created
+    expect(selection.noScaleCache).toBe(false)
+  })
+})
+
+/**
  * Rotation snapping (build spec §5) — the rotation handle's action handler
  * rounds every gesture to the nearest 15° multiple, so rotation clicks
  * through detents in both directions. Driven with synthetic events, the same
@@ -1083,16 +1135,16 @@ describe("clip-aware target finding", () => {
     expect(canvas.findTarget(at(circle.getCenterPoint())).target).toBe(circle)
   })
 
-  it("a press on the border ring hits the shape — the clip extends past the interior bbox", () => {
+  it("a press on the border hits the shape — the border straddles the cut edge", () => {
     const square = createShape("square")
     square.set({ left: 300, top: 300 })
-    setBorderWidth(square, 20) // interior shrinks to 172, the cut stays 192
+    setBorderWidth(square, 20) // the border straddles the cut — geometry untouched
     canvas.add(square)
     square.setCoords()
     const center = square.getCenterPoint()
-    // Inside the cut (half 96) but outside the interior bbox (half 86).
+    // On the border's inner half — inside the cut (half 96).
     expect(canvas.findTarget(at({ x: center.x + 90, y: center.y })).target).toBe(square)
-    // Outside the cut entirely.
+    // Outside the cut entirely — the border's outer half is clipped there.
     expect(canvas.findTarget(at({ x: center.x + 98, y: center.y })).target).toBeUndefined()
   })
 })

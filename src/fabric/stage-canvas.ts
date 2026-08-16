@@ -398,13 +398,13 @@ export interface OverlayRect {
  * sticker's clipped-out areas count as empty canvas — a marquee can start
  * inside the bounding box wherever the shape has no pixels, and a press
  * there deselects instead of selecting. The clipPath sits at the shape's
- * original edge in the shape's local plane (the inset border model, §4), so
+ * cut edge in the shape's local plane (the geometry never moves, §4), so
  * the point — already mapped into that plane — tests against the clip's
  * geometry exactly: circle and oval by radius, rectangle by extent, triangle
  * by the base-apex wedge. (Fabric's `containsPoint` is a bounding-box test —
- * the clip's bbox corners are transparent for circle/oval/triangle, and the
- * border ring sits outside the interior bbox.) Any other clip shape falls
- * back to its own bounding-box test, the safe approximation.
+ * the clip's bbox corners are transparent for circle/oval/triangle.) Any
+ * other clip shape falls back to its own bounding-box test, the safe
+ * approximation.
  */
 export function isPointInCutGeometry(clip: BaseFabricObject, local: Point): boolean {
   if (clip instanceof Circle) {
@@ -775,14 +775,13 @@ export class StageCanvas extends Canvas {
 
   /**
    * Per-object press hit test (build spec §7 Q2): a shape's pixels are its
-   * cut area — the fill and the border ring both render inside the clipPath.
-   * The base test is the interior bounding box, which over-hits (the clip's
-   * bbox corners are transparent for circle/oval/triangle — a press there
-   * must read as empty canvas, so a marquee can start inside the bounding
-   * box wherever the shape has no pixels) and under-hits (the border ring
-   * sits outside the interior bbox when the border is on — a press on
-   * visible pixels must hit the shape). Shapes with a clipPath therefore
-   * test the point against the cut geometry directly, in the shape's local
+   * cut area — the fill and the border's inner half both render inside the
+   * clipPath (the outer half is clipped away at the cut edge, §4). The base
+   * test is the interior bounding box, which over-hits: the clip's bbox
+   * corners are transparent for circle/oval/triangle — a press there must
+   * read as empty canvas, so a marquee can start inside the bounding box
+   * wherever the shape has no pixels. Shapes with a clipPath therefore test
+   * the point against the cut geometry directly, in the shape's local
    * plane; everything else keeps Fabric's test. Group children go through
    * the same path with their absolute transform (`calcTransformMatrix`
    * de-nests through the group), so the cut test works inside groups too.
@@ -1261,6 +1260,13 @@ export function createStageCanvas(
     applyRotateHandle(obj)
     const kind = getShapeKind(obj)
     if (kind) {
+      // The border renders at a fixed px (strokeUniform) with the cache
+      // re-rendered live while scaling (`noScaleCache` off) — a stale
+      // gesture-start cache would stretch the baked stroke and the border
+      // would grow until the gesture commits. `noScaleCache` is not
+      // serialized, so the add boundary re-stamps it: a JSON restore
+      // (undo/redo) would otherwise revive shapes with the stock default.
+      obj.set("noScaleCache", false)
       // Square and rectangle keep every side handle — a drag on one scales
       // that axis freely (the scaling handler below skips the ratio lock for
       // them); the other shapes stay corner-handles-only.
@@ -1272,8 +1278,11 @@ export function createStageCanvas(
     } else if (obj instanceof Group) {
       // A group scales as one unit — corner handles only, like a
       // multi-selection (a side-handle drag would stretch the children
-      // non-uniformly; scaling is free from the corners, §7 Q8).
+      // non-uniformly; scaling is free from the corners, §7 Q8). The cache
+      // policy re-stamps here too: children's fixed-px borders hold while
+      // the group itself scales.
       obj.setControlsVisibility({ ml: false, mt: false, mr: false, mb: false })
+      obj.set("noScaleCache", false)
     }
     // Corner handles show the diagonal cursor (CORNER_BASE_DIRECTION)
     // instead of Fabric's quadrant-based one — shapes and text share it, so
@@ -1296,6 +1305,10 @@ export function createStageCanvas(
     applyResizeCursors(active)
     applyRotateHandle(active)
     active.setControlsVisibility({ ml: false, mt: false, mr: false, mb: false })
+    // The wrapper is never serialized — Fabric builds it fresh per
+    // selection — so the live-scale cache policy stamps here, the same
+    // re-stamp the add boundary gives shapes and groups.
+    active.set("noScaleCache", false)
   }
   canvas.on("selection:created", applySelectionChrome)
   canvas.on("selection:updated", applySelectionChrome)
