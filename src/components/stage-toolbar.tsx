@@ -343,8 +343,8 @@ function DocumentSize() {
  * Document look section (build spec §5) — always visible: the canvas
  * background color and the document border (width slider + color). Both are
  * document properties (the border is envelope-owned, ADR 0002) and use the
- * same control styling as the shape-property section (the document border is
- * inset, where the shape border is centered on the cut edge — §4).
+ * same control styling as the shape-property section (the document border
+ * is inset, where the shape border is centered on the cut edge — §4).
  */
 function CanvasProps() {
   const { canvasProps, commitCanvasProps } = useStage()
@@ -394,9 +394,8 @@ function CanvasProps() {
 
 /**
  * Contextual shape-property section (build spec §5), visible only while a
- * single shape is selected: the background (fill) color and the centered
- * border (width slider + color). All values display in px and commit
- * immediately.
+ * single shape is selected: the background (fill) color and the inset border
+ * (width slider + color). All values display in px and commit immediately.
  */
 function ShapeProps() {
   const { selection, commitShapeProps } = useStage()

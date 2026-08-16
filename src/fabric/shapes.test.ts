@@ -16,10 +16,10 @@ import {
 /**
  * Shape model (build spec §4, §5). Default sizes are inches-specified
  * at the 96 DPI display basis: Square 2×2 → 192×192 px, Circle Ø2 → radius 96,
- * Rectangle / Oval / Triangle 3×2 (landscape) → 288×192 px. The border model:
- * the object geometry IS the cut area — the border is centered on the cut
- * edge (middle alignment), half over the fill, half clipped beyond it, and
- * never changes the geometry.
+ * Rectangle / Oval / Triangle 3×2 (landscape) → 288×192 px. The centered
+ * border model: the object geometry IS the cut — turning the border on never
+ * changes the geometry; the border renders at full width centered on the cut
+ * edge because the clipPath grows by half the stroke per side.
  *
  * Every mutator goes through `obj.set()` so Fabric marks the object dirty —
  * a direct assignment would leave the stale cache rendering the old border
@@ -107,60 +107,76 @@ describe("shape model", () => {
   })
 
   describe("setBorderWidth — centered border model (§4)", () => {
-    it("square: border on never changes the geometry — the stroke straddles the cut edge", () => {
+    it("square: the geometry IS the cut — the border is centered on it, never moving it", () => {
       const s = createShape("square")
       setBorderWidth(s, 8)
-      expect(s.width).toBe(192) // geometry IS the cut — untouched
+      expect(s.width).toBe(192) // geometry untouched
       expect(s.height).toBe(192)
       expect(s.strokeWidth).toBe(8)
-      // cut geometry = the geometry
+      // the cut line runs through the middle of the full border
       expect(getCutExtent(s).width).toBe(192)
       expect(getCutExtent(s).height).toBe(192)
     })
 
-    it("rectangle: geometry untouched, cut preserved", () => {
+    it("the clip grows by the stroke — the border's outer half isn't clipped away", () => {
+      const s = createShape("square")
+      setBorderWidth(s, 8)
+      const clip = s.clipPath as Rect
+      expect(clip.width).toBe(200) // 192 + 8 — the stroke's outer edge
+      expect(clip.height).toBe(200)
+    })
+
+    it("rectangle: geometry untouched, the clip grows by the stroke", () => {
       const s = createShape("rectangle")
       setBorderWidth(s, 10)
       expect(s.width).toBe(288)
       expect(s.height).toBe(192)
+      expect((s.clipPath as Rect).width).toBe(298)
+      expect((s.clipPath as Rect).height).toBe(202)
       expect(getCutExtent(s)).toEqual({ width: 288, height: 192 })
     })
 
-    it("triangle: geometry untouched, cut preserved", () => {
+    it("triangle: geometry untouched, the clip grows by the stroke", () => {
       const s = createShape("triangle")
       setBorderWidth(s, 8)
       expect(s.width).toBe(288)
       expect(s.height).toBe(192)
       expect(s.strokeWidth).toBe(8)
+      expect((s.clipPath as Triangle).width).toBe(296)
+      expect((s.clipPath as Triangle).height).toBe(200)
       expect(getCutExtent(s)).toEqual({ width: 288, height: 192 })
     })
 
-    it("circle: radius untouched — the stroke straddles the cut edge", () => {
+    it("circle: radius untouched, the clip grows by half the stroke", () => {
       const s = createShape("circle")
       setBorderWidth(s, 8)
       expect(s.radius).toBe(96)
+      expect((s.clipPath as Circle).radius).toBe(100) // 96 + 8/2
       expect(getCutExtent(s).width).toBeCloseTo(192, 10)
     })
 
-    it("oval: radii untouched, cut preserved", () => {
+    it("oval: radii untouched, the clip grows by half the stroke per axis", () => {
       const s = createShape("oval")
       setBorderWidth(s, 8)
       expect(s.rx).toBe(144)
       expect(s.ry).toBe(96)
+      expect((s.clipPath as Ellipse).rx).toBe(148)
+      expect((s.clipPath as Ellipse).ry).toBe(100)
       expect(getCutExtent(s)).toEqual({ width: 288, height: 192 })
     })
 
-    it("turning the border off restores strokeWidth 0 — geometry never moved", () => {
+    it("turning the border off restores strokeWidth 0 and the clip to the cut", () => {
       const s = createShape("rectangle")
       setBorderWidth(s, 8)
       setBorderWidth(s, 0)
       expect(s.width).toBe(288)
       expect(s.height).toBe(192)
       expect(s.strokeWidth).toBe(0)
+      expect((s.clipPath as Rect).width).toBe(288)
       expect(getCutExtent(s)).toEqual({ width: 288, height: 192 })
     })
 
-    it("the clipPath sits at the cut edge throughout border changes", () => {
+    it("the clip returns to the cut through any border changes", () => {
       const s = createShape("triangle")
       const clip = s.clipPath as Triangle
       setBorderWidth(s, 8)
@@ -168,16 +184,31 @@ describe("shape model", () => {
       setBorderWidth(s, 0)
       expect(clip.width).toBe(288)
       expect(clip.height).toBe(192)
-      // and the clip always matches the cut geometry
+      // the cut line always runs through the middle of the full border
       expect(getCutExtent(s)).toEqual({ width: clip.width, height: clip.height })
     })
 
-    it("clamps the border to the shape's smallest side", () => {
+    it("clamps the border to the shape's smallest side at the current scale", () => {
       const s = createShape("square")
       setBorderWidth(s, 500)
       expect(s.strokeWidth).toBe(192)
-      expect(s.width).toBe(192) // geometry never shrinks
+      expect(s.width).toBe(192) // geometry never changes
+      expect((s.clipPath as Rect).width).toBe(384) // 192 + 192
       expect(getCutExtent(s).width).toBe(192)
+    })
+
+    it("scaling re-stamps the clip — the fixed-px border's extension divides by the scale", () => {
+      const s = createShape("square")
+      setBorderWidth(s, 8)
+      resizeToCut(s, { width: 384, height: 384 }) // ×2
+      expect(s.scaleX).toBe(2)
+      expect(s.strokeWidth).toBe(8) // the border is a screen-px constant
+      // the clip extension is 8/2 = 4 local px — 192 + 4 at ×2, holding
+      // the stroke's outer edge on screen
+      expect((s.clipPath as Rect).width).toBe(196)
+      expect((s.clipPath as Rect).height).toBe(196)
+      // the cut (the geometry) scaled with the shape
+      expect(getCutExtent(s)).toEqual({ width: 384, height: 384 })
     })
 
     it("marks the object dirty — the cached render is invalidated (regression)", () => {
@@ -296,7 +327,8 @@ describe("shape model", () => {
       expect(revived.width).toBe(288) // the geometry IS the cut — never shrunk
       expect(getCutExtent(revived)).toEqual({ width: 576, height: 192 })
       expect(revived.clipPath).toBeInstanceOf(Triangle)
-      expect((revived.clipPath as Triangle).width).toBe(288)
+      // the grown clip survives — at ×2 the extension is 8/2 = 4 local px
+      expect((revived.clipPath as Triangle).width).toBe(292)
     })
   })
 })

@@ -24,7 +24,7 @@ A state of a shape: it cannot be moved, resized, edited, or deleted while locked
 _Avoid_: pinned, fixed
 
 **Cut line**:
-The outline of a shape that defines where it is cut — the boundary of the shape. In the Document it is the shape's clipPath, at the original geometry edge; the inset border shrinks inside it. There is no bleed or separate dieline: the shape is the cut line.
+The outline of a shape that defines where it is cut — the boundary of the shape. In the Document it is the shape's clipPath at the geometry edge; the border is centered on it — the clip extends half the border beyond the cut so the border renders at full width (at a fixed pixel width: scaling never thickens it), and the cutter halves it. There is no bleed or separate dieline: the shape is the cut line.
 _Avoid_: dieline, cut path, bleed
 
 **Group**:

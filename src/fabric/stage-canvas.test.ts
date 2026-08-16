@@ -115,6 +115,19 @@ describe("uniform scaling", () => {
     expect(shape.scaleY).toBeCloseTo(1.5, 10)
   })
 
+  it("re-stamps the clip on every scale tick — the fixed-px border's clip extension divides by the scale", () => {
+    const shape = createShape("square")
+    canvas.add(shape)
+    setBorderWidth(shape, 8)
+    shape.set({ scaleX: 2, scaleY: 2 })
+    scale(shape) // fires object:scaling — the handler re-stamps the clip
+    // the extension is 8/2 = 4 local px at ×2, holding the stroke's outer
+    // edge on screen (192·2 + 8)
+    expect((shape.clipPath as Rect).width).toBe(196)
+    expect((shape.clipPath as Rect).height).toBe(196)
+    expect(shape.strokeWidth).toBe(8) // the border itself never thickened
+  })
+
   it("scales text uniformly like a shape and hands the width to the user", () => {
     const text = createText()
     canvas.add(text)
@@ -1135,17 +1148,18 @@ describe("clip-aware target finding", () => {
     expect(canvas.findTarget(at(circle.getCenterPoint())).target).toBe(circle)
   })
 
-  it("a press on the border hits the shape — the border straddles the cut edge", () => {
+  it("a press on the border hits the shape — the clip extends past the cut", () => {
     const square = createShape("square")
     square.set({ left: 300, top: 300 })
-    setBorderWidth(square, 20) // the border straddles the cut — geometry untouched
+    setBorderWidth(square, 20) // the border is centered on the cut — the clip extends 10 past it
     canvas.add(square)
     square.setCoords()
     const center = square.getCenterPoint()
-    // On the border's inner half — inside the cut (half 96).
-    expect(canvas.findTarget(at({ x: center.x + 90, y: center.y })).target).toBe(square)
-    // Outside the cut entirely — the border's outer half is clipped there.
-    expect(canvas.findTarget(at({ x: center.x + 98, y: center.y })).target).toBeUndefined()
+    // On the border's outer half — beyond the cut (half 96) but inside the
+    // clip (half 106) — the visible border must hit.
+    expect(canvas.findTarget(at({ x: center.x + 100, y: center.y })).target).toBe(square)
+    // Outside the design entirely — beyond the border's outer edge.
+    expect(canvas.findTarget(at({ x: center.x + 110, y: center.y })).target).toBeUndefined()
   })
 })
 

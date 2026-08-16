@@ -44,7 +44,7 @@ import {
 } from "@/fabric/document-props"
 import { getTextMeasurer } from "@/fabric/fonts"
 import { History } from "@/fabric/history"
-import { DEFAULT_BORDER_COLOR, getShapeKind } from "@/fabric/shapes"
+import { DEFAULT_BORDER_COLOR, getShapeKind, restampBorderClip } from "@/fabric/shapes"
 import { SNAP_TOLERANCE_PX, SmartGuides } from "@/fabric/smart-guides"
 import { wireTextInteractions } from "@/fabric/text-interactions"
 import { isTextObject } from "@/fabric/text"
@@ -397,14 +397,14 @@ export interface OverlayRect {
  * Point-in-cut-geometry test for a shape's clipPath (build spec §7 Q2): a
  * sticker's clipped-out areas count as empty canvas — a marquee can start
  * inside the bounding box wherever the shape has no pixels, and a press
- * there deselects instead of selecting. The clipPath sits at the shape's
- * cut edge in the shape's local plane (the geometry never moves, §4), so
- * the point — already mapped into that plane — tests against the clip's
- * geometry exactly: circle and oval by radius, rectangle by extent, triangle
- * by the base-apex wedge. (Fabric's `containsPoint` is a bounding-box test —
- * the clip's bbox corners are transparent for circle/oval/triangle.) Any
- * other clip shape falls back to its own bounding-box test, the safe
- * approximation.
+ * there deselects instead of selecting. The clipPath is the design extent in
+ * the shape's local plane (it extends half the border beyond the cut edge,
+ * §4), so the point — already mapped into that plane — tests against the
+ * clip's geometry exactly: circle and oval by radius, rectangle by extent,
+ * triangle by the base-apex wedge. (Fabric's `containsPoint` is a
+ * bounding-box test — the clip's bbox corners are transparent for
+ * circle/oval/triangle.) Any other clip shape falls back to its own
+ * bounding-box test, the safe approximation.
  */
 export function isPointInCutGeometry(clip: BaseFabricObject, local: Point): boolean {
   if (clip instanceof Circle) {
@@ -775,13 +775,14 @@ export class StageCanvas extends Canvas {
 
   /**
    * Per-object press hit test (build spec §7 Q2): a shape's pixels are its
-   * cut area — the fill and the border's inner half both render inside the
-   * clipPath (the outer half is clipped away at the cut edge, §4). The base
-   * test is the interior bounding box, which over-hits: the clip's bbox
-   * corners are transparent for circle/oval/triangle — a press there must
-   * read as empty canvas, so a marquee can start inside the bounding box
-   * wherever the shape has no pixels. Shapes with a clipPath therefore test
-   * the point against the cut geometry directly, in the shape's local
+   * design extent — the fill and the full border (which renders centered on
+   * the cut, §4) both sit inside the clipPath. The base test is the
+   * interior bounding box, which over-hits: the clip's bbox corners are
+   * transparent for circle/oval/triangle — a press there must read as empty
+   * canvas, so a marquee can start inside the bounding box wherever the
+   * shape has no pixels. Shapes with a clipPath therefore test the point
+   * against the clip geometry directly (the clip extends half the border
+   * past the cut, so the border ring is covered too), in the shape's local
    * plane; everything else keeps Fabric's test. Group children go through
    * the same path with their absolute transform (`calcTransformMatrix`
    * de-nests through the group), so the cut test works inside groups too.
@@ -1314,10 +1315,10 @@ export function createStageCanvas(
   canvas.on("selection:updated", applySelectionChrome)
 
   // The document border (envelope-owned, ADR 0002) renders as an inset stroke
-  // on the document edge — same inset model as shape borders (§4): the stroke
-  // sits inside the edge, so exports (which render only the document area)
-  // show the full border. `after:render` paints in scene space under the
-  // viewport transform (§9), so the stroke hugs the document edge at any
+  // on the document edge — unlike the shape border, it is inset (§4): the
+  // stroke sits inside the edge, so exports (which render only the document
+  // area) show the full border. `after:render` paints in scene space under
+  // the viewport transform (§9), so the stroke hugs the document edge at any
   // zoom — the border is document state and scales with the Document.
   canvas.on("after:render", () => {
     const borderWidth = canvas.borderWidth
@@ -1388,14 +1389,18 @@ export function createStageCanvas(
     const axisHandle = corner === "mt" || corner === "mb" || corner === "ml" || corner === "mr"
     if (axisHandle && (kind === "square" || kind === "rectangle")) {
       gestureRatios.delete(obj) // a stale corner-drag ratio must not pin the axis
-      return
+    } else {
+      const ratio = gestureRatios.get(obj)
+      if (ratio === undefined) {
+        gestureRatios.set(obj, obj.scaleX / obj.scaleY)
+      } else {
+        obj.set("scaleY", obj.scaleX / ratio)
+      }
     }
-    const ratio = gestureRatios.get(obj)
-    if (ratio === undefined) {
-      gestureRatios.set(obj, obj.scaleX / obj.scaleY)
-      return
-    }
-    obj.set("scaleY", obj.scaleX / ratio)
+    // The fixed-px border's clip extension divides by the scale — re-stamp
+    // after the scale settles (the ratio correction above), so the clip
+    // lands on the stroke's outer edge this very frame.
+    if (kind) restampBorderClip(obj)
   })
   canvas.on("object:modified", (event) => {
     if (event.target) gestureRatios.delete(event.target)

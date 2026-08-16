@@ -12,21 +12,24 @@ import { stampDocumentProps } from "@/fabric/document-props"
  * Shape model (build spec §4, §5). One Fabric object per shape:
  * fill = background, stroke = border, clipPath = cut line.
  *
- * Border model (§4): the object geometry IS the cut area — turning the
- * border on never changes the geometry. The stroke is centered on the cut
- * edge (middle alignment): half of it sits on the fill, the other half lies
- * beyond the cut, where the clipPath clips it away — so a border of width w
- * renders at w/2, and the cut line runs through the border's middle, exactly
- * as a cut sticker behaves. The border renders at a fixed pixel width
- * (`strokeUniform`): scaling the shape never thickens it — the fill and the
- * cut line scale, the border stays put, the design-tool standard. The
- * strokeUniform compensation is baked into the object's cache, so the shape
- * re-renders its cache every frame of a live scale gesture (`noScaleCache`
- * off) — a stale gesture-start cache would stretch the baked stroke and the
- * border would grow with the shape until the gesture commits. The clipPath
- * always sits at the cut edge and never moves — the geometry never does
- * either — and the cut geometry is the geometry itself (scale-inclusive),
- * which is why it survives JSON restore.
+ * Centered border model (§4): the object geometry IS the cut — turning the
+ * border on never changes the geometry. The border is centered on the cut
+ * edge and renders at its full width: the clipPath extends half the stroke
+ * beyond the geometry (per side), so the stroke's outer half is not clipped
+ * away — the cut line runs through the middle of the full border, exactly
+ * as a cut sticker behaves (the cutter halves the border). The cut geometry
+ * is the geometry itself (scale-inclusive), which is why it survives JSON
+ * restore.
+ *
+ * The border renders at a fixed pixel width (`strokeUniform`): scaling the
+ * shape never thickens it — the fill and the cut line scale, the border
+ * stays put. The clip extension is therefore scale-dependent — stroke/2
+ * divided by the object's scale in the shape's local units — so the clip is
+ * re-stamped on every scale change (`restampBorderClip`). The strokeUniform
+ * compensation is baked into the object's cache, so the shape re-renders
+ * its cache every frame of a live scale gesture (`noScaleCache` off) — a
+ * stale gesture-start cache would stretch the baked stroke and the border
+ * would grow with the shape until the gesture commits.
  *
  * All mutations go through `obj.set()` — Fabric marks the object dirty from
  * there; a direct assignment would leave the cached render stale.
@@ -108,7 +111,7 @@ export function createShape(kind: ShapeKind): FabricObject {
   obj.strokeWidth = 0 // border off — a stroke would sit exactly on the cut path
   obj.strokeUniform = true // border renders at fixed px — scaling never thickens it
   obj.noScaleCache = false // live cache re-render while scaling — the fixed px holds mid-gesture
-  obj.clipPath = buildShape(spec) // cut line, fixed at the original edge
+  obj.clipPath = buildShape(spec) // cut line — grows with the border (§4)
   return stampDocumentProps(obj)
 }
 
@@ -157,21 +160,48 @@ export function getBorderWidth(obj: FabricObject): number {
 
 /**
  * Set the border width (0 = off). The cut extent never changes — the
- * geometry doesn't either: the stroke is centered on the cut edge (middle
- * alignment), half over the fill, half beyond the cut where the clipPath
- * clips it away. Clamped so the border never exceeds the shape's smallest
- * side. Goes through `set()` so Fabric marks the object dirty and the cached
- * render repaints.
+ * geometry doesn't either: the border is centered on the cut edge and
+ * renders at a fixed pixel width, so the clipPath re-stamps to stay on the
+ * stroke's outer edge. Clamped so the border never exceeds the shape's
+ * smallest side at the current scale (the border's inner half would
+ * otherwise cover the fill entirely). Goes through `set()` so Fabric marks
+ * the object dirty and the cached render repaints.
  */
 export function setBorderWidth(obj: FabricObject, width: number): void {
   const cut = getCutExtent(obj)
-  const localMinSide = Math.min(cut.width / obj.scaleX, cut.height / obj.scaleY)
-  obj.set("strokeWidth", Math.min(width, localMinSide))
+  const stroke = Math.min(width, Math.min(cut.width, cut.height))
+  obj.set("strokeWidth", stroke)
+  restampBorderClip(obj)
+}
+
+/**
+ * Re-stamp the clipPath to the stroke's outer edge. The border renders at a
+ * fixed pixel width (strokeUniform), so its extension past the geometry is
+ * scale-dependent: stroke/2 divided by the object's scale in the shape's
+ * local units. Called whenever the border width or the scale changes
+ * (setBorderWidth, resizeToCut, and the live-scale handler — the clip
+ * itself is serialized, so a JSON restore needs no re-stamp).
+ */
+export function restampBorderClip(obj: FabricObject): void {
+  const clip = obj.clipPath
+  if (!clip) return
+  const half = obj.strokeWidth / 2
+  if (clip instanceof Circle) {
+    clip.set("radius", obj.radius + half / obj.scaleX)
+  } else if (clip instanceof Ellipse) {
+    clip.set({ rx: obj.rx + half / obj.scaleX, ry: obj.ry + half / obj.scaleY })
+  } else {
+    clip.set({
+      width: obj.width + obj.strokeWidth / obj.scaleX,
+      height: obj.height + obj.strokeWidth / obj.scaleY,
+    })
+  }
 }
 
 /**
  * Scale the shape so its cut extent matches the target. Axes scale
- * independently.
+ * independently; the clip re-stamps after — the fixed-px border's extension
+ * divides by the new scale.
  */
 export function resizeToCut(obj: FabricObject, target: CutExtent): void {
   const cut = getCutExtent(obj)
@@ -179,6 +209,7 @@ export function resizeToCut(obj: FabricObject, target: CutExtent): void {
     scaleX: obj.scaleX * (target.width / cut.width),
     scaleY: obj.scaleY * (target.height / cut.height),
   })
+  restampBorderClip(obj)
 }
 
 /** Set the shape background — the object's fill (§4: fill = background). */
