@@ -16,12 +16,14 @@ import { setLocked } from "@/fabric/document-props"
 import { groupObjects, ungroupObjects } from "@/fabric/groups"
 import { createShape, setBorderWidth } from "@/fabric/shapes"
 import {
+  ROTATION_SNAP_DEGREES,
   ROTATE_HANDLE_SIZE,
   createStageCanvas,
   getMarqueeBox,
   getOverlayOffset,
   isPointInCutGeometry,
   renderRotateHandle,
+  rotationWithSnap,
 } from "@/fabric/stage-canvas"
 import { createText } from "@/fabric/text"
 
@@ -285,11 +287,13 @@ describe("free axis scaling (square/rectangle)", () => {
 })
 
 /**
- * Corner-handle cursors (build spec §5): the aspect-ratio lock makes every
- * corner drag a diagonal gesture, so the corners show a fixed diagonal
- * cursor instead of Fabric's quadrant-based one — which reports `n`/`s`/`e`/
- * `w` at the corners of narrow or wide boxes (auto-fitted text!), so text
- * corners never matched the diagonal a squarish shape shows.
+ * Resize-handle cursors (build spec §5, rotation-aware): the aspect-ratio
+ * lock makes every corner drag a diagonal gesture, so the corners show a
+ * diagonal cursor instead of Fabric's quadrant-based one — which reports
+ * `n`/`s`/`e`/`w` at the corners of narrow or wide boxes (auto-fitted
+ * text!), so text corners never matched the diagonal a squarish shape
+ * shows. The diagonal rotates with the object, snapped to the nearest of
+ * the native axis/diagonal keywords — CSS has no rotated cursor arrows.
  */
 describe("corner handle cursors", () => {
   let canvas: ReturnType<typeof createStageCanvas>
@@ -308,12 +312,16 @@ describe("corner handle cursors", () => {
   /**
    * The cursor the canvas would show over the given control: the same path
    * `_setCursorFromEvent` takes — findControl at the control's own point,
-   * then the control's cursorStyleHandler.
+   * then the control's cursorStyleHandler. Probes one pixel off the exact
+   * center: Fabric's hit test casts a ray left from the probe, and a ray
+   * from the exact center of a rotated handle passes through the hit box's
+   * own vertex, double-counting the crossing (the handle reports a miss —
+   * a pointer can't sit on that exact float point in practice).
    */
   function cursorAt(obj: FabricObject, key: string) {
     obj.setCoords()
     const corner = obj.findControl(
-      new Point(obj.oCoords[key].x, obj.oCoords[key].y),
+      new Point(obj.oCoords[key].x + 1, obj.oCoords[key].y + 1),
     )
     if (!corner) throw new Error(`no control at ${key}`)
     return corner.control.cursorStyleHandler?.(
@@ -324,7 +332,7 @@ describe("corner handle cursors", () => {
     )
   }
 
-  it("shape corners show the fixed diagonal cursors", () => {
+  it("shape corners show the diagonal cursors", () => {
     const shape = createShape("square")
     canvas.add(shape)
     canvas.setActiveObject(shape)
@@ -340,12 +348,84 @@ describe("corner handle cursors", () => {
     canvas.add(text)
     canvas.setActiveObject(text)
     // Fabric's quadrant cursor would report `w-resize` here — the corner of
-    // a 300×29 box sits ~straight left of the center. The fixed diagonal
-    // keeps the same affordance shapes show.
+    // a 300×29 box sits ~straight left of the center. The diagonal keeps the
+    // same affordance shapes show.
     expect(cursorAt(text, "tl")).toBe("nwse-resize")
     expect(cursorAt(text, "br")).toBe("nwse-resize")
     expect(cursorAt(text, "tr")).toBe("nesw-resize")
     expect(cursorAt(text, "bl")).toBe("nesw-resize")
+  })
+
+  it("rotates the corner diagonals with the object", () => {
+    const shape = createShape("square")
+    canvas.add(shape)
+    canvas.setActiveObject(shape)
+    // A 90° turn puts tl at the top-right — its diagonal now runs 135°.
+    shape.set({ angle: 90 })
+    expect(cursorAt(shape, "tl")).toBe("nesw-resize")
+    expect(cursorAt(shape, "br")).toBe("nesw-resize")
+    expect(cursorAt(shape, "tr")).toBe("nwse-resize")
+    expect(cursorAt(shape, "bl")).toBe("nwse-resize")
+    // 45° puts every corner on an axis — the arrows snap to the natives.
+    shape.set({ angle: 45 })
+    expect(cursorAt(shape, "tl")).toBe("ns-resize")
+    expect(cursorAt(shape, "tr")).toBe("ew-resize")
+  })
+
+  it("snaps between the 45° steps to the nearest native keyword", () => {
+    const shape = createShape("square")
+    canvas.add(shape)
+    canvas.setActiveObject(shape)
+    // 15° of rotation puts the tl diagonal at 60° — no native keyword can
+    // express it, so the arrow lands on the closest one (45°).
+    shape.set({ angle: 15 })
+    expect(cursorAt(shape, "tl")).toBe("nwse-resize")
+    expect(cursorAt(shape, "tr")).toBe("nesw-resize")
+  })
+
+  it("mirrors the corner diagonal under a flip", () => {
+    const shape = createShape("square")
+    canvas.add(shape)
+    canvas.setActiveObject(shape)
+    // A flipX puts the tl corner top-right — its drag line runs 135°, not
+    // 45° — so the arrow mirrors with the box.
+    shape.set({ flipX: true })
+    expect(cursorAt(shape, "tl")).toBe("nesw-resize")
+    shape.set({ flipX: false, flipY: true })
+    expect(cursorAt(shape, "tl")).toBe("nesw-resize")
+    // Both flips cancel — the corner returns to the 45° diagonal.
+    shape.set({ flipX: true, flipY: true })
+    expect(cursorAt(shape, "tl")).toBe("nwse-resize")
+  })
+
+  it("rotates the side-handle arrows with a square/rectangle", () => {
+    const shape = createShape("square")
+    canvas.add(shape)
+    canvas.setActiveObject(shape)
+    // 90° puts the width axis on the vertical — ml sits at the top, mt at
+    // the right — and each arrow follows its own axis.
+    shape.set({ angle: 90 })
+    expect(cursorAt(shape, "ml")).toBe("n-resize")
+    expect(cursorAt(shape, "mr")).toBe("s-resize")
+    expect(cursorAt(shape, "mt")).toBe("e-resize")
+    expect(cursorAt(shape, "mb")).toBe("w-resize")
+    // Between the steps the axis arrow snaps to the nearest compass keyword.
+    shape.set({ angle: 15 })
+    expect(cursorAt(shape, "ml")).toBe("w-resize")
+    expect(cursorAt(shape, "mt")).toBe("n-resize")
+  })
+
+  it("rotates text's wrap-handle arrows too", () => {
+    // A wide text, so the wrap handles' hit boxes stay apart at 90° (the
+    // auto-fitted default is a few pixels tall — the two handles overlap).
+    const text = createText((s) => s.length * 10)
+    canvas.add(text)
+    canvas.setActiveObject(text)
+    // The ml/mr wrap handles scale the width (§6) — at 90° the width axis
+    // is vertical, so the arrows point north and south.
+    text.set({ angle: 90 })
+    expect(cursorAt(text, "ml")).toBe("n-resize")
+    expect(cursorAt(text, "mr")).toBe("s-resize")
   })
 })
 
@@ -616,7 +696,7 @@ describe("mirrored selection cursor", () => {
     return canvas.getWorkspaceCursor(clientX, clientY)
   }
 
-  it("shows the fixed diagonal cursors on corner handles past the Document edge", () => {
+  it("shows the diagonal cursors on corner handles past the Document edge", () => {
     const shape = createShape("square")
     shape.set({ left: -60, top: -60 }) // hangs off the top-left corner
     canvas.add(shape)
@@ -631,11 +711,22 @@ describe("mirrored selection cursor", () => {
     expect(cursorAt(shape.oCoords.bl.x, shape.oCoords.bl.y)).toBe("nesw-resize")
   })
 
+  it("rotates the corner cursors on the mirrored chrome", () => {
+    const shape = createShape("square")
+    shape.set({ left: -60, top: -60, angle: 90 }) // rotated, off the corner
+    canvas.add(shape)
+    canvas.setActiveObject(shape)
+    shape.setCoords()
+    // The rotation-aware handler answers on the mirrored surface too — the
+    // same path the in-document hover takes.
+    expect(cursorAt(shape.oCoords.tl.x, shape.oCoords.tl.y)).toBe("nesw-resize")
+  })
+
   it("shows the wrap arrows on a text's mirrored wrap handles past the edge", () => {
-    // The text's ml/mr wrap handles carry Fabric's stock cursor handler, not
-    // the CORNER_CURSORS override — it must not crash on the synthetic
-    // event `getWorkspaceCursor` passes (the handler reads the alt key off
-    // it), or the workspace would keep its default `auto` cursor.
+    // The text's ml/mr wrap handles carry the rotation-aware side cursor,
+    // not the corner diagonal override — it must not crash on the synthetic
+    // event `getWorkspaceCursor` passes (it never reads it), or the
+    // workspace would keep its default `auto` cursor.
     const text = createText((s) => s.length * 10)
     text.set({ left: -60, top: -60 }) // hangs off the top-left corner
     canvas.add(text)
@@ -645,10 +736,10 @@ describe("mirrored selection cursor", () => {
     expect(cursorAt(text.oCoords.mr.x, text.oCoords.mr.y)).toBe("e-resize")
   })
 
-  it("shows the fixed diagonal cursors on a mirrored multi-selection's corners", () => {
+  it("shows the diagonal cursors on a mirrored multi-selection's corners", () => {
     // The ActiveSelection wrapper never fires `object:added`, so its corners
-    // only get the CORNER_CURSORS override from the selection hooks — and
-    // without them the stock quadrant handler would crash the workspace
+    // only get the rotation-aware corner cursors from the selection hooks —
+    // and without them the stock quadrant handler would crash the workspace
     // mousemove on the synthetic event, leaving the cursor `auto`.
     const text = createText((s) => s.length * 10)
     text.set({ left: -60, top: -60 })
@@ -811,6 +902,105 @@ describe("multi-selection chrome", () => {
     raw.__onMouseUp(at(br.x + 121, br.y + 121))
     expect(selection.scaleX).toBeGreaterThan(1)
     expect(selection.scaleX).toBeCloseTo(selection.scaleY, 10)
+  })
+})
+
+/**
+ * Rotation snapping (build spec §5) — the rotation handle's action handler
+ * rounds every gesture to the nearest 15° multiple, so rotation clicks
+ * through detents in both directions. Driven with synthetic events, the same
+ * way the interaction wiring is tested elsewhere.
+ */
+describe("rotation snapping", () => {
+  let canvas: ReturnType<typeof createStageCanvas>
+
+  beforeEach(() => {
+    canvas = createStageCanvas(
+      document.createElement("canvas"),
+      document.createElement("canvas"),
+    )
+  })
+
+  afterEach(async () => {
+    await canvas.dispose()
+  })
+
+  /** One rotation tick — a drag from 12 o'clock to the given angle. */
+  function rotateTo(obj: FabricObject, angleDeg: number) {
+    const rad = (deg: number) => (deg * Math.PI) / 180
+    const handler = obj.controls.mtr.actionHandler!
+    handler(
+      {} as PointerEvent,
+      {
+        target: obj,
+        ex: 300,
+        ey: 250, // straight above the center
+        theta: 0,
+        originX: "center",
+        originY: "center",
+      } as never,
+      300 + 100 * Math.sin(rad(angleDeg)),
+      300 - 100 * Math.cos(rad(angleDeg)),
+    )
+  }
+
+  it("a rotation gesture lands on the nearest 15° multiple", () => {
+    const shape = createShape("square")
+    shape.set({ left: 300, top: 300 })
+    canvas.add(shape)
+    rotateTo(shape, 12) // without snapping this would land on 12°
+    expect(shape.angle).toBe(ROTATION_SNAP_DEGREES)
+  })
+
+  it("snaps symmetrically — a hair of counter-clockwise motion keeps the multiple", () => {
+    const shape = createShape("square")
+    shape.set({ left: 300, top: 300 })
+    canvas.add(shape)
+    // The stock floor-biased handler would throw this to 345°; the nearest
+    // multiple keeps 0° — the object never leaps a full step ahead of the
+    // pointer.
+    rotateTo(shape, -2)
+    expect(shape.angle).toBe(0)
+  })
+
+  it("keeps an exact multiple untouched", () => {
+    const shape = createShape("square")
+    shape.set({ left: 300, top: 300 })
+    canvas.add(shape)
+    rotateTo(shape, 30)
+    expect(shape.angle).toBe(30)
+  })
+
+  it("rounds each step at its midpoint", () => {
+    const shape = createShape("square")
+    shape.set({ left: 300, top: 300 })
+    canvas.add(shape)
+    rotateTo(shape, 7) // below 7.5° — down to 0°
+    expect(shape.angle).toBe(0)
+    rotateTo(shape, 8) // above 7.5° — up to 15°
+    expect(shape.angle).toBe(15)
+  })
+
+  it("normalizes a counter-clockwise gesture to 0–360", () => {
+    const shape = createShape("square")
+    shape.set({ left: 300, top: 300 })
+    canvas.add(shape)
+    // The nearest multiple of −8° is −15°, shown as 345°.
+    rotateTo(shape, -8)
+    expect(shape.angle).toBe(345)
+  })
+
+  it("wires the snap handler on every object and the multi-selection", () => {
+    const shape = createShape("square")
+    shape.set({ left: 100, top: 100 })
+    const text = createText((s) => s.length * 10)
+    text.set({ left: 300, top: 300 })
+    canvas.add(shape, text)
+    const selection = new ActiveSelection([shape, text], { canvas })
+    canvas.setActiveObject(selection)
+    for (const obj of [shape, text, selection]) {
+      expect(obj.controls.mtr.actionHandler).toBe(rotationWithSnap)
+    }
   })
 })
 

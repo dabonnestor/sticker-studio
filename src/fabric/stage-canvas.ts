@@ -9,6 +9,7 @@ import {
   Point,
   Rect,
   Triangle,
+  controlsUtils,
   util,
   type Abortable,
   type CanvasOptions,
@@ -18,6 +19,7 @@ import {
   type Object as BaseFabricObject,
   type TMat2D,
   type TPointerEvent,
+  type Transform,
 } from "fabric"
 
 /**
@@ -67,41 +69,203 @@ export const DOCUMENT_BORDER_COLOR = DEFAULT_BORDER_COLOR
 /** Rotation-handle size — larger than the 13px corner handles so the icon reads. */
 export const ROTATE_HANDLE_SIZE = 20
 
+/**
+ * Rotation snap step (build spec §5): a rotation gesture lands on the
+ * nearest multiple of 15° — the design-tool standard (Figma, Canva, Slides)
+ * — so the object clicks through detents at every 15° mark.
+ */
+export const ROTATION_SNAP_DEGREES = 15
+
 /** Handle accent color — matches the app's border color (DEFAULT_BORDER_COLOR). */
 const ROTATE_ICON_COLOR = "#18181b"
 
 /**
- * Corner-handle cursor per corner (build spec §5): the stage freezes the
- * aspect ratio at the gesture start, so every corner drag moves along the
- * corner's own diagonal. Fabric's quadrant-based corner cursor instead
- * reports the pointer's direction from the object's center — a narrow or
- * wide box (an auto-fitted text!) reads its corners as `n`/`s`/`e`/`w`,
- * so text corners never match the diagonal a squarish shape shows. A fixed
- * per-corner diagonal says "corner resize" for shapes and text alike.
+ * Resize-handle cursors (build spec §5, rotation-aware): the stage freezes
+ * the aspect ratio at the gesture start, so every corner drag moves along
+ * the corner's own diagonal — and that diagonal rotates with the object, so
+ * the cursor must too. The fixed diagonals the app used pointed 45° off the
+ * real drag on a 45°-rotated box. Each cursor therefore carries the corner's
+ * base diagonal (tl/br at 45°, tr/bl at 135° — where the fixed cursors
+ * pointed at 0°), rotated by the object's angle, then snapped to the nearest
+ * of the native axis/diagonal keywords — CSS has no rotated cursor keywords,
+ * so between the 45° steps the arrow lands on the closest standard one: the
+ * four corner orientations (`ew`/`ns`, `nwse`/`nesw`), and the eight compass
+ * arrows for the side handles (square/rectangle's free-axis handles, text's
+ * wrap handles), which carry the width/height axis the same way. A flip
+ * mirrors the box: a flipped corner sits on the mirrored side, so its drag
+ * line is the mirrored diagonal — one flip mirrors the arrow, both flips
+ * cancel. Fabric's stock quadrant handler instead reports the pointer's
+ * direction from the object's center — a narrow or wide box (an auto-fitted
+ * text!) reads its corners as `n`/`s`/`e`/`w`, so text corners never match
+ * the diagonal a squarish shape shows.
  */
-const CORNER_CURSORS: ReadonlyArray<readonly [string, string]> = [
-  ["tl", "nwse-resize"],
-  ["tr", "nesw-resize"],
-  ["bl", "nesw-resize"],
-  ["br", "nwse-resize"],
-]
+const CORNER_BASE_DIRECTION: Readonly<Record<string, number>> = {
+  tl: 45,
+  br: 45,
+  tr: 135,
+  bl: 135,
+}
+
+/** The base direction of a side handle — where the axis points outward from
+ * the center at 0° (y-down screen degrees: right 0, down 90, left 180, up
+ * 270). */
+const SIDE_BASE_DIRECTION: Readonly<Record<string, number>> = {
+  ml: 180,
+  mr: 0,
+  mt: 270,
+  mb: 90,
+}
+
+/** The handle a side handle's drag moves the edge along the line to. */
+const SIDE_OPPOSITE: Readonly<Record<string, string>> = {
+  ml: "mr",
+  mr: "ml",
+  mt: "mb",
+  mb: "mt",
+}
+
+/** Native double-headed resize cursors, by arrow direction (y-down screen
+ * degrees): the axis and diagonal keywords at the 45° steps. */
+const NATIVE_DOUBLE_HEADED: Readonly<Record<number, string>> = {
+  0: "ew-resize",
+  45: "nwse-resize",
+  90: "ns-resize",
+  135: "nesw-resize",
+}
+
+/** Native single-headed resize cursors, by arrow direction (y-down screen
+ * degrees): the eight compass keywords at the 45° steps. */
+const NATIVE_SINGLE_HEADED: Readonly<Record<number, string>> = {
+  0: "e-resize",
+  45: "se-resize",
+  90: "s-resize",
+  135: "sw-resize",
+  180: "w-resize",
+  225: "nw-resize",
+  270: "n-resize",
+  315: "ne-resize",
+}
+
+function normalizeDegrees(degrees: number): number {
+  return ((degrees % 360) + 360) % 360
+}
 
 /**
- * The fixed diagonal cursor for an object's corner controls (CORNER_CURSORS).
- * Idempotent — safe to re-apply when a selection forms or changes.
+ * The cursor for a double-headed arrow at the given direction (y-down
+ * screen degrees): the direction snapped to the nearest 45° step, answered
+ * with the native axis/diagonal keyword. Double-headed — 180° is the same
+ * arrow — so the direction normalizes to [0, 180).
  */
-function applyCornerCursors(obj: FabricObject): void {
-  for (const [key, cursor] of CORNER_CURSORS) {
+function doubleHeadedCursor(degrees: number): string {
+  const d = normalizeDegrees(degrees) % 180
+  return NATIVE_DOUBLE_HEADED[Math.round(d / 45) * 45]
+}
+
+/** The cursor for a single-headed arrow at the given direction — the same
+ * snap-to-nearest rule as doubleHeadedCursor, over the full 360° compass. */
+function singleHeadedCursor(degrees: number): string {
+  const d = normalizeDegrees(degrees)
+  return NATIVE_SINGLE_HEADED[Math.round(d / 45) * 45]
+}
+
+/**
+ * The direction of a corner's diagonal: the corner's base direction rotated
+ * with the object. A flip mirrors the diagonal — a flipped corner sits on
+ * the mirrored side of the box, so its drag line is the mirror of the
+ * unflipped one (one flip mirrors the arrow; both flips cancel).
+ */
+function cornerDirection(fabricObject: FabricObject, base: number): number {
+  return fabricObject.flipX !== fabricObject.flipY
+    ? -base - fabricObject.angle
+    : base + fabricObject.angle
+}
+
+/**
+ * The direction of a side handle's axis: the line from the opposite handle
+ * to this one, read off the two handle positions themselves (oCoords) — so
+ * flips come out right for free (the mirrored control sits on the mirrored
+ * edge). Missing positions (never rendered) fall back to the base direction
+ * rotated by the object's angle.
+ */
+function sideDirection(fabricObject: FabricObject, corner: string): number {
+  const opposite = SIDE_OPPOSITE[corner]
+  const from = fabricObject.oCoords[opposite]
+  const to = fabricObject.oCoords[corner]
+  return from && to
+    ? Math.atan2(to.y - from.y, to.x - from.x) * (180 / Math.PI)
+    : SIDE_BASE_DIRECTION[corner] + fabricObject.angle
+}
+
+/**
+ * Wire the rotation-aware resize cursors onto every handle — the corners
+ * (diagonal arrows) and the sides (axis arrows). The handler signature's
+ * `coord` is the corner's position, not its name — the key is not passed
+ * through — so each control gets a closure over its own key that answers
+ * from the object's live angle and flips at hover time. Idempotent — safe
+ * to re-apply when a selection forms or changes.
+ */
+function applyResizeCursors(obj: FabricObject): void {
+  for (const [key, base] of Object.entries(CORNER_BASE_DIRECTION)) {
     const control = obj.controls[key]
-    if (control) control.cursorStyleHandler = () => cursor
+    if (control) {
+      control.cursorStyleHandler = (_e, _c, fabricObject: FabricObject) =>
+        doubleHeadedCursor(cornerDirection(fabricObject, base))
+    }
+  }
+  for (const key of Object.keys(SIDE_BASE_DIRECTION)) {
+    const control = obj.controls[key]
+    if (control) {
+      control.cursorStyleHandler = (_e, _c, fabricObject: FabricObject) =>
+        singleHeadedCursor(sideDirection(fabricObject, key))
+    }
   }
 }
 
 /**
+ * The rotation action handler (build spec §5): rounds the angle to the
+ * nearest ROTATION_SNAP_DEGREES multiple in both directions. Fabric's stock
+ * `rotationWithSnapping` snap is floor-biased — the object sits on the
+ * multiple below the pointer, so a hair of counter-clockwise motion from a
+ * snap point throws it a full step ahead of the pointer. Nearest-multiple
+ * rounding keeps the object on the step closest to the pointer, the detent
+ * feeling the design tools give. The stock structure is kept — the
+ * fixed-anchor wrapper pins the rotation pivot, and the event wrapper fires
+ * `object:rotating` only when the angle actually changed.
+ */
+function rotateObjectWithSnap(
+  _eventData: TPointerEvent,
+  { target, ex, ey, theta, originX, originY }: Transform,
+  x: number,
+  y: number,
+): boolean {
+  const pivotPoint = target.getPositionByOrigin(originX, originY)
+  if (target.lockRotation) return false
+  const lastAngle = Math.atan2(ey - pivotPoint.y, ex - pivotPoint.x)
+  const curAngle = Math.atan2(y - pivotPoint.y, x - pivotPoint.x)
+  const angle = util.radiansToDegrees(curAngle - lastAngle + theta)
+  const snapped =
+    Math.round(angle / ROTATION_SNAP_DEGREES) * ROTATION_SNAP_DEGREES
+  // Normalize to [0, 360) — the stock handler's equivalent; the double mod
+  // keeps negative angles (a counter-clockwise gesture) positive.
+  const normalized = ((snapped % 360) + 360) % 360
+  const hasRotated = target.angle !== normalized
+  target.angle = normalized
+  return hasRotated
+}
+
+/** The stage rotation action handler — the snap handler with the stock wrappers. */
+export const rotationWithSnap = controlsUtils.wrapWithFireEvent(
+  "rotating",
+  controlsUtils.wrapWithFixedAnchor(rotateObjectWithSnap),
+)
+
+/**
  * The custom rotation handle (build spec §7): the white circular badge with
  * the rotate arrow (renderRotateHandle), sized above the 13px corner handles
- * so the icon reads. Idempotent — safe to re-apply when a selection forms or
- * changes.
+ * so the icon reads. Also wires the snap action handler (rotationWithSnap) —
+ * the same cursor style and wrappers as the stock rotationWithSnapping, but
+ * with nearest-multiple rounding (§5). Idempotent — safe to re-apply when a
+ * selection forms or changes.
  */
 function applyRotateHandle(obj: FabricObject): void {
   const rotate = obj.controls.mtr
@@ -109,6 +273,7 @@ function applyRotateHandle(obj: FabricObject): void {
   rotate.sizeX = ROTATE_HANDLE_SIZE
   rotate.sizeY = ROTATE_HANDLE_SIZE
   rotate.render = renderRotateHandle
+  rotate.actionHandler = rotationWithSnap
 }
 
 /**
@@ -770,9 +935,9 @@ export class StageCanvas extends Canvas {
    * the Document would read `auto`. Hit-testing is Fabric's own
    * `findControl` (unbounded DOM math, the same path the in-document
    * cursor takes): a mirrored control answers with its own
-   * `cursorStyleHandler` — the fixed CORNER_CURSORS diagonals, the
-   * rotation crosshair, the text wrap arrows — and the selection box's
-   * interior (the visible border's box) shows the object's hoverCursor,
+   * `cursorStyleHandler` — the rotation-aware corner diagonals and side
+   * axes, the rotation crosshair — and the selection box's interior (the
+   * visible border's box) shows the object's hoverCursor,
    * the "move" affordance the object itself gives in-document. Returns ""
    * when nothing mirrored is under the pointer, so the workspace keeps
    * its default cursor. The viewport point is the client point relative
@@ -786,8 +951,8 @@ export class StageCanvas extends Canvas {
     const viewportPoint = new Point(clientX - rect.left, clientY - rect.top)
     const corner = active.findControl(viewportPoint)
     if (corner) {
-      // A bare object stands in for the real event: the corner overrides
-      // (CORNER_CURSORS) ignore eventData entirely, and Fabric's stock
+      // A bare object stands in for the real event: the rotation-aware
+      // corner/side overrides ignore eventData entirely, and Fabric's stock
       // scale/skew handlers only read the modifier keys off it
       // (`canvas.uniScaleKey` / `altActionKey`) to pick uniform scaling and
       // the skew affordance. Absent reads are the no-modifier state a plain
@@ -863,24 +1028,25 @@ export function createStageCanvas(
       // non-uniformly; scaling is free from the corners, §7 Q8).
       obj.setControlsVisibility({ ml: false, mt: false, mr: false, mb: false })
     }
-    // Corner handles show the fixed diagonal cursor (CORNER_CURSORS) instead
-    // of Fabric's quadrant-based one — shapes and text share it, so the
-    // affordance never varies with the object's aspect.
-    applyCornerCursors(obj)
+    // Corner handles show the diagonal cursor (CORNER_BASE_DIRECTION)
+    // instead of Fabric's quadrant-based one — shapes and text share it, so
+    // the affordance never varies with the object's aspect — rotated with
+    // the object, and the side handles show the rotated axis arrows.
+    applyResizeCursors(obj)
   })
 
   // The multi-select wrapper never fires `object:added` — Fabric builds the
   // ActiveSelection without an add — so it would keep the stock chrome: the
   // quadrant corner cursor, the plain square rotation handle (no badge), and
   // the side handles that would stretch the set non-uniformly. Apply the same
-  // chrome the members got at add time — the fixed diagonal corner cursors,
+  // chrome the members got at add time — the rotation-aware corner cursors,
   // the rotation badge, and corners-only visibility, so the set scales
   // uniformly from corners like a single object — whenever a selection forms
   // or changes; re-applying is a no-op for already-chromed selections.
   const applySelectionChrome = () => {
     const active = canvas.getActiveObject()
     if (!(active instanceof ActiveSelection)) return
-    applyCornerCursors(active)
+    applyResizeCursors(active)
     applyRotateHandle(active)
     active.setControlsVisibility({ ml: false, mt: false, mr: false, mb: false })
   }
