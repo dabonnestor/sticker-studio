@@ -102,24 +102,26 @@ export function BottomBar() {
       <Button variant="ghost" size="icon" onClick={zoomOut} aria-label="Zoom out">
         <Minus aria-hidden />
       </Button>
-      <DropdownMenu>
-        <DropdownMenuTrigger asChild>
-          <Button variant="ghost" size="sm" className="w-14 gap-1 font-medium">
-            {Math.round(zoom)}%
-            <ChevronDown aria-hidden />
-          </Button>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent align="start">
-          <DropdownMenuLabel>Zoom</DropdownMenuLabel>
-          <DropdownMenuSeparator />
-          <DropdownMenuItem onClick={fitZoom}>Fit</DropdownMenuItem>
-          {ZOOM_PRESETS.map((preset) => (
-            <DropdownMenuItem key={preset} onClick={() => setZoom(preset)}>
-              {preset}%
-            </DropdownMenuItem>
-          ))}
-        </DropdownMenuContent>
-      </DropdownMenu>
+      <TooltipLabel label="Zoom">
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button variant="ghost" size="sm" className="w-14 gap-1 font-medium">
+              {Math.round(zoom)}%
+              <ChevronDown aria-hidden />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="start">
+            <DropdownMenuLabel>Zoom</DropdownMenuLabel>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem onClick={fitZoom}>Fit</DropdownMenuItem>
+            {ZOOM_PRESETS.map((preset) => (
+              <DropdownMenuItem key={preset} onClick={() => setZoom(preset)}>
+                {preset}%
+              </DropdownMenuItem>
+            ))}
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </TooltipLabel>
       <Button variant="ghost" size="icon" onClick={zoomIn} aria-label="Zoom in">
         <Plus aria-hidden />
       </Button>
