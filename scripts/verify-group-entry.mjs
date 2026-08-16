@@ -150,10 +150,12 @@ check("Escape exits the group after the session", await page.evaluate(() => {
   return canvas.enteredGroup === null
 }))
 
-// The toolbar shows the Group/Ungroup buttons for a selection.
+// The toolbar shows the Group toggle — one button that swaps between Group
+// and Ungroup. The selection here is the single group, so it reads Ungroup.
 await page.keyboard.press("Control+a")
-const groupButtons = await page.locator("button[aria-label='Group'], button[aria-label='Ungroup']").count()
-check("toolbar Group/Ungroup buttons render", groupButtons === 2, `${groupButtons} buttons`)
+const groupButton = await page.locator("button[aria-label='Group'], button[aria-label='Ungroup']").count()
+check("toolbar Group/Ungroup toggle renders", groupButton === 1, `${groupButton} buttons`)
+check("toggle reads Ungroup for a selected group", await page.locator("button[aria-label='Ungroup']").count() === 1)
 await page.screenshot({ path: `${OUT}/5-toolbar.png` })
 
 check("no console errors", errors.length === 0, errors.slice(0, 3).join(" | "))
