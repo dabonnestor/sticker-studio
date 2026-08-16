@@ -25,3 +25,6 @@ dist-ssr
 
 # Claude worktrees
 .claude/worktrees/
+
+# Browser verification driver output (scripts/verify-group-entry.mjs)
+scripts/verify-shots/
