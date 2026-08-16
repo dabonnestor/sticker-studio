@@ -16,15 +16,19 @@ const pendingDispose: { current: Promise<void> | null } = { current: null }
 export function Stage() {
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
   const wrapperRef = useRef<HTMLDivElement | null>(null)
+  const workspaceRef = useRef<HTMLDivElement | null>(null)
   const marqueeOverlayRef = useRef<HTMLCanvasElement | null>(null)
   const { canvas, registerCanvas } = useStage()
 
   useEffect(() => {
     const element = canvasRef.current
     const marqueeOverlay = marqueeOverlayRef.current
-    if (!element || !marqueeOverlay) return
+    const workspace = workspaceRef.current
+    if (!element || !marqueeOverlay || !workspace) return
     let cancelled = false
     let canvas: ReturnType<typeof createStageCanvas> | null = null
+
+    let resizeObserver: ResizeObserver | null = null
 
     const mount = async () => {
       // `dispose` is async in Fabric 7 (build spec §14): when its destroy is
@@ -33,14 +37,23 @@ export function Stage() {
       // otherwise races it.
       await pendingDispose.current
       if (cancelled) return
-      canvas = createStageCanvas(element, marqueeOverlay)
+      canvas = createStageCanvas(element, marqueeOverlay, workspace)
       registerCanvas(canvas)
       exposeStageCanvas(canvas)
+      // Fit is the default zoom on load (§9) — the workspace is laid out by
+      // now, so the client size is real. Resize re-centers at the current
+      // zoom and never re-fits; the observer lives with the canvas.
+      canvas.fitToWorkspace()
+      if (typeof ResizeObserver !== "undefined") {
+        resizeObserver = new ResizeObserver(() => canvas!.recenter())
+        resizeObserver.observe(workspace)
+      }
     }
     void mount()
 
     return () => {
       cancelled = true
+      resizeObserver?.disconnect()
       registerCanvas(null)
       exposeStageCanvas(null)
       pendingDispose.current = canvas
@@ -102,11 +115,17 @@ export function Stage() {
 
   return (
     <div
+      ref={workspaceRef}
       className="min-h-0 flex-1 overflow-auto bg-zinc-200"
       onMouseDown={handleMouseDown}
       onMouseMove={handleMouseMove}
     >
-      <div className="relative flex min-h-full min-w-full items-center justify-center p-6">
+      {/* The flex centering matches the canvas's zoom layout (§9): the
+          element sits centered in the content, which is the workspace floored
+          against the zoomed Document — so the scrollbars appear exactly when
+          the Document no longer fits, and the fit margin is the centering
+          remainder at rest. */}
+      <div className="relative flex min-h-full min-w-full items-center justify-center">
         <div className="bg-white shadow-md" ref={wrapperRef}>
           <canvas ref={canvasRef} aria-label="Design canvas" />
         </div>

@@ -17,9 +17,11 @@ import {
   type FabricObject,
   type InteractiveFabricObject,
   type Object as BaseFabricObject,
+  type TCanvasSizeOptions,
   type TMat2D,
   type TPointerEvent,
   type Transform,
+  type TSize,
 } from "fabric"
 
 /**
@@ -46,6 +48,7 @@ import { DEFAULT_BORDER_COLOR, getShapeKind } from "@/fabric/shapes"
 import { SNAP_TOLERANCE_PX, SmartGuides } from "@/fabric/smart-guides"
 import { wireTextInteractions } from "@/fabric/text-interactions"
 import { isTextObject } from "@/fabric/text"
+import { clampZoomPercent, computeFitZoom } from "@/fabric/zoom"
 
 /**
  * Initial Document size — 600×600 px at the 96 DPI display basis. The canvas
@@ -507,6 +510,27 @@ export class StageCanvas extends Canvas {
   private readonly marqueeOverlay: HTMLCanvasElement
 
   /**
+   * The scrollable workspace wrapper (build spec §9) — the Stage's scroll
+   * container. Its client size is the workspace, its scroll position is the
+   * pan: the Document element is laid out in the scrolled content at
+   * `document × zoom` CSS px, so the browser scrolls it and the viewport
+   * transform carries the zoom only. Null in tests, where the zoom layout
+   * degrades to the element sizing without scroll anchoring.
+   */
+  private readonly workspaceEl: HTMLElement | null
+
+  /**
+   * The current zoom as a percentage (build spec §9) — 100% renders one
+   * document pixel as one CSS pixel at any DPR. View state: never serialized,
+   * never an undoable step, and the `onZoomChanged` callback keeps the
+   * chrome's readout in sync — the same pattern as the History's `onChange`.
+   */
+  private zoomPercentValue = 100
+
+  /** Fired after every zoom change (§9) — the React mirror's subscription. */
+  onZoomChanged?: () => void
+
+  /**
    * The group currently entered (§7 Q5), or null. While entered, presses
    * target the group's children (the findTarget override resolves them —
    * children aren't in the canvas collection) and children are fixed in
@@ -551,15 +575,202 @@ export class StageCanvas extends Canvas {
   constructor(
     element: HTMLCanvasElement,
     marqueeOverlay: HTMLCanvasElement,
+    workspaceEl: HTMLElement | null,
     options: Partial<CanvasOptions>,
   ) {
     super(element, options)
     this.marqueeOverlay = marqueeOverlay
+    this.workspaceEl = workspaceEl
   }
 
   /** True while a marquee drag is in progress. */
   isMarqueeActive(): boolean {
     return this._groupSelector !== null
+  }
+
+  /** The current zoom as a percentage (§9) — the viewport transform's scale. */
+  getZoomPercent(): number {
+    return this.zoomPercentValue
+  }
+
+  /**
+   * Set the zoom (build spec §9). With `aboutCenter`, the scene point at the
+   * workspace center stays put — the anchor the Ctrl+= / Ctrl+− steps, the
+   * presets, and the slider zoom about: the scroll re-anchors after the
+   * layout change. Notifies `onZoomChanged` (view state — the chrome's
+   * readout mirrors it; nothing is serialized, nothing enters the undo
+   * stack).
+   */
+  setZoomPercent(percent: number, aboutCenter = false): void {
+    const anchor = aboutCenter ? this.getViewportCenterScenePoint() : null
+    this.zoomPercentValue = clampZoomPercent(percent)
+    this.applyZoomLayout()
+    if (anchor && this.workspaceEl) {
+      const scroll = this.scrollForCenterScenePoint(anchor)
+      this.workspaceEl.scrollLeft = scroll.x
+      this.workspaceEl.scrollTop = scroll.y
+    }
+    this.onZoomChanged?.()
+  }
+
+  /**
+   * Fit (§9): always-fit — the whole Document (rotated bounds) scales up or
+   * down into the workspace minus the fixed margin — the default zoom on
+   * load, and Ctrl+0. Re-centers after the zoom lands.
+   */
+  fitToWorkspace(): void {
+    const workspace = this.getWorkspaceSize()
+    const percent = computeFitZoom(
+      this.width,
+      this.height,
+      workspace.width,
+      workspace.height,
+    )
+    this.setZoomPercent(percent)
+    this.recenter()
+  }
+
+  /**
+   * Re-center at the current zoom (§9) — the workspace-resize behavior: the
+   * Document returns to the workspace center and the scroll clamps into the
+   * range (scrollbars appear when the zoomed Document no longer fits). The
+   * zoom itself never changes — resize never re-fits.
+   */
+  recenter(): void {
+    if (!this.workspaceEl) return
+    const content = this.getContentSize()
+    const workspace = this.getWorkspaceSize()
+    this.workspaceEl.scrollLeft = this.clampScroll(
+      (content.width - workspace.width) / 2,
+      content.width - workspace.width,
+    )
+    this.workspaceEl.scrollTop = this.clampScroll(
+      (content.height - workspace.height) / 2,
+      content.height - workspace.height,
+    )
+  }
+
+  /** Clamp a scroll position to its range — never negative, never past the end. */
+  private clampScroll(value: number, range: number): number {
+    return Math.min(Math.max(0, value), Math.max(0, range))
+  }
+
+  /**
+   * The scene point at the workspace center — the anchor the zoom controls
+   * keep fixed (§9): the viewport center in scene coordinates. Without a
+   * workspace (tests), falls back to the base's viewport center.
+   */
+  getViewportCenterScenePoint(): Point {
+    if (!this.workspaceEl) return this.getVpCenter()
+    const workspace = this.getWorkspaceSize()
+    const offset = this.getElementOffset()
+    const scroll = this.getScroll()
+    const z = this.zoomPercentValue / 100
+    return new Point(
+      (workspace.width / 2 - offset.x + scroll.x) / z,
+      (workspace.height / 2 - offset.y + scroll.y) / z,
+    )
+  }
+
+  /**
+   * Center an object at the viewport center (§6 — new text lands there): the
+   * base's viewport center is the transform's own center, which the
+   * workspace-scrolled layout does not show at the workspace center.
+   */
+  override viewportCenterObject(object: FabricObject): FabricObject {
+    const center = this.getViewportCenterScenePoint()
+    object.setPositionByOrigin(center, "center", "center")
+    return object
+  }
+
+  /** The workspace's size — the scroll container's client size, 0 without one. */
+  private getWorkspaceSize(): { width: number; height: number } {
+    return this.workspaceEl
+      ? {
+          width: this.workspaceEl.clientWidth,
+          height: this.workspaceEl.clientHeight,
+        }
+      : { width: 0, height: 0 }
+  }
+
+  /** The zoomed Document size, rounded to integer CSS px — the element's size. */
+  private getZoomedSize(): { width: number; height: number } {
+    const z = this.zoomPercentValue / 100
+    return {
+      width: Math.round(this.width * z),
+      height: Math.round(this.height * z),
+    }
+  }
+
+  /**
+   * The scrollable content's size: the workspace, floored against the zoomed
+   * Document — the stage's flex layout centers the element in it, so the
+   * scrollbars appear exactly when the zoomed Document no longer fits (§9),
+   * and the fit margin is the flex centering's remainder at rest.
+   */
+  private getContentSize(): { width: number; height: number } {
+    const workspace = this.getWorkspaceSize()
+    const zoomed = this.getZoomedSize()
+    return {
+      width: Math.max(workspace.width, zoomed.width),
+      height: Math.max(workspace.height, zoomed.height),
+    }
+  }
+
+  /**
+   * The Document's top-left inside the content box, before scrolling — the
+   * stage layout flex-centers the element, so the offset is the centering
+   * remainder; the scroll subtracts from it.
+   */
+  private getElementOffset(): { x: number; y: number } {
+    const content = this.getContentSize()
+    const zoomed = this.getZoomedSize()
+    return {
+      x: (content.width - zoomed.width) / 2,
+      y: (content.height - zoomed.height) / 2,
+    }
+  }
+
+  private getScroll(): { x: number; y: number } {
+    return this.workspaceEl
+      ? { x: this.workspaceEl.scrollLeft, y: this.workspaceEl.scrollTop }
+      : { x: 0, y: 0 }
+  }
+
+  /** The scroll that puts the given scene point at the workspace center — the
+   * zoom-about-center re-anchor (§9), clamped to the scroll range. */
+  private scrollForCenterScenePoint(scene: Point): { x: number; y: number } {
+    const workspace = this.getWorkspaceSize()
+    const content = this.getContentSize()
+    const offset = this.getElementOffset()
+    const z = this.zoomPercentValue / 100
+    return {
+      x: this.clampScroll(
+        scene.x * z + offset.x - workspace.width / 2,
+        content.width - workspace.width,
+      ),
+      y: this.clampScroll(
+        scene.y * z + offset.y - workspace.height / 2,
+        content.height - workspace.height,
+      ),
+    }
+  }
+
+  /**
+   * Apply the zoom to the stage: the Document's element — CSS size and
+   * bitmaps (the DOMManager re-scales the contexts for the DPR after the
+   * resize, exactly as a document resize does) — grows to `document × zoom`,
+   * and the viewport transform scales the render into it. canvas.width and
+   * canvas.height — the Document size — never change, so the envelope, the
+   * toolbar, and the history keep reading the Document. The transform
+   * translate stays zero — the scroll position IS the pan.
+   */
+  private applyZoomLayout(): void {
+    const z = this.zoomPercentValue / 100
+    const size = this.getZoomedSize()
+    this.elements.setDimensions(size, this.getRetinaScaling())
+    this.elements.setCSSDimensions(size)
+    this.setViewportTransform([z, 0, 0, z, 0, 0] as TMat2D)
   }
 
   /**
@@ -750,6 +961,39 @@ export class StageCanvas extends Canvas {
       }
       return canvas
     })
+  }
+
+  /**
+   * A document resize re-applies the zoomed presentation (build spec §9): the
+   * base sizes the element to the new Document size, and the element must
+   * come back to `document × zoom` — the toolbar's size edit and the history
+   * restore both route here. The zoom itself never changes. The base's
+   * `setDimensions` is replicated through its protected impl because the
+   * override signature (the union of the base's overloads) cannot be
+   * forwarded back into them.
+   */
+  override setDimensions(
+    dimensions: Partial<TSize>,
+    options?: TCanvasSizeOptions,
+  ): void {
+    this._setDimensionsImpl(
+      { width: dimensions.width ?? this.width, height: dimensions.height ?? this.height },
+      options,
+    )
+    if (!options || !options.cssOnly) this.requestRenderAll()
+    this.applyZoomLayout()
+  }
+
+  /**
+   * Clear the full bitmap — the zoomed element is larger than the Document
+   * size (canvas.width), and the base clears only the Document-sized rect in
+   * the element's top-left, leaving the previous frame's pixels beyond it
+   * (ghosts when zooming out). The element's bitmap dimensions are the
+   * zoomed stage's true size.
+   */
+  override clearContext(ctx: CanvasRenderingContext2D): void {
+    const element = this.getElement()
+    ctx.clearRect(0, 0, element.width, element.height)
   }
 
   /**
@@ -980,13 +1224,16 @@ export class StageCanvas extends Canvas {
  * background is a document property (serialized, honored at export, build
  * spec §11) — set it here so the stage shows the Document, not CSS paint.
  * The overlay is the workspace-spanning transparent canvas the marquee and
- * selection-controls mirrors paint on (§7 extension).
+ * selection-controls mirrors paint on (§7 extension). The workspace element
+ * is the Stage's scroll container — the zoom layout reads its client size
+ * and scroll position (§9); null in tests.
  */
 export function createStageCanvas(
   element: HTMLCanvasElement,
   marqueeOverlay: HTMLCanvasElement,
+  workspaceEl: HTMLElement | null = null,
 ): StageCanvas {
-  const canvas = new StageCanvas(element, marqueeOverlay, {
+  const canvas = new StageCanvas(element, marqueeOverlay, workspaceEl, {
     width: DOCUMENT_WIDTH,
     height: DOCUMENT_HEIGHT,
     backgroundColor: DOCUMENT_BACKGROUND_COLOR,
@@ -1056,13 +1303,15 @@ export function createStageCanvas(
   // The document border (envelope-owned, ADR 0002) renders as an inset stroke
   // on the document edge — same inset model as shape borders (§4): the stroke
   // sits inside the edge, so exports (which render only the document area)
-  // show the full border. `after:render` paints in the background's base
-  // space, so the stroke hugs the document edge at any zoom.
+  // show the full border. `after:render` paints in scene space under the
+  // viewport transform (§9), so the stroke hugs the document edge at any
+  // zoom — the border is document state and scales with the Document.
   canvas.on("after:render", () => {
     const borderWidth = canvas.borderWidth
     if (!borderWidth) return
     const ctx = canvas.getContext()
     ctx.save()
+    ctx.transform(...canvas.viewportTransform)
     ctx.strokeStyle = canvas.borderColor
     ctx.lineWidth = borderWidth
     ctx.strokeRect(

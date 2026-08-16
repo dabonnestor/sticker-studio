@@ -42,6 +42,7 @@ import {
   type TextPropsPatch,
 } from "@/fabric/text"
 import type { Unit } from "@/lib/units"
+import { stepZoomPercent } from "@/fabric/zoom"
 
 /** A shape-property commit against the selected shape (build spec §5). */
 export interface ShapePropsPatch {
@@ -107,6 +108,26 @@ interface StageContextValue {
   /** Active display unit — a label swap over stored px (§5). */
   unit: Unit
   setUnit: (unit: Unit) => void
+  /**
+   * The current zoom as a percentage (build spec §9) — 100% = 1 doc px = 1
+   * CSS px. View state: never serialized, never an undoable step; mirrored
+   * from the canvas's `onZoomChanged`.
+   */
+  zoom: number
+  /**
+   * Set the zoom (§9) — the slider and the presets; the workspace center
+   * stays put.
+   */
+  setZoom: (percent: number) => void
+  /** Zoom in one step (§9) — Ctrl+= / the + button, about the center. */
+  zoomIn: () => void
+  /** Zoom out one step (§9) — Ctrl+− / the − button, about the center. */
+  zoomOut: () => void
+  /**
+   * Fit (§9) — Ctrl+0 / the Fit preset: the whole Document into the
+   * workspace minus the margin, centered.
+   */
+  fitZoom: () => void
   /** Add a shape of the given kind, centered and selected (§5). */
   addShape: (kind: ShapeKind) => void
   /**
@@ -241,6 +262,7 @@ export function StageProvider({ children }: { children: ReactNode }) {
   })
   const [unit, setUnit] = useState<Unit>("in")
   const [historyState, setHistoryState] = useState({ canUndo: false, canRedo: false })
+  const [zoom, setZoomState] = useState(100)
 
   const registerCanvas = useCallback((next: StageCanvas | null) => {
     setCanvas(next)
@@ -283,6 +305,45 @@ export function StageProvider({ children }: { children: ReactNode }) {
     return () => {
       history.onChange = undefined
     }
+  }, [canvas])
+
+  // The zoom mirrors into React for the bottom bar's controls (build spec
+  // §9): every change notifies the canvas's `onZoomChanged` — the same
+  // pattern as the History's onChange. The initial sync picks up the
+  // load-time Fit, which runs before this subscription exists (the Stage's
+  // mount effect runs before this one).
+  useEffect(() => {
+    if (!canvas) return
+    const sync = () => setZoomState(canvas.getZoomPercent())
+    canvas.onZoomChanged = sync
+    sync()
+    return () => {
+      canvas.onZoomChanged = undefined
+    }
+  }, [canvas])
+
+  const setZoom = useCallback(
+    (percent: number) => {
+      if (!canvas) return
+      // Zoomed about the workspace center — the slider and presets anchor.
+      canvas.setZoomPercent(percent, true)
+    },
+    [canvas],
+  )
+
+  const zoomIn = useCallback(() => {
+    if (!canvas) return
+    canvas.setZoomPercent(stepZoomPercent(canvas.getZoomPercent(), 1), true)
+  }, [canvas])
+
+  const zoomOut = useCallback(() => {
+    if (!canvas) return
+    canvas.setZoomPercent(stepZoomPercent(canvas.getZoomPercent(), -1), true)
+  }, [canvas])
+
+  const fitZoom = useCallback(() => {
+    if (!canvas) return
+    canvas.fitToWorkspace()
   }, [canvas])
 
   /** Re-mirror the document size and border — both are document state (§8). */
@@ -558,6 +619,29 @@ export function StageProvider({ children }: { children: ReactNode }) {
     return () => document.removeEventListener("keydown", onKeyDown)
   }, [canvas, undo, redo])
 
+  // Zoom hotkeys (§9, §13): Ctrl+= / Ctrl+− step ±10% about the workspace
+  // center, Ctrl+0 fits. Deliberately not gated on editable fields — the
+  // browser's page zoom (Ctrl+= / Ctrl+−) must not reach the app layout, and
+  // no field has a zoom meaning for the keys.
+  useEffect(() => {
+    if (!canvas) return
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (!event.ctrlKey && !event.metaKey) return
+      if (event.key === "=" || event.key === "+") {
+        event.preventDefault()
+        zoomIn()
+      } else if (event.key === "-" || event.key === "_") {
+        event.preventDefault()
+        zoomOut()
+      } else if (event.key === "0") {
+        event.preventDefault()
+        fitZoom()
+      }
+    }
+    document.addEventListener("keydown", onKeyDown)
+    return () => document.removeEventListener("keydown", onKeyDown)
+  }, [canvas, zoomIn, zoomOut, fitZoom])
+
   // Del / Backspace deletes the selection (§13), skipping locked objects
   // (§7 Q3). Keyed on the document so it fires from anywhere on the stage;
   // the editable gate keeps the keys native in the toolbar's fields and the
@@ -667,6 +751,11 @@ export function StageProvider({ children }: { children: ReactNode }) {
         commitCanvasProps,
         unit,
         setUnit,
+        zoom,
+        setZoom,
+        zoomIn,
+        zoomOut,
+        fitZoom,
         addShape,
         commitShapeProps,
         addText,

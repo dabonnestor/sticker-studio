@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from "react"
+import { type ReactNode } from "react"
 import {
   ChevronDown,
   Eye,
@@ -27,16 +27,12 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip"
-
-/** Zoom presets (build spec §9); Fit arrives with the zoom build. */
-const ZOOM_PRESETS = [
-  { label: "100%", value: 100 },
-  { label: "150%", value: 150 },
-  { label: "200%", value: 200 },
-] as const
-
-/** Zoom range and step (build spec §9). */
-const ZOOM_RANGE = { min: 10, max: 800, step: 10 } as const
+import {
+  ZOOM_MAX_PERCENT,
+  ZOOM_MIN_PERCENT,
+  ZOOM_PRESETS,
+  ZOOM_STEP_PERCENT,
+} from "@/fabric/zoom"
 
 /**
  * A tooltip over a bottom-bar control, opening above the trigger — the bar
@@ -66,17 +62,14 @@ function TooltipLabel({
 /**
  * Bottom bar (build spec §3): undo/redo, zoom controls (− / % ▾ / + / slider),
  * Preview, fullscreen, and the status area where export progress and errors
- * surface. Undo/redo (Build 4, ADR 0001) walks the document-state stack;
- * zoom is wired by the zoom build, so the zoom cluster keeps local state
- * without touching the canvas yet. The status area is live from the export
- * build on.
+ * surface. Undo/redo (Build 4, ADR 0001) walks the document-state stack; the
+ * zoom cluster (Build 6, §9) drives the stage — the % readout shows rounded
+ * integers, the dropdown offers Fit plus the presets, the slider spans the
+ * range. The status area is live from the export build on.
  */
 export function BottomBar() {
-  const { canUndo, canRedo, undo, redo } = useStage()
-  const [zoom, setZoom] = useState(100)
-
-  const zoomOut = () => setZoom((z) => Math.max(ZOOM_RANGE.min, z - ZOOM_RANGE.step))
-  const zoomIn = () => setZoom((z) => Math.min(ZOOM_RANGE.max, z + ZOOM_RANGE.step))
+  const { canUndo, canRedo, undo, redo, zoom, setZoom, zoomIn, zoomOut, fitZoom } =
+    useStage()
 
   return (
     <TooltipProvider>
@@ -112,20 +105,17 @@ export function BottomBar() {
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <Button variant="ghost" size="sm" className="w-14 gap-1 font-medium">
-            {zoom}%
+            {Math.round(zoom)}%
             <ChevronDown aria-hidden />
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="start">
           <DropdownMenuLabel>Zoom</DropdownMenuLabel>
           <DropdownMenuSeparator />
-          <DropdownMenuItem disabled>Fit</DropdownMenuItem>
+          <DropdownMenuItem onClick={fitZoom}>Fit</DropdownMenuItem>
           {ZOOM_PRESETS.map((preset) => (
-            <DropdownMenuItem
-              key={preset.label}
-              onClick={() => setZoom(preset.value)}
-            >
-              {preset.label}
+            <DropdownMenuItem key={preset} onClick={() => setZoom(preset)}>
+              {preset}%
             </DropdownMenuItem>
           ))}
         </DropdownMenuContent>
@@ -136,9 +126,9 @@ export function BottomBar() {
       <Slider
         className="w-40"
         value={[zoom]}
-        min={ZOOM_RANGE.min}
-        max={ZOOM_RANGE.max}
-        step={ZOOM_RANGE.step}
+        min={ZOOM_MIN_PERCENT}
+        max={ZOOM_MAX_PERCENT}
+        step={ZOOM_STEP_PERCENT}
         onValueChange={([value]) => setZoom(value)}
         aria-label="Zoom"
       />
