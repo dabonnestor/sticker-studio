@@ -1,5 +1,7 @@
 import type { Canvas, Object as FabricObject } from "fabric"
 
+import { isGrouped } from "@/fabric/groups"
+
 /**
  * Object alignment commands — a requested addition beyond §7 Q6's control
  * surface (the spec's list is Group/Arrange/Flip/Lock): move the selection's
@@ -54,15 +56,20 @@ function unionBox(boxes: readonly Box[]): Box {
  * applied to the origins: translation commutes with rotation and scale, so a
  * transformed object lands exactly where its box says. Locked objects are
  * inert (§7 Q3, Q7 — "no arrange"): skipped like arrange's locked skip, and
- * excluded from the selection bounds, so they neither move nor anchor — a
- * fully locked (or empty) selection is a no-op. Callers render explicitly.
+ * excluded from the selection bounds, so they neither move nor anchor; group
+ * children are fixed in place (§7 Q5 — no free movement) and skipped the
+ * same way — a fully inert (or empty) selection is a no-op. Callers render
+ * explicitly.
  */
 export function alignObjects(
   canvas: Canvas,
   objects: readonly FabricObject[],
   command: AlignCommand,
 ): void {
-  const unlocked = objects.filter((obj) => !obj.locked)
+  // Group children are fixed in place (§7 Q5 — no free movement; aligning
+  // would reposition them) and skipped like locked objects; a fully inert
+  // (or empty) selection is a no-op.
+  const unlocked = objects.filter((obj) => !obj.locked && !isGrouped(obj))
   if (unlocked.length === 0) return
 
   // Snapshot every box once, before any move: a non-gesture change (a

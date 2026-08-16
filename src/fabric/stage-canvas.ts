@@ -1,17 +1,43 @@
 import {
   ActiveSelection,
   Canvas,
+  Circle,
   Control,
+  Ellipse,
+  Group,
   Path,
   Point,
+  Rect,
+  Triangle,
+  util,
+  type Abortable,
   type CanvasOptions,
   type ControlRenderingStyleOverride,
+  type FabricObject,
   type InteractiveFabricObject,
+  type Object as BaseFabricObject,
   type TMat2D,
-  type Object as FabricObject,
+  type TPointerEvent,
 } from "fabric"
 
-import { stampDocumentProps } from "@/fabric/document-props"
+/**
+ * The base's `findTarget` result type, declared here because the package
+ * index does not re-export it — structurally identical, so an override can
+ * name it (the fields match `SelectableCanvas`'s `FullTargetsInfoWithContainer`).
+ */
+interface FullTargetsInfoWithContainer {
+  target?: StageFabricObject
+  subTargets: StageFabricObject[]
+  container?: StageFabricObject
+  currentTarget?: StageFabricObject
+  currentContainer?: StageFabricObject
+  currentSubTargets: StageFabricObject[]
+}
+
+import {
+  setLocked as setLockedProps,
+  stampDocumentProps,
+} from "@/fabric/document-props"
 import { getTextMeasurer } from "@/fabric/fonts"
 import { History } from "@/fabric/history"
 import { DEFAULT_BORDER_COLOR, getShapeKind } from "@/fabric/shapes"
@@ -200,6 +226,53 @@ export interface OverlayRect {
 }
 
 /**
+ * Point-in-cut-geometry test for a shape's clipPath (build spec §7 Q2): a
+ * sticker's clipped-out areas count as empty canvas — a marquee can start
+ * inside the bounding box wherever the shape has no pixels, and a press
+ * there deselects instead of selecting. The clipPath sits at the shape's
+ * original edge in the shape's local plane (the inset border model, §4), so
+ * the point — already mapped into that plane — tests against the clip's
+ * geometry exactly: circle and oval by radius, rectangle by extent, triangle
+ * by the base-apex wedge. (Fabric's `containsPoint` is a bounding-box test —
+ * the clip's bbox corners are transparent for circle/oval/triangle, and the
+ * border ring sits outside the interior bbox.) Any other clip shape falls
+ * back to its own bounding-box test, the safe approximation.
+ */
+export function isPointInCutGeometry(clip: BaseFabricObject, local: Point): boolean {
+  if (clip instanceof Circle) {
+    return local.x * local.x + local.y * local.y <= clip.radius * clip.radius
+  }
+  if (clip instanceof Ellipse) {
+    return (local.x / clip.rx) * (local.x / clip.rx) + (local.y / clip.ry) * (local.y / clip.ry) <= 1
+  }
+  if (clip instanceof Rect) {
+    return (
+      Math.abs(local.x) <= clip.width / 2 && Math.abs(local.y) <= clip.height / 2
+    )
+  }
+  if (clip instanceof Triangle) {
+    // The wedge — apex at local (0, −h/2), base at y = +h/2 — tested with
+    // the same polygon-inclusive cross-product sign rule as isPointInQuad.
+    const apex = { x: 0, y: -clip.height / 2 }
+    const baseL = { x: -clip.width / 2, y: clip.height / 2 }
+    const baseR = { x: clip.width / 2, y: clip.height / 2 }
+    const cross = (a: { x: number; y: number }, b: { x: number; y: number }) =>
+      (b.x - a.x) * (local.y - a.y) - (b.y - a.y) * (local.x - a.x)
+    const signs = [cross(apex, baseL), cross(baseL, baseR), cross(baseR, apex)]
+    return signs.every((s) => s >= 0) || signs.every((s) => s <= 0)
+  }
+  return clip.containsPoint(local)
+}
+
+/**
+ * The full-props object type the interactive canvas APIs use — Fabric's
+ * `FabricObject` export carries the full property surface while the
+ * deprecated `Object` export resolves to the base generic; the interactive
+ * surface (findTarget, _checkTarget) works with the full type.
+ */
+type StageFabricObject = FabricObject
+
+/**
  * The Document's position inside the workspace overlay, in CSS px — the
  * translate that glues scene-space paint to the Document at any zoom or
  * scroll. The marquee mirror's mapping (the canvas origin offset by how far
@@ -268,6 +341,24 @@ function offsetContext(
 export class StageCanvas extends Canvas {
   private readonly marqueeOverlay: HTMLCanvasElement
 
+  /**
+   * The group currently entered (§7 Q5), or null. While entered, presses
+   * target the group's children (the findTarget override resolves them —
+   * children aren't in the canvas collection) and children are fixed in
+   * place (applyEnteredChildState); clicking empty canvas or pressing
+   * Escape exits. View state — never serialized, never an undoable step;
+   * a document restore (loadFromJSON) exits first.
+   */
+  enteredGroup: Group | null = null
+
+  /**
+   * The children fixed while entered — captured at enter time, so the exit
+   * restores exactly the objects that were fixed, even if the group itself
+   * was dissolved by then (an ungroup of the entered group extracts the
+   * children before the exit runs).
+   */
+  private enteredChildren: FabricObject[] = []
+
   /** True while the marquee painted on the overlay in the current frame. */
   private marqueePaintedThisFrame = false
 
@@ -304,6 +395,196 @@ export class StageCanvas extends Canvas {
   /** True while a marquee drag is in progress. */
   isMarqueeActive(): boolean {
     return this._groupSelector !== null
+  }
+
+  /**
+   * Per-object press hit test (build spec §7 Q2): a shape's pixels are its
+   * cut area — the fill and the border ring both render inside the clipPath.
+   * The base test is the interior bounding box, which over-hits (the clip's
+   * bbox corners are transparent for circle/oval/triangle — a press there
+   * must read as empty canvas, so a marquee can start inside the bounding
+   * box wherever the shape has no pixels) and under-hits (the border ring
+   * sits outside the interior bbox when the border is on — a press on
+   * visible pixels must hit the shape). Shapes with a clipPath therefore
+   * test the point against the cut geometry directly, in the shape's local
+   * plane; everything else keeps Fabric's test. Group children go through
+   * the same path with their absolute transform (`calcTransformMatrix`
+   * de-nests through the group), so the cut test works inside groups too.
+   */
+  override _checkTarget(obj: StageFabricObject, pointer: Point): boolean {
+    if (obj.clipPath) {
+      if (!obj.visible || !obj.evented) return false
+      const local = pointer.transform(util.invertTransform(obj.calcTransformMatrix()))
+      // The clipPath property is declared on the base generic; the cut
+      // geometry test only reads shape props, so the cast is safe.
+      return isPointInCutGeometry(obj.clipPath as FabricObject, local)
+    }
+    // The exported `Canvas` type resolves `FabricObject` to the base generic
+    // while the base method's own signature carries the full-props class —
+    // the same class, seen through two instantiation paths. The runtime call
+    // is unchanged; the cast bridges the declaration mismatch.
+    return super._checkTarget(obj as never, pointer)
+  }
+
+  /**
+   * The child of an entered group under a scene pointer, topmost first —
+   * the group's internal order is the Document's, fixed at group time — via
+   * the same clip-aware hit test as the top level. Undefined when the
+   * pointer is over the group's empty interior or its clipped-out areas.
+   * `getObjects` types children with the base generic (the interface shape,
+   * without the interactive surface); the hit test needs the full props —
+   * the same cast Fabric's own target search performs.
+   */
+  private findChildAt(group: Group, pointer: Point): StageFabricObject | undefined {
+    const children = group.getObjects() as StageFabricObject[]
+    for (let i = children.length - 1; i >= 0; i--) {
+      if (this._checkTarget(children[i], pointer)) return children[i]
+    }
+    return undefined
+  }
+
+  /**
+   * Empty-interior resolution while a group is entered (§7 Q5): with
+   * `enteredGroup` set, the base search already resolves children natively
+   * (the group's subTargetCheck/interactive flags, set at entry) — those
+   * pass through untouched. What the base cannot express: a press in the
+   * group's empty interior — the bounding box, no child — still resolves
+   * the group itself. That must read exactly like empty canvas: deselect on
+   * click, marquee on drag, and the entered state exits on mouse:down — so
+   * the child test runs for it, and a miss resolves to no target. A press
+   * on any other top-level object resolves normally — selecting it exits
+   * the entered state on mouse:down too.
+   */
+  override findTarget(e: TPointerEvent): FullTargetsInfoWithContainer {
+    const info = super.findTarget(e)
+    const group = this.enteredGroup
+    if (!group) return info
+    const target = info.target
+    if (target !== group && target !== null) return info
+    const child = this.findChildAt(group, this.getScenePoint(e))
+    if (child) {
+      return {
+        ...info,
+        target: child,
+        currentTarget: child,
+        subTargets: [child],
+        currentSubTargets: [child],
+      }
+    }
+    return {
+      ...info,
+      target: undefined,
+      currentTarget: undefined,
+      subTargets: [],
+      currentSubTargets: [],
+    }
+  }
+
+  /**
+   * Enter a group (§7 Q5): children become individually selectable for
+   * property inspection and Text editing, but are fixed — no handles, no
+   * free dragging, no individual resize (the same inert surface as the
+   * locked state, minus the `editable` block: a text child's session stays
+   * open). The selection clears — the next press picks a child. Locked
+   * groups can't be entered.
+   */
+  enterGroup(group: Group): void {
+    if (group.locked || this.enteredGroup === group) return
+    this.enteredGroup = group
+    // The interactive surface of the entered group: Fabric's target search
+    // resolves children natively (subTargetCheck), and the text session's
+    // second single-click is gated on `group.interactive` — the early-verify
+    // item (§7 Q5). Both are view state, restored on exit.
+    group.set("subTargetCheck", true)
+    group.set("interactive", true)
+    this.enteredChildren = group.getObjects()
+    for (const child of this.enteredChildren) this.applyEnteredChildState(child, true)
+    this.discardActiveObject()
+    this.requestRenderAll()
+  }
+
+  /**
+   * Exit the entered group (§7 Q5): children return to their normal surface
+   * and the selection clears — the exit paths (empty press, Escape) are
+   * deselects. Also the document-restore reset (loadFromJSON): the entered
+   * group and its children may not exist after a restore, and the fixed
+   * child state must not leak onto the restored objects. The re-fix walks
+   * the children captured at enter time, not the group's live list — an
+   * ungroup of the entered group extracts them first, and the exit must
+   * still restore their surface.
+   */
+  exitEnteredGroup(): void {
+    const children = this.enteredChildren
+    const group = this.enteredGroup
+    this.enteredGroup = null
+    this.enteredChildren = []
+    if (group) {
+      group.set("subTargetCheck", false)
+      group.set("interactive", false)
+    }
+    for (const child of children) this.applyEnteredChildState(child, false)
+    this.discardActiveObject()
+    this.requestRenderAll()
+  }
+
+  /** True while the object is a child of the currently entered group. */
+  isEnteredChild(obj: BaseFabricObject): boolean {
+    return obj.group === this.enteredGroup
+  }
+
+  /**
+   * The inert surface of a group child while its group is entered (§7 Q5):
+   * no handles and locked transforms — a child is fixed in place. The
+   * locked state folds in: a locked child stays inert after the group
+   * exits, and a child unlocked inside its group lands on exactly this
+   * entered-fixed surface (see setLocked).
+   */
+  private applyEnteredChildState(obj: BaseFabricObject, entered: boolean): void {
+    const inert = obj.locked || entered
+    obj.set("hasControls", !inert)
+    obj.set("lockMovementX", inert)
+    obj.set("lockMovementY", inert)
+    obj.set("lockScalingX", inert)
+    obj.set("lockScalingY", inert)
+    obj.set("lockRotation", inert)
+  }
+
+  /**
+   * Set an object's locked state — wraps the document-props `setLocked` so
+   * a child unlocked inside its entered group stays fixed: the unlock would
+   * otherwise hand it handles and free transforms inside the group (§7 Q5).
+   */
+  setLocked(obj: BaseFabricObject, locked: boolean): void {
+    setLockedProps(obj, locked)
+    if (this.isEnteredChild(obj)) this.applyEnteredChildState(obj, true)
+  }
+
+  /**
+   * A document restore (undo/redo, and the design-file import of a later
+   * build) replaces the whole document — the entered group and its children
+   * may no longer exist, and the fixed child state must not leak onto the
+   * restored objects. Exit the entered state before the restore runs.
+   */
+  override loadFromJSON(
+    json: string | Record<string, unknown>,
+    reviver?: util.EnlivenObjectOptions["reviver"],
+    options?: Abortable,
+  ): Promise<this> {
+    this.exitEnteredGroup()
+    return super.loadFromJSON(json, reviver, options).then((canvas) => {
+      // The entered flags are view state (ADR 0003 — never serialized), but
+      // Fabric serializes `subTargetCheck`/`interactive` on groups: a
+      // snapshot taken mid-entry (a property edit on a child is a commit
+      // boundary) would otherwise restore children individually targetable
+      // without entering. Reset every restored group to the plain surface.
+      for (const obj of this.getObjects()) {
+        if (obj instanceof Group) {
+          obj.set("subTargetCheck", false)
+          obj.set("interactive", false)
+        }
+      }
+      return canvas
+    })
   }
 
   /**
@@ -576,6 +857,11 @@ export function createStageCanvas(
       }
     } else if (isTextObject(obj)) {
       obj.setControlsVisibility({ mt: false, mb: false })
+    } else if (obj instanceof Group) {
+      // A group scales as one unit — corner handles only, like a
+      // multi-selection (a side-handle drag would stretch the children
+      // non-uniformly; scaling is free from the corners, §7 Q8).
+      obj.setControlsVisibility({ ml: false, mt: false, mr: false, mb: false })
     }
     // Corner handles show the fixed diagonal cursor (CORNER_CURSORS) instead
     // of Fabric's quadrant-based one — shapes and text share it, so the
@@ -698,6 +984,30 @@ export function createStageCanvas(
   // the StageProvider commits its structural commands (add, delete, arrange,
   // lock, property commits) through it.
   canvas.history = new History(canvas)
+
+  // Group entry (§7 Q5): double-click an unlocked group enters it — children
+  // become individually selectable and fixed. The double-click's target is
+  // the group (children aren't in the canvas collection, and the two clicks
+  // already selected the group). Text inside a group is untouched: the
+  // double-click lands on the text object, not the group, so the second
+  // single-click still opens the text session — the early-verify item.
+  canvas.on("mouse:dblclick", (event) => {
+    const target = event.target
+    if (target instanceof Group && !target.locked) canvas.enterGroup(target)
+  })
+
+  // Exit the entered group (§7 Q5): a press on empty canvas — including the
+  // group's own empty interior and any clipped-out area, which the target-
+  // finding overrides resolve to no target — or on any object outside the
+  // group. The press's own behavior (deselect, select the object) proceeds
+  // untouched; the exit is just the context change.
+  canvas.on("mouse:down", (event) => {
+    if (!canvas.enteredGroup) return
+    const target = event.target
+    if (target === undefined || !canvas.isEnteredChild(target)) {
+      canvas.exitEnteredGroup()
+    }
+  })
 
   return canvas
 }

@@ -1,7 +1,8 @@
-import type { Object as FabricObject } from "fabric"
+import { Group, type Object as FabricObject } from "fabric"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
 
 import { arrangeObjects, type ArrangeCommand } from "@/fabric/arrange"
+import { groupObjects } from "@/fabric/groups"
 import { createShape } from "@/fabric/shapes"
 import { createStageCanvas } from "@/fabric/stage-canvas"
 
@@ -131,5 +132,16 @@ describe("arrangeObjects", () => {
     const [a, b, c] = [addShape(), addShape(), addShape()]
     arrange([], "to-back")
     expect(stack()).toEqual([a, b, c])
+  })
+
+  it("skips group children — they are fixed in place (§7 Q5, no reorder)", () => {
+    const [a, b, c, d] = [addShape(), addShape(), addShape(), addShape()]
+    const group = groupObjects(canvas, [a, b]) as Group
+    // The children are inside the group; a group moves as one unit.
+    arrange([a, b], "forward")
+    expect(stack()).toEqual([c, group, d])
+    // The group itself arranges like any top-level object.
+    arrange([group], "to-front")
+    expect(stack()).toEqual([c, d, group])
   })
 })

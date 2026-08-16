@@ -19,12 +19,14 @@ import {
   ChevronDown,
   FlipHorizontal2,
   FlipVertical2,
+  Group as GroupIcon,
   Italic,
   Layers,
   Lock,
   Trash2,
   Type,
   Underline,
+  Ungroup as UngroupIcon,
 } from "lucide-react"
 
 import { useStage } from "@/components/stage-context"
@@ -62,6 +64,7 @@ import {
 import { type AlignCommand } from "@/fabric/align"
 import { type ArrangeCommand } from "@/fabric/arrange"
 import { type FlipCommand } from "@/fabric/flip"
+import { isGroup, isGrouped } from "@/fabric/groups"
 import {
   DEFAULT_BORDER_COLOR,
   DEFAULT_FILL,
@@ -1041,6 +1044,70 @@ function DeleteButton() {
 }
 
 /**
+ * Group (§7 Q6) — Ctrl+G: wrap the selection in a single-level group. Group
+ * requires ≥2 objects (the command flattens any group in the selection
+ * first); below that the button disables with an explanation. Grouped
+ * children are fixed in place (§7 Q5 — no structural commands inside a
+ * group), so a selection containing them disables the button too. Locked
+ * members group like any other — the locked flag rides on the child.
+ */
+function GroupButton() {
+  const { selection, groupSelection } = useStage()
+  const enabled = selection.length >= 2 && !selection.some((obj) => isGrouped(obj))
+  return (
+    <TooltipLabel
+      label={
+        selection.some((obj) => isGrouped(obj))
+          ? "Ungroup first — grouped objects can't be grouped"
+          : enabled
+            ? "Group (Ctrl+G)"
+            : "Select two or more objects to group"
+      }
+    >
+      <Button
+        variant="ghost"
+        size="icon-sm"
+        aria-label="Group"
+        disabled={!enabled}
+        onClick={groupSelection}
+      >
+        <GroupIcon aria-hidden />
+      </Button>
+    </TooltipLabel>
+  )
+}
+
+/**
+ * Ungroup (§7 Q6) — Ctrl+Shift+G: dissolve the selected group in place, its
+ * children rising to the group's z-slot. Enabled only for a single selected
+ * unlocked group — a locked group is inert (§7 Q7 — no ungroup), anything
+ * else has nothing to ungroup; both disable with an explanation.
+ */
+function UngroupButton() {
+  const { selection, ungroupSelection } = useStage()
+  const obj = selection.length === 1 ? selection[0] : null
+  const enabled = !!obj && isGroup(obj) && !obj.locked
+  const label = !obj || !isGroup(obj)
+    ? "Select a group to ungroup"
+    : obj.locked
+      ? "Locked groups can't be ungrouped — unlock first"
+      : "Ungroup (Ctrl+Shift+G)"
+  return (
+    <TooltipLabel label={label}>
+      <Button
+        variant="ghost"
+        size="icon-sm"
+        aria-label="Ungroup"
+        disabled={!enabled}
+        onClick={ungroupSelection}
+      >
+        <UngroupIcon aria-hidden />
+      </Button>
+    </TooltipLabel>
+  )
+}
+
+/**
  * Opacity card — a popover like the Arrange and Align cards: the selection's
  * transparency as a 0–100% slider, committed live to the whole selection as
  * it moves (the readout shows the first object's value — the commit applies
@@ -1330,8 +1397,7 @@ function FlipButton() {
  * properties — the document controls (size, units, canvas look) are hidden,
  * since the object's own size is what's being edited. Opacity, flip,
  * arrange, align, lock, and delete sit at the strip's end, visible for any
- * non-empty selection (§7 Q6). The remaining §7 selection control (group)
- * arrives with the selection build.
+ * non-empty selection (§7 Q6).
  */
 export function StageToolbar() {
   const { selection } = useStage()
@@ -1354,6 +1420,9 @@ export function StageToolbar() {
         <div className="flex-1" />
         {selection.length > 0 && (
           <>
+            <Separator orientation="vertical" className="mx-1 h-5" />
+            <GroupButton />
+            <UngroupButton />
             <Separator orientation="vertical" className="mx-1 h-5" />
             <OpacityButton />
             <FlipButton />

@@ -2,6 +2,7 @@ import type { Object as FabricObject } from "fabric"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
 
 import { alignObjects, type AlignCommand } from "@/fabric/align"
+import { groupObjects } from "@/fabric/groups"
 import { createShape } from "@/fabric/shapes"
 import { createStageCanvas } from "@/fabric/stage-canvas"
 
@@ -166,5 +167,16 @@ describe("alignObjects", () => {
     const obj = addSquare(250, 250)
     align([], "right")
     expect(rect(obj).left).toBe(154)
+  })
+
+  it("skips group children — they are fixed in place (§7 Q5, no free movement)", () => {
+    const a = addSquare(100, 100)
+    const b = addSquare(400, 500)
+    const group = groupObjects(canvas, [a, b])!
+    align([a], "top") // a lone child aligning to the Document would move it
+    expect(rect(a).top).toBe(4)
+    // The group itself aligns like any top-level object.
+    align([group], "top")
+    expect(rect(group).top).toBe(0)
   })
 })

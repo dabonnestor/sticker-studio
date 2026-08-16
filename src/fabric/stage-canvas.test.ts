@@ -1,6 +1,11 @@
 import {
   ActiveSelection,
+  Circle,
+  Ellipse,
+  Group,
   Point,
+  Rect,
+  Triangle,
   type Object as FabricObject,
   type TMat2D,
 } from "fabric"
@@ -8,12 +13,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
 import { createStubContext } from "@/fabric/canvas-stub"
 import { setLocked } from "@/fabric/document-props"
-import { createShape } from "@/fabric/shapes"
+import { groupObjects, ungroupObjects } from "@/fabric/groups"
+import { createShape, setBorderWidth } from "@/fabric/shapes"
 import {
   ROTATE_HANDLE_SIZE,
   createStageCanvas,
   getMarqueeBox,
   getOverlayOffset,
+  isPointInCutGeometry,
   renderRotateHandle,
 } from "@/fabric/stage-canvas"
 import { createText } from "@/fabric/text"
@@ -804,5 +811,315 @@ describe("multi-selection chrome", () => {
     raw.__onMouseUp(at(br.x + 121, br.y + 121))
     expect(selection.scaleX).toBeGreaterThan(1)
     expect(selection.scaleX).toBeCloseTo(selection.scaleY, 10)
+  })
+})
+
+/**
+ * Point-in-cut-geometry (build spec §7 Q2) — the pure shape-geometry test
+ * behind the clip-aware target finding: a sticker's clipped-out areas count
+ * as empty canvas, so the test must match the cut geometry exactly, not the
+ * bounding box. Shapes' local geometry is centered at the origin.
+ */
+describe("isPointInCutGeometry", () => {
+  it("circle: the bbox corners are outside the cut", () => {
+    const clip = new Circle({ radius: 96 })
+    expect(isPointInCutGeometry(clip, new Point(0, 0))).toBe(true)
+    expect(isPointInCutGeometry(clip, new Point(90, 90))).toBe(false)
+    expect(isPointInCutGeometry(clip, new Point(96, 0))).toBe(true) // on the cut edge
+  })
+
+  it("oval: the ellipse equation", () => {
+    const clip = new Ellipse({ rx: 144, ry: 96 })
+    expect(isPointInCutGeometry(clip, new Point(0, 0))).toBe(true)
+    expect(isPointInCutGeometry(clip, new Point(140, 0))).toBe(true)
+    expect(isPointInCutGeometry(clip, new Point(0, 95))).toBe(true)
+    expect(isPointInCutGeometry(clip, new Point(140, 95))).toBe(false) // bbox corner
+  })
+
+  it("rectangle: the full extent", () => {
+    const clip = new Rect({ width: 192, height: 192 })
+    expect(isPointInCutGeometry(clip, new Point(0, 0))).toBe(true)
+    expect(isPointInCutGeometry(clip, new Point(95, 95))).toBe(true)
+    expect(isPointInCutGeometry(clip, new Point(97, 0))).toBe(false)
+  })
+
+  it("triangle: the base-apex wedge, not its bbox", () => {
+    const clip = new Triangle({ width: 288, height: 192 })
+    expect(isPointInCutGeometry(clip, new Point(0, -90))).toBe(true) // under the apex
+    expect(isPointInCutGeometry(clip, new Point(140, -90))).toBe(false) // bbox corner, outside the wedge
+    expect(isPointInCutGeometry(clip, new Point(0, 90))).toBe(true) // base center
+  })
+})
+
+/**
+ * Clip-aware target finding (build spec §7 Q2) — a press inside a shape's
+ * bounding box but outside its cut reads as empty canvas: the marquee can
+ * start there, and a plain press deselects instead of selecting.
+ */
+describe("clip-aware target finding", () => {
+  let canvas: ReturnType<typeof createStageCanvas>
+
+  beforeEach(() => {
+    canvas = createStageCanvas(
+      document.createElement("canvas"),
+      document.createElement("canvas"),
+    )
+  })
+
+  afterEach(async () => {
+    await canvas.dispose()
+  })
+
+  /** Client-coordinate event at a scene point — the offset mapping mirrors
+   * the browser's (jsdom's zero wrapper rect, like the pointer tests above). */
+  function at(scene: { x: number; y: number }) {
+    const raw = canvas as unknown as {
+      calcOffset(): void
+      _offset: { left: number; top: number }
+    }
+    raw.calcOffset()
+    const { left, top } = raw._offset
+    return { clientX: scene.x + left, clientY: scene.y + top } as PointerEvent
+  }
+
+  it("a press in a circle's clipped-out corner reads as empty canvas", () => {
+    const circle = createShape("circle")
+    circle.set({ left: 300, top: 300 })
+    canvas.add(circle)
+    circle.setCoords()
+    // The bbox corner is transparent — inside the box, outside the cut.
+    expect(canvas.findTarget(at(circle.oCoords.tl)).target).toBeUndefined()
+    // The center is inside the cut — a press there targets the circle.
+    expect(canvas.findTarget(at(circle.getCenterPoint())).target).toBe(circle)
+  })
+
+  it("a press on the border ring hits the shape — the clip extends past the interior bbox", () => {
+    const square = createShape("square")
+    square.set({ left: 300, top: 300 })
+    setBorderWidth(square, 20) // interior shrinks to 172, the cut stays 192
+    canvas.add(square)
+    square.setCoords()
+    const center = square.getCenterPoint()
+    // Inside the cut (half 96) but outside the interior bbox (half 86).
+    expect(canvas.findTarget(at({ x: center.x + 90, y: center.y })).target).toBe(square)
+    // Outside the cut entirely.
+    expect(canvas.findTarget(at({ x: center.x + 98, y: center.y })).target).toBeUndefined()
+  })
+})
+
+/**
+ * Entered group mode (build spec §7 Q5) — double-click enters a group:
+ * children become individually targetable for property inspection and Text
+ * editing, but are fixed in place; empty presses and Escape exit. The
+ * interactions are wired in createStageCanvas, driven here with synthetic
+ * events the same way the other wiring tests drive theirs.
+ */
+describe("entered group mode", () => {
+  let canvas: ReturnType<typeof createStageCanvas>
+  let group: Group
+  let childA: FabricObject
+  let childB: FabricObject
+
+  beforeEach(() => {
+    canvas = createStageCanvas(
+      document.createElement("canvas"),
+      document.createElement("canvas"),
+    )
+    childA = createShape("circle")
+    childA.set({ left: 100, top: 100 })
+    childB = createShape("square")
+    childB.set({ left: 400, top: 100 })
+    canvas.add(childA, childB)
+    group = groupObjects(canvas, [childA, childB])!
+    canvas.discardActiveObject()
+  })
+
+  afterEach(async () => {
+    await canvas.dispose()
+  })
+
+  function dblClick(target?: unknown) {
+    canvas.fire("mouse:dblclick", { target } as never)
+  }
+
+  function press(target?: unknown) {
+    canvas.fire("mouse:down", { target } as never)
+  }
+
+  /** Client-coordinate event at a scene point (see the target-finding tests). */
+  function at(scene: { x: number; y: number }) {
+    const raw = canvas as unknown as {
+      calcOffset(): void
+      _offset: { left: number; top: number }
+    }
+    raw.calcOffset()
+    const { left, top } = raw._offset
+    return { clientX: scene.x + left, clientY: scene.y + top } as PointerEvent
+  }
+
+  it("double-click enters an unlocked group — children fixed, selection cleared", () => {
+    dblClick(group)
+    expect(canvas.enteredGroup).toBe(group)
+    expect(canvas.getActiveObject()).toBeUndefined()
+    // The interactive surface — Fabric's child targeting and the text
+    // session gate (§7 Q5 early-verify) — is view state, set while entered.
+    expect(group.subTargetCheck).toBe(true)
+    expect(group.interactive).toBe(true)
+    for (const child of group.getObjects()) {
+      expect(child.hasControls).toBe(false)
+      expect(child.lockMovementX).toBe(true)
+      expect(child.lockMovementY).toBe(true)
+      expect(child.lockScalingX).toBe(true)
+      expect(child.lockScalingY).toBe(true)
+      expect(child.lockRotation).toBe(true)
+    }
+  })
+
+  it("text children stay editable — only the fixed surface is applied", () => {
+    const a = createShape("square")
+    a.set({ left: 100, top: 100 })
+    const text = createText((s) => s.length * 10)
+    text.set({ left: 700, top: 100 })
+    canvas.add(a, text)
+    const g = groupObjects(canvas, [a, text])!
+    dblClick(g)
+    expect(text.editable).toBe(true)
+    expect(text.hasControls).toBe(false)
+  })
+
+  it("does not enter a locked group", () => {
+    group.set("locked", true)
+    dblClick(group)
+    expect(canvas.enteredGroup).toBeNull()
+  })
+
+  it("double-click on a top-level text enters nothing", () => {
+    const text = createText((s) => s.length * 10)
+    text.set({ left: 700, top: 100 })
+    canvas.add(text)
+    dblClick(text)
+    expect(canvas.enteredGroup).toBeNull()
+  })
+
+  it("a double-click on a child while entered stays in the group — no re-entry", () => {
+    // The dblclick's target is the child (the findTarget override resolves
+    // it); the handler only enters on a Group target, so nothing changes.
+    canvas.enterGroup(group)
+    dblClick(childA)
+    expect(canvas.enteredGroup).toBe(group)
+  })
+
+  it("resolves a child under the pointer while entered", () => {
+    canvas.enterGroup(group)
+    const child = group.getObjects()[1]
+    const info = canvas.findTarget(at(child.getCenterPoint()))
+    expect(info.target).toBe(child)
+  })
+
+  it("the group's empty interior reads as empty canvas", () => {
+    canvas.enterGroup(group)
+    // Between the two children — inside the group's bbox, on no pixels.
+    const info = canvas.findTarget(at({ x: 250, y: 200 }))
+    expect(info.target).toBeUndefined()
+  })
+
+  it("other top-level objects resolve normally while entered", () => {
+    const other = createShape("square")
+    other.set({ left: 600, top: 400 })
+    canvas.add(other)
+    canvas.enterGroup(group)
+    expect(canvas.findTarget(at(other.getCenterPoint())).target).toBe(other)
+  })
+
+  it("a press with no target exits the group", () => {
+    canvas.enterGroup(group)
+    press(undefined)
+    expect(canvas.enteredGroup).toBeNull()
+  })
+
+  it("a press on a child stays in the group", () => {
+    canvas.enterGroup(group)
+    press(childA)
+    expect(canvas.enteredGroup).toBe(group)
+  })
+
+  it("a press on an object outside the group exits it", () => {
+    const other = createShape("square")
+    other.set({ left: 600, top: 400 })
+    canvas.add(other)
+    canvas.enterGroup(group)
+    press(other)
+    expect(canvas.enteredGroup).toBeNull()
+  })
+
+  it("exit restores the pre-enter surface of the children", () => {
+    canvas.enterGroup(group)
+    canvas.exitEnteredGroup()
+    expect(canvas.enteredGroup).toBeNull()
+    expect(group.subTargetCheck).toBe(false)
+    expect(group.interactive).toBe(false)
+    for (const child of group.getObjects()) {
+      expect(child.hasControls).toBe(true)
+      expect(child.lockMovementX).toBe(false)
+      expect(child.lockScalingX).toBe(false)
+      expect(child.lockRotation).toBe(false)
+    }
+  })
+
+  it("a locked child stays inert after the group exits", () => {
+    setLocked(childA, true)
+    canvas.enterGroup(group)
+    canvas.exitEnteredGroup()
+    expect(childA.hasControls).toBe(false) // the locked surface remains
+    expect(childB.hasControls).toBe(true)
+  })
+
+  it("a child unlocked inside its group lands on the entered-fixed surface", () => {
+    canvas.enterGroup(group)
+    canvas.setLocked(childA, true)
+    canvas.setLocked(childA, false)
+    expect(childA.lockMovementX).toBe(true) // still fixed — the group is entered
+    expect(childA.hasControls).toBe(false)
+    canvas.exitEnteredGroup()
+    expect(childA.hasControls).toBe(true) // the unlock sticks after the exit
+  })
+
+  it("a document restore exits the entered state with no fixed-state leak", async () => {
+    canvas.enterGroup(group)
+    await canvas.loadFromJSON(canvas.toJSON())
+    expect(canvas.enteredGroup).toBeNull()
+    const restored = canvas.getObjects()[0] as Group
+    for (const child of restored.getObjects()) {
+      expect(child.lockMovementX).toBe(false)
+      expect(child.hasControls).toBe(true)
+    }
+  })
+
+  it("the entered flags never survive a restore — view state, not document state", async () => {
+    canvas.enterGroup(group)
+    // A snapshot taken mid-entry serializes the flags (Fabric bakes them
+    // into the group's JSON); the restore must reset them — children must
+    // not come back individually targetable without entering (ADR 0003).
+    const payload = canvas.toJSON()
+    const groupJson = JSON.stringify(
+      (payload as { objects: unknown[] }).objects[0],
+    )
+    expect(groupJson).toContain("subTargetCheck")
+    expect(groupJson).toContain("interactive")
+    await canvas.loadFromJSON(payload)
+    const restored = canvas.getObjects()[0] as Group
+    expect(restored.subTargetCheck).toBe(false)
+    expect(restored.interactive).toBe(false)
+  })
+
+  it("an ungroup of the entered group dissolves it — the exit still re-fixes the extracted children", () => {
+    canvas.enterGroup(group)
+    const children = ungroupObjects(canvas, [group])
+    expect(children).toHaveLength(2)
+    canvas.exitEnteredGroup()
+    for (const child of children) {
+      expect(child.hasControls).toBe(true)
+      expect(child.lockMovementX).toBe(false)
+    }
   })
 })

@@ -6,7 +6,7 @@ import {
   useState,
   type ReactNode,
 } from "react"
-import type { Canvas, Object as FabricObject } from "fabric"
+import { ActiveSelection, type Canvas, type Object as FabricObject } from "fabric"
 
 import { getTextMeasurer, preloadFonts } from "@/fabric/fonts"
 import {
@@ -18,6 +18,7 @@ import {
   type ArrangeCommand,
 } from "@/fabric/arrange"
 import { flipObjects, type FlipCommand } from "@/fabric/flip"
+import { groupObjects, isGrouped, ungroupObjects } from "@/fabric/groups"
 import {
   DOCUMENT_BACKGROUND_COLOR,
   DOCUMENT_BORDER_COLOR,
@@ -32,7 +33,7 @@ import {
   setBorderWidth,
   setFillColor,
 } from "@/fabric/shapes"
-import { setLocked, setOpacity } from "@/fabric/document-props"
+import { setOpacity } from "@/fabric/document-props"
 import type { ShapeKind } from "@/fabric/shapes"
 import {
   applyTextProps,
@@ -173,6 +174,31 @@ interface StageContextValue {
    * stay selectable but are inert. One undoable step (ADR 0001).
    */
   toggleLock: () => void
+  /**
+   * Group the selection (§7 Q4) — single-level: a selection containing a
+   * group flattens it first; requires ≥2 objects. The group takes the z-slot
+   * of its topmost member and becomes the selection. One undoable step
+   * (ADR 0001); undo restores the selection to the group by id (ADR 0003).
+   */
+  groupSelection: () => void
+  /**
+   * Ungroup the selection (§7 Q4) — every selected unlocked Group dissolves
+   * in place, its children rising to the group's z-slot and becoming the
+   * selection. Locked groups are inert and skipped. One undoable step
+   * (ADR 0001); undo restores the selection to the group by id (ADR 0003).
+   */
+  ungroupSelection: () => void
+  /**
+   * Select every top-level object — Ctrl+A (§13). Selection is view state:
+   * never undoable, never serialized.
+   */
+  selectAll: () => void
+  /**
+   * Exit the entered group — Escape outside a text session (§7 Q5, §13):
+   * children stop being individually targetable and the selection clears
+   * (a plain deselect when no group is entered).
+   */
+  exitGroup: () => void
 }
 
 const StageContext = createContext<StageContextValue | null>(null)
@@ -438,8 +464,11 @@ export function StageProvider({ children }: { children: ReactNode }) {
   const deleteSelection = useCallback(() => {
     if (!canvas?.history) return
     // §7 Q3: locked objects are selectable but inert — Del skips them, so a
-    // mixed selection keeps its locked members.
-    const objects = canvas.getActiveObjects().filter((obj) => !obj.locked)
+    // mixed selection keeps its locked members. Group children are fixed in
+    // place (§7 Q5) — no delete — Ungroup first.
+    const objects = canvas
+      .getActiveObjects()
+      .filter((obj) => !obj.locked && !isGrouped(obj))
     if (objects.length === 0) return
     canvas.discardActiveObject()
     canvas.remove(...objects)
@@ -453,12 +482,61 @@ export function StageProvider({ children }: { children: ReactNode }) {
     const objects = canvas.getActiveObjects()
     if (objects.length === 0) return
     // Whole-selection toggle (§7 Q3): a fully locked selection unlocks,
-    // otherwise everything locks.
+    // otherwise everything locks. The canvas's setLocked re-applies the
+    // entered-fixed surface to a child unlocked inside its group (§7 Q5).
     const locked = !objects.every((obj) => obj.locked)
-    for (const obj of objects) setLocked(obj, locked)
+    for (const obj of objects) canvas.setLocked(obj, locked)
     canvas.requestRenderAll()
     setSelection(canvas.getActiveObjects())
     canvas.history.commit()
+  }, [canvas])
+
+  const groupSelection = useCallback(() => {
+    if (!canvas?.history) return
+    const objects = canvas.getActiveObjects()
+    // Grouping the entered group itself (Ctrl+A selects it along with
+    // everything else) dissolves it mid-command — exit first so the
+    // children's fixed surface is restored before the regroup (§7 Q5).
+    if (canvas.enteredGroup && objects.includes(canvas.enteredGroup)) {
+      canvas.exitEnteredGroup()
+    }
+    const group = groupObjects(canvas, objects)
+    if (!group) return
+    canvas.setActiveObject(group)
+    canvas.requestRenderAll()
+    canvas.history.commit()
+  }, [canvas])
+
+  const ungroupSelection = useCallback(() => {
+    if (!canvas?.history) return
+    const children = ungroupObjects(canvas, canvas.getActiveObjects())
+    if (children.length === 0) return
+    // Ungrouping the entered group exits it — the group reference dies with
+    // the command, and the fixed child state must not linger (§7 Q5). Runs
+    // after the extraction so the exit's re-fix finds the children.
+    if (canvas.enteredGroup) canvas.exitEnteredGroup()
+    // The extracted children are the result of the command — the selection
+    // lands on them (§7 Q4); a single child selects alone.
+    if (children.length === 1) canvas.setActiveObject(children[0])
+    else canvas.setActiveObject(new ActiveSelection(children, { canvas }))
+    canvas.requestRenderAll()
+    canvas.history.commit()
+  }, [canvas])
+
+  const selectAll = useCallback(() => {
+    if (!canvas) return
+    const objects = canvas.getObjects()
+    if (objects.length === 0) return
+    // Selection is view state (§4) — the whole top level, groups counting as
+    // one object; locked objects are selectable and included.
+    if (objects.length === 1) canvas.setActiveObject(objects[0])
+    else canvas.setActiveObject(new ActiveSelection(objects, { canvas }))
+    canvas.requestRenderAll()
+  }, [canvas])
+
+  const exitGroup = useCallback(() => {
+    if (!canvas) return
+    canvas.exitEnteredGroup()
   }, [canvas])
 
   // Undo/redo hotkeys (§13): Ctrl+Z / Ctrl+Y walk the document-state stack.
@@ -523,6 +601,56 @@ export function StageProvider({ children }: { children: ReactNode }) {
     return () => document.removeEventListener("keydown", onKeyDown)
   }, [canvas, arrangeSelection])
 
+  // Group / ungroup hotkeys (§13): Ctrl+G / Ctrl+Shift+G. The editable gate
+  // keeps the keys native in the toolbar's fields and the text session, like
+  // Del; the shift key distinguishes the pair.
+  useEffect(() => {
+    if (!canvas) return
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key.toLowerCase() !== "g") return
+      if (!event.ctrlKey && !event.metaKey) return
+      if (event.altKey) return
+      if (isEditableTarget(document.activeElement)) return
+      event.preventDefault()
+      if (event.shiftKey) ungroupSelection()
+      else groupSelection()
+    }
+    document.addEventListener("keydown", onKeyDown)
+    return () => document.removeEventListener("keydown", onKeyDown)
+  }, [canvas, groupSelection, ungroupSelection])
+
+  // Select all hotkey (§13): Ctrl+A — the whole top level, groups counting
+  // as one. Selection is view state — never an undoable step. The editable
+  // gate keeps Ctrl+A field-local in the toolbar's inputs and the text
+  // session's textarea (native select-all).
+  useEffect(() => {
+    if (!canvas) return
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key.toLowerCase() !== "a") return
+      if (!event.ctrlKey && !event.metaKey) return
+      if (event.altKey) return
+      if (isEditableTarget(document.activeElement)) return
+      event.preventDefault()
+      selectAll()
+    }
+    document.addEventListener("keydown", onKeyDown)
+    return () => document.removeEventListener("keydown", onKeyDown)
+  }, [canvas, selectAll])
+
+  // Escape deselects — and exits the entered group (§13) — outside a text
+  // session. The editable gate covers the session's hidden textarea, where
+  // Escape reverts the session natively (§6) and must not reach the stage.
+  useEffect(() => {
+    if (!canvas) return
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return
+      if (isEditableTarget(document.activeElement)) return
+      exitGroup()
+    }
+    document.addEventListener("keydown", onKeyDown)
+    return () => document.removeEventListener("keydown", onKeyDown)
+  }, [canvas, exitGroup])
+
   return (
     <StageContext.Provider
       value={{
@@ -549,6 +677,10 @@ export function StageProvider({ children }: { children: ReactNode }) {
         commitOpacity,
         deleteSelection,
         toggleLock,
+        groupSelection,
+        ungroupSelection,
+        selectAll,
+        exitGroup,
       }}
     >
       {children}

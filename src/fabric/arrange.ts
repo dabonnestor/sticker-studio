@@ -1,5 +1,7 @@
 import type { Canvas, Object as FabricObject } from "fabric"
 
+import { isGrouped } from "@/fabric/groups"
+
 /**
  * Z-order arrange commands (build spec §7 Q6) — the stage toolbar's Arrange
  * menu and the Ctrl+] / Ctrl+[ hotkeys (§13): one slot forward or backward,
@@ -30,16 +32,17 @@ const COMMANDS: Record<
  * unit — each command is a single step, so forward/backward shift it one
  * slot and to-front/to-back move it to the end of the stack, the selection's
  * internal order always preserved. Locked objects are inert (§7 Q3, Q7 —
- * "no arrange"), so they are skipped like delete's locked skip; a fully
- * locked (or empty) selection is a no-op. The Fabric moves fire their own
- * render via `renderOnAddRemove`; callers render explicitly regardless.
+ * "no arrange"), so they are skipped like delete's locked skip; group
+ * children are fixed in place (§7 Q5 — no reorder) and skipped the same way;
+ * a fully inert (or empty) selection is a no-op. The Fabric moves fire their
+ * own render via `renderOnAddRemove`; callers render explicitly regardless.
  */
 export function arrangeObjects(
   canvas: Canvas,
   objects: readonly FabricObject[],
   command: ArrangeCommand,
 ): void {
-  const unlocked = objects.filter((obj) => !obj.locked)
+  const unlocked = objects.filter((obj) => !obj.locked && !isGrouped(obj))
   if (unlocked.length === 0) return
 
   const { bottomFirst, apply } = COMMANDS[command]

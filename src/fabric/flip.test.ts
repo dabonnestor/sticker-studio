@@ -1,7 +1,8 @@
-import type { Object as FabricObject } from "fabric"
+import { Group, type Object as FabricObject } from "fabric"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
 
 import { flipObjects, type FlipCommand } from "@/fabric/flip"
+import { groupObjects } from "@/fabric/groups"
 import { createShape } from "@/fabric/shapes"
 import { createStageCanvas } from "@/fabric/stage-canvas"
 
@@ -114,5 +115,17 @@ describe("flipObjects", () => {
 
   it("an empty selection is a no-op", () => {
     flip([], "horizontal")
+  })
+
+  it("skips group children — they are fixed in place (§7 Q5, no individual transforms)", () => {
+    const [a, b] = [addShape(), addShape()]
+    const group = groupObjects(canvas, [a, b]) as Group
+    flip([a, b], "horizontal")
+    expect(a.flipX).toBe(false)
+    expect(b.flipX).toBe(false)
+    // The group itself flips as one unit — children keep their own flip (§7 Q8).
+    flip([group], "horizontal")
+    expect(group.flipX).toBe(true)
+    expect(a.flipX).toBe(false)
   })
 })
