@@ -10,7 +10,7 @@ import {
   ungroupObjects,
 } from "@/fabric/groups"
 import { createShape } from "@/fabric/shapes"
-import { createText } from "@/fabric/text"
+import { TEXT_DEFAULT_FONT_SIZE, createText, isTextObject } from "@/fabric/text"
 import { createStageCanvas } from "@/fabric/stage-canvas"
 
 // The app registers the document custom properties at startup (main.tsx);
@@ -209,6 +209,21 @@ describe("grouping — group / ungroup", () => {
     group.set("locked", true)
     expect(ungroupObjects(canvas, [group])).toEqual([])
     expect(canvas.getObjects()).toHaveLength(1)
+  })
+
+  it("ungroup bakes a scaled text child's fold into its size — the toolbar reads true", () => {
+    const text = createText()
+    const shape = addShapeAt("square", 200, 0)
+    canvas.add(text) // the text precedes the shape on the stack
+    const group = groupObjects(canvas, [text, shape])!
+    group.set({ scaleX: 2, scaleY: 2 }) // the group scaled as one unit (§7 Q8)
+    const children = ungroupObjects(canvas, [group])
+    const out = children.find(isTextObject)!
+    // The exit folded the group's scale into the child — the bake folds it
+    // onward into the size field, so the toolbar reads the effective size.
+    expect(out.fontSize).toBe(TEXT_DEFAULT_FONT_SIZE * 2)
+    expect(out.scaleX).toBe(1)
+    expect(out.scaleY).toBe(1)
   })
 
   it("round-trips through serialization — the group nests its children, ids and cut lines intact", async () => {

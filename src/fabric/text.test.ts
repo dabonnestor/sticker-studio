@@ -11,6 +11,7 @@ import {
   TEXT_DEFAULT_STRING,
   TEXT_FILL,
   applyTextProps,
+  bakeTextScale,
   createText,
   fitTextWidth,
   fitToContent,
@@ -315,6 +316,74 @@ describe("top-edge pinning — property commits never nudge the box (§6)", () =
     const topBefore = t.getCoords()[0].y
     applyTextProps(t, { fontSize: 48 }, measure)
     expect(t.getCoords()[0].y).toBe(topBefore)
+  })
+})
+
+describe("bakeTextScale — a corner drag folds into the font size (§6)", () => {
+  it("bakes a uniform scale into the size and width, and resets the transform", () => {
+    const t = createText(measure)
+    t.set("text", "hello")
+    fitToContent(t, measure) // width 52
+    t.set({ scaleX: 2, scaleY: 2 })
+    bakeTextScale(t)
+    expect(t.fontSize).toBe(TEXT_DEFAULT_FONT_SIZE * 2)
+    expect(t.width).toBe(104)
+    expect(t.scaleX).toBe(1)
+    expect(t.scaleY).toBe(1)
+  })
+
+  it("rounds the baked size to integer px — the toolbar's readout stays clean", () => {
+    const t = createText(measure)
+    t.set("text", "hello")
+    t.set({ scaleX: 1.37, scaleY: 1.37 })
+    bakeTextScale(t)
+    expect(t.fontSize).toBe(Math.round(24 * 1.37))
+    expect(t.scaleX).toBe(1)
+  })
+
+  it("is a no-op at scale 1 — moves, rotations, and session exits pass through", () => {
+    const t = createText(measure)
+    const fontSize = t.fontSize
+    const width = t.width
+    t.set({ scaleX: 1, scaleY: 1 })
+    bakeTextScale(t)
+    expect(t.fontSize).toBe(fontSize)
+    expect(t.width).toBe(width)
+  })
+
+  it("keeps the top edge pinned across the re-measure", () => {
+    // The creation-fitted box: "Text" at width 42, one line. Doubling the
+    // size re-measures the height (the center anchor would pivot the box by
+    // Δh/2 without the pin).
+    const t = createText(measure)
+    t.set({ scaleX: 2, scaleY: 2 })
+    t.setCoords() // a real drag refreshes the coords on every tick
+    const topBefore = t.getCoords()[0].y
+    bakeTextScale(t)
+    expect(t.getCoords()[0].y).toBe(topBefore)
+    expect(t.width).toBe(84)
+  })
+
+  it("uses the geometric mean — a text folded out of a scaled group can decompose per-axis", () => {
+    const t = createText(measure)
+    t.set("text", "hello")
+    // A fold can leave the axes unequal (a rotated group matrix decomposes
+    // per-axis); the mean preserves the glyph area.
+    t.set({ scaleX: 2, scaleY: 8 })
+    bakeTextScale(t)
+    expect(t.fontSize).toBe(96) // √(2·8) = 4 → 24 × 4
+    expect(t.scaleX).toBe(1)
+    expect(t.scaleY).toBe(1)
+  })
+
+  it("treats a mirrored axis as a magnitude — a flipped fold bakes the same size", () => {
+    const t = createText(measure)
+    t.set("text", "hello")
+    t.set({ scaleX: -2, scaleY: 2 }) // a group flip folded into the child
+    bakeTextScale(t)
+    expect(t.fontSize).toBe(48)
+    expect(t.scaleX).toBe(1)
+    expect(t.scaleY).toBe(1)
   })
 })
 

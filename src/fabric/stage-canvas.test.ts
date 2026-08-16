@@ -25,7 +25,7 @@ import {
   renderRotateHandle,
   rotationWithSnap,
 } from "@/fabric/stage-canvas"
-import { createText } from "@/fabric/text"
+import { TEXT_DEFAULT_FONT_SIZE, createText } from "@/fabric/text"
 
 /**
  * Marquee viewport mapping (§7 extension). The marquee mirror paints on the
@@ -138,6 +138,50 @@ describe("uniform scaling", () => {
     expect(text.scaleX / text.scaleY).toBeCloseTo(3, 10)
     expect(text.scaleY).toBeCloseTo(1, 10)
     expect(text.autoFit).toBe(false)
+  })
+
+  it("a committed text scale bakes into the size — the toolbar readout follows the corner drag", () => {
+    const text = createText()
+    canvas.add(text)
+    const width = text.width
+    text.set({ scaleX: 2, scaleY: 2 }) // the corner drag's committed scale
+    canvas.fire("object:modified", { target: text } as never)
+    // The size field is the text's source of truth (§6): the gesture folds
+    // into fontSize, the wrap width scales with it, and the transform
+    // resets — no stale scale is left on the object.
+    expect(text.fontSize).toBe(TEXT_DEFAULT_FONT_SIZE * 2)
+    expect(text.width).toBe(width * 2)
+    expect(text.scaleX).toBe(1)
+    expect(text.scaleY).toBe(1)
+  })
+
+  it("the gesture-end bake leaves shapes carrying their scale — they have no size field", () => {
+    const shape = createShape("square")
+    canvas.add(shape)
+    shape.set({ scaleX: 2, scaleY: 2 })
+    canvas.fire("object:modified", { target: shape } as never)
+    expect(shape.scaleX).toBe(2)
+    expect(shape.scaleY).toBe(2)
+  })
+
+  it("a text member's folded scale bakes when a scaled multi-selection dissolves (§7)", () => {
+    // Scaling a set scales the ActiveSelection; its members only receive the
+    // scale when the selection dissolves (Fabric folds the transform on
+    // deselect). Selecting the text after that fold must bake the folded
+    // scale into the size, or the toolbar reads the pre-set size.
+    const text = createText()
+    const shape = createShape("square")
+    canvas.add(text, shape)
+    const selection = new ActiveSelection([text, shape], { canvas })
+    selection.set({ scaleX: 2, scaleY: 2 })
+    canvas.setActiveObject(selection)
+    canvas.fire("object:modified", { target: selection } as never)
+    canvas.discardActiveObject() // the deselect folds the set's scale into the members
+    expect(text.scaleX).toBe(2) // the folded state — stale size before the bake
+    canvas.setActiveObject(text) // selection:created — the bake runs
+    expect(text.fontSize).toBe(TEXT_DEFAULT_FONT_SIZE * 2)
+    expect(text.scaleX).toBe(1)
+    expect(text.scaleY).toBe(1)
   })
 
   it("a committed transform clears the frozen ratio for the next gesture", () => {

@@ -273,3 +273,34 @@ export function applyTextProps(
   obj.setPositionByOrigin(top, obj.originX, "top")
   obj.setCoords()
 }
+
+/**
+ * Bake a scale gesture into the font size (§6): a corner drag scales the
+ * Textbox like a shape, leaving the box carrying a scale transform with
+ * `fontSize` — the toolbar's readout — stale at its pre-drag value. The
+ * gesture end folds the scale into the size — the effective size is
+ * fontSize × scale — and resets the transform, so the size field stays the
+ * source of truth. The wrap width scales with it (the box wraps the same
+ * lines it wrapped scaled), and the height re-measures from the new width
+ * and size (Fabric's `set` re-inits dimensions for layout properties). The
+ * top edge is pinned across the re-measure, like `applyTextProps`. No-op at
+ * scale 1 — moves, rotations, and plain session commits pass through.
+ *
+ * The factor is the geometric mean of the two axes (absolute — a flip
+ * mirrors one): uniform corner gestures keep them equal, while a text folded
+ * out of a scaled group can carry a matrix whose per-axis decomposition
+ * differs, and the mean is the size that preserves the glyph area.
+ */
+export function bakeTextScale(obj: Textbox): void {
+  if (obj.scaleX === 1 && obj.scaleY === 1) return
+  const s = Math.sqrt(Math.abs(obj.scaleX * obj.scaleY))
+  const top = obj.getPositionByOrigin(obj.originX, "top")
+  obj.set({
+    fontSize: Math.round(obj.fontSize * s),
+    width: obj.width * s,
+    scaleX: 1,
+    scaleY: 1,
+  })
+  obj.setPositionByOrigin(top, obj.originX, "top")
+  obj.setCoords()
+}

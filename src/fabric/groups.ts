@@ -6,6 +6,7 @@ import {
 } from "fabric"
 
 import { stampDocumentProps } from "@/fabric/document-props"
+import { bakeTextScale, isTextObject } from "@/fabric/text"
 
 /**
  * Single-level grouping (build spec §7, ADR 0003) — the structural commands
@@ -52,6 +53,13 @@ function extractGroup(canvas: Canvas, group: Group): FabricObject[] {
   const slot = canvas.getObjects().indexOf(group)
   canvas.remove(group)
   const children = group.removeAll()
+  // A text child scaled inside the group exits it carrying the folded scale
+  // and a stale font size — bake the scale into the size here, so the size
+  // field (the text's source of truth) reads correctly the moment the
+  // ungroup commits.
+  for (const child of children) {
+    if (isTextObject(child)) bakeTextScale(child)
+  }
   children.forEach((child, i) => canvas.insertAt(slot + i, child))
   return children
 }

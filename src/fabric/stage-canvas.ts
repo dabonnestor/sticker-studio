@@ -47,7 +47,7 @@ import { History } from "@/fabric/history"
 import { DEFAULT_BORDER_COLOR, getShapeKind, restampBorderClip } from "@/fabric/shapes"
 import { SNAP_TOLERANCE_PX, SmartGuides } from "@/fabric/smart-guides"
 import { wireTextInteractions } from "@/fabric/text-interactions"
-import { isTextObject } from "@/fabric/text"
+import { bakeTextScale, isTextObject } from "@/fabric/text"
 import { clampZoomPercent, computeFitZoom } from "@/fabric/zoom"
 
 /**
@@ -1365,6 +1365,19 @@ export function createStageCanvas(
   canvas.on("selection:created", applySelectionChrome)
   canvas.on("selection:updated", applySelectionChrome)
 
+  // A text can still carry a stale scale transform at selection time: a
+  // multi-selection's members get the selection's transform folded into them
+  // when it dissolves (§7), and the fold happens after the gesture's own
+  // commit — so the size readout would lag whatever scale the set was
+  // dragged to. Baking the folded scale the moment the text becomes active
+  // keeps the toolbar's size field the source of truth on every path.
+  const bakeActiveTextScale = () => {
+    const active = canvas.getActiveObject()
+    if (isTextObject(active)) bakeTextScale(active)
+  }
+  canvas.on("selection:created", bakeActiveTextScale)
+  canvas.on("selection:updated", bakeActiveTextScale)
+
   // The document border (envelope-owned, ADR 0002) renders as an inset stroke
   // on the document edge — unlike the shape border, it is inset (§4): the
   // stroke sits inside the edge, so exports (which render only the document
@@ -1455,6 +1468,12 @@ export function createStageCanvas(
   })
   canvas.on("object:modified", (event) => {
     if (event.target) gestureRatios.delete(event.target)
+    // A text corner drag leaves the box carrying the gesture's scale — bake
+    // it into the font size (the toolbar's readout) at the commit boundary.
+    // Registered before the History (constructed last), so its snapshot sees
+    // the baked state and undo/redo restore the size, not the transform.
+    // Plain moves, rotations, and session exits pass through (scale 1).
+    if (isTextObject(event.target)) bakeTextScale(event.target)
   })
 
   // Text (§6): text scales uniformly with the shapes above, and the text
