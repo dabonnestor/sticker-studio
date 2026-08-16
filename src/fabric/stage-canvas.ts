@@ -44,6 +44,7 @@ import {
 } from "@/fabric/document-props"
 import { getTextMeasurer } from "@/fabric/fonts"
 import { History } from "@/fabric/history"
+import { HoverBorder } from "@/fabric/hover-border"
 import { DEFAULT_BORDER_COLOR, getShapeKind, restampBorderClip } from "@/fabric/shapes"
 import { SNAP_TOLERANCE_PX, SmartGuides } from "@/fabric/smart-guides"
 import { wireTextInteractions } from "@/fabric/text-interactions"
@@ -557,11 +558,22 @@ export class StageCanvas extends Canvas {
   /** True while the smart guides painted on the overlay this frame. */
   private guidesPaintedThisFrame = false
 
+  /** True while the hover border painted on the overlay this frame. */
+  private hoverPaintedThisFrame = false
+
   /**
    * Build 9's smart-guides wrapper — created by the stage factory, disposed
    * with the canvas (the canvas-rebuild lifecycle disposes and re-creates).
    */
   smartGuides?: SmartGuides
+
+  /**
+   * The hover-border wrapper — the object under the pointer paints its
+   * selection-style border on the overlay. Created by the stage factory,
+   * disposed with the canvas (the canvas-rebuild lifecycle disposes and
+   * re-creates).
+   */
+  hoverBorder?: HoverBorder
 
   /**
    * Build 4's undo/redo stack — created by the stage factory (the only
@@ -1062,6 +1074,11 @@ export class StageCanvas extends Canvas {
     this.guidesPaintedThisFrame = true
   }
 
+  /** Marks this frame as painting the hover border — the sweep keeps the overlay. */
+  markHoverPainted(): void {
+    this.hoverPaintedThisFrame = true
+  }
+
   /** Erase the workspace overlay — all mirrored paint lives only on it. */
   clearOverlay(): void {
     const ctx = this.marqueeOverlay.getContext("2d")
@@ -1088,10 +1105,12 @@ export class StageCanvas extends Canvas {
       this.marqueePaintedThisFrame ||
       this.controlsPaintedThisFrame ||
       this.guidesPaintedThisFrame ||
+      this.hoverPaintedThisFrame ||
       !!this._activeObject
     this.marqueePaintedThisFrame = false
     this.controlsPaintedThisFrame = false
     this.guidesPaintedThisFrame = false
+    this.hoverPaintedThisFrame = false
     if (!keep) this.clearOverlay()
   }
 
@@ -1150,6 +1169,7 @@ export class StageCanvas extends Canvas {
    */
   override dispose(): Promise<boolean> {
     this.smartGuides?.dispose()
+    this.hoverBorder?.dispose()
     this.history.dispose()
     return super.dispose()
   }
@@ -1408,6 +1428,14 @@ export function createStageCanvas(
   // its after:render painter runs first — the sweep's keep-rule reads the
   // guides-painted flag it sets.
   canvas.smartGuides = new SmartGuides(canvas, { margin: SNAP_TOLERANCE_PX })
+
+  // Hover border: the object under the pointer paints its selection-style
+  // border on the overlay (mouse:over/mouse:out track the target — each
+  // change requests a render, since plain hover moves render nothing —
+  // object:removed clears a ghost, and the after:render painter draws the
+  // border). Constructed before the sweep below so its painter runs first —
+  // the sweep's keep-rule reads the hover-painted flag it sets.
+  canvas.hoverBorder = new HoverBorder(canvas)
 
   // Both mirrors live on the workspace overlay, not on Fabric's canvases
   // (whose bitmaps are the Document's size), so Fabric never clears it. The
