@@ -5,6 +5,7 @@ import { createStageCanvas } from "@/fabric/stage-canvas"
 import { createShape } from "@/fabric/shapes"
 import {
   FIT_MARGIN_PX,
+  WHEEL_ZOOM_SENSITIVITY,
   ZOOM_MAX_PERCENT,
   ZOOM_MIN_PERCENT,
   ZOOM_PRESETS,
@@ -13,6 +14,7 @@ import {
   computeFitZoom,
   rotatedBounds,
   stepZoomPercent,
+  wheelZoomFactor,
 } from "@/fabric/zoom"
 
 /**
@@ -131,6 +133,37 @@ describe("zoom stepping", () => {
 
   it("the fit margin is the fixed 48px", () => {
     expect(FIT_MARGIN_PX).toBe(48)
+  })
+})
+
+/**
+ * The wheel zoom factor (build spec §9 extension): exponential in deltaY — a
+ * pinch gesture's summed deltas ride the same curve as a wheel notch, zooming
+ * in then out returns exactly to the start, and ~100 px per notch lands near
+ * the ±10% keyboard step.
+ */
+describe("wheelZoomFactor", () => {
+  it("zooms in on a negative delta (wheel up / pinch out), out on a positive one", () => {
+    expect(wheelZoomFactor(-100)).toBeGreaterThan(1)
+    expect(wheelZoomFactor(100)).toBeLessThan(1)
+    expect(wheelZoomFactor(0)).toBe(1)
+  })
+
+  it("a mouse-wheel notch (≈100 px) lands near the ±10% keyboard step", () => {
+    expect(wheelZoomFactor(-100)).toBeCloseTo(1.1052, 4)
+    expect(wheelZoomFactor(100)).toBeCloseTo(0.9048, 4)
+  })
+
+  it("the round trip is exact — zooming out undoes zooming in", () => {
+    expect(wheelZoomFactor(-150) * wheelZoomFactor(150)).toBeCloseTo(1, 10)
+  })
+
+  it("is exponential, not additive — double the delta multiplies the factor by itself", () => {
+    expect(wheelZoomFactor(-200)).toBeCloseTo(wheelZoomFactor(-100) ** 2, 6)
+  })
+
+  it("the sensitivity is the fixed constant", () => {
+    expect(WHEEL_ZOOM_SENSITIVITY).toBe(0.001)
   })
 })
 
@@ -262,6 +295,43 @@ describe("StageCanvas zoom", () => {
     // The round trip returns to the centered scroll — the anchor is stable.
     canvas.setZoomPercent(100, true)
     expect(workspace.scrollLeft).toBeCloseTo(0, 10)
+  })
+
+  it("zooms about the scene point under the pointer — the anchor stays put", () => {
+    // jsdom's getBoundingClientRect is all zeros, so the client point equals
+    // the workspace point. At 100% the workspace point (500, 350) — the
+    // center — maps to the Document center (300, 300): offset (200, 50),
+    // scroll 0. Zooming to 200%: the content grows to 1200×1200, the offset
+    // drops to 0, and the scroll re-anchors so the same scene point stays
+    // under the pointer on both axes.
+    canvas.setZoomPercentAboutClientPoint(200, 500, 350)
+    expect(canvas.getZoomPercent()).toBe(200)
+    expect(workspace.scrollLeft).toBeCloseTo(100, 10) // 300·2 − 500
+    expect(workspace.scrollTop).toBeCloseTo(250, 10) // 300·2 − 350
+    // The round trip returns to the centered scroll — the anchor is stable.
+    canvas.setZoomPercentAboutClientPoint(100, 500, 350)
+    expect(workspace.scrollLeft).toBeCloseTo(0, 10)
+    expect(workspace.scrollTop).toBeCloseTo(0, 10)
+  })
+
+  it("a point-anchored zoom clamps to the range and notifies like any zoom", () => {
+    const listener = vi.fn()
+    canvas.onZoomChanged = listener
+    canvas.setZoomPercentAboutClientPoint(5, 500, 350)
+    expect(canvas.getZoomPercent()).toBe(ZOOM_MIN_PERCENT)
+    canvas.setZoomPercentAboutClientPoint(900, 500, 350)
+    expect(canvas.getZoomPercent()).toBe(ZOOM_MAX_PERCENT)
+    expect(listener).toHaveBeenCalledTimes(2)
+  })
+
+  it("without a workspace, a point-anchored zoom falls back to the plain set", () => {
+    const bare = createStageCanvas(
+      document.createElement("canvas"),
+      document.createElement("canvas"),
+    )
+    bare.setZoomPercentAboutClientPoint(150, 300, 300)
+    expect(bare.getZoomPercent()).toBe(150)
+    void bare.dispose()
   })
 
   it("fit on load — always-fit into the workspace minus the 48px margin, centered", () => {

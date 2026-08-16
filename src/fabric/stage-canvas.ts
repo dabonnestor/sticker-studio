@@ -606,10 +606,46 @@ export class StageCanvas extends Canvas {
     this.zoomPercentValue = clampZoomPercent(percent)
     this.applyZoomLayout()
     if (anchor && this.workspaceEl) {
-      const scroll = this.scrollForCenterScenePoint(anchor)
+      const workspace = this.getWorkspaceSize()
+      const scroll = this.scrollForScenePoint(
+        anchor,
+        workspace.width / 2,
+        workspace.height / 2,
+      )
       this.workspaceEl.scrollLeft = scroll.x
       this.workspaceEl.scrollTop = scroll.y
     }
+    this.onZoomChanged?.()
+  }
+
+  /**
+   * Set the zoom about the scene point under the client point (build spec §9
+   * extension — the wheel zoom): the anchor the touchpad pinch and Ctrl+wheel
+   * zoom about — the scene point under the pointer stays put as the layout
+   * changes. The workspace's own rect maps the client point in, so the caller
+   * passes page coordinates unchanged. Same view-state contract as
+   * `setZoomPercent`; without a workspace (tests) there is no pointer to map,
+   * so the plain set is the fallback.
+   */
+  setZoomPercentAboutClientPoint(
+    percent: number,
+    clientX: number,
+    clientY: number,
+  ): void {
+    const workspaceEl = this.workspaceEl
+    if (!workspaceEl) {
+      this.setZoomPercent(percent)
+      return
+    }
+    const rect = workspaceEl.getBoundingClientRect()
+    const workspaceX = clientX - rect.left
+    const workspaceY = clientY - rect.top
+    const anchor = this.scenePointAt(workspaceX, workspaceY)
+    this.zoomPercentValue = clampZoomPercent(percent)
+    this.applyZoomLayout()
+    const scroll = this.scrollForScenePoint(anchor, workspaceX, workspaceY)
+    workspaceEl.scrollLeft = scroll.x
+    workspaceEl.scrollTop = scroll.y
     this.onZoomChanged?.()
   }
 
@@ -663,12 +699,21 @@ export class StageCanvas extends Canvas {
   getViewportCenterScenePoint(): Point {
     if (!this.workspaceEl) return this.getVpCenter()
     const workspace = this.getWorkspaceSize()
+    return this.scenePointAt(workspace.width / 2, workspace.height / 2)
+  }
+
+  /**
+   * The scene point at a workspace position — the general form of the
+   * center-anchor above: the anchor the point-anchored zoom keeps fixed (§9
+   * extension) is whatever scene point sits under the pointer.
+   */
+  private scenePointAt(workspaceX: number, workspaceY: number): Point {
     const offset = this.getElementOffset()
     const scroll = this.getScroll()
     const z = this.zoomPercentValue / 100
     return new Point(
-      (workspace.width / 2 - offset.x + scroll.x) / z,
-      (workspace.height / 2 - offset.y + scroll.y) / z,
+      (workspaceX - offset.x + scroll.x) / z,
+      (workspaceY - offset.y + scroll.y) / z,
     )
   }
 
@@ -737,20 +782,26 @@ export class StageCanvas extends Canvas {
       : { x: 0, y: 0 }
   }
 
-  /** The scroll that puts the given scene point at the workspace center — the
-   * zoom-about-center re-anchor (§9), clamped to the scroll range. */
-  private scrollForCenterScenePoint(scene: Point): { x: number; y: number } {
+  /** The scroll that puts the given scene point at the given workspace
+   * position — the zoom re-anchor (§9 and its wheel-zoom extension), clamped
+   * to the scroll range. The center-anchor zooms pass the workspace center;
+   * the wheel zoom passes the pointer's position. */
+  private scrollForScenePoint(
+    scene: Point,
+    workspaceX: number,
+    workspaceY: number,
+  ): { x: number; y: number } {
     const workspace = this.getWorkspaceSize()
     const content = this.getContentSize()
     const offset = this.getElementOffset()
     const z = this.zoomPercentValue / 100
     return {
       x: this.clampScroll(
-        scene.x * z + offset.x - workspace.width / 2,
+        scene.x * z + offset.x - workspaceX,
         content.width - workspace.width,
       ),
       y: this.clampScroll(
-        scene.y * z + offset.y - workspace.height / 2,
+        scene.y * z + offset.y - workspaceY,
         content.height - workspace.height,
       ),
     }

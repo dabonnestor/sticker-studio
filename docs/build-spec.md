@@ -8,7 +8,7 @@ A Sticker Mule Studio-like client-side editor: a Fabric.js canvas where the desi
 
 **In scope (MVP)**: shapes (Square, Circle, Rectangle, Oval, Triangle), text, image placement, selection & single-level grouping, undo/redo, zoom/viewport, JSON save/import, export to PNG/JPEG/PDF/SVG at 300 DPI (raster), document rotation.
 
-**Explicitly out of scope**: bleed/dieline/cut marks (the canvas shape is the cut line), layers panel, per-run rich text, preset size lists, vector PDF, wheel zoom/pan, multi-page layouts, text-on-curve, custom-shape drawing, collaboration, accounts, cross-session undo history, image editing (crop/filter), any backend/database. See the map's Out of scope list for the full record.
+**Explicitly out of scope**: bleed/dieline/cut marks (the canvas shape is the cut line), layers panel, per-run rich text, preset size lists, vector PDF, multi-page layouts, text-on-curve, custom-shape drawing, collaboration, accounts, cross-session undo history, image editing (crop/filter), any backend/database. See the map's Out of scope list for the full record.
 
 ## 2. Stack & architecture
 
@@ -116,6 +116,7 @@ Sourced from ticket #12; glossary terms **Zoom** and **Fit**.
 - **Mechanism**: Fabric `viewportTransform` — `canvas.setZoom()` / `zoomToPoint()`. Pointer mapping, control rendering, text-edit textarea positioning, and retina (`enableRetinaScaling`) are native Fabric. Scrollbars are the only adapter: the workspace wrapper scrolls, and the viewport translate is derived from scroll offsets — `setViewportTransform([z, 0, 0, z, -scrollX, -scrollY])`. **100% = 1 doc px = 1 CSS px at any DPR.**
 - **Fit**: always-fit — scales the whole Document (rotated bounds) up or down into the workspace minus a fixed 48 px margin; **Fit is the default zoom on load**.
 - **Range / step / anchor**: 10%–800%; Ctrl+= / Ctrl+− step ±10% about the viewport center; the % readout shows rounded integers.
+- **Wheel zoom** (§9 extension): Ctrl+wheel and the touchpad pinch — both arrive as ctrlKey wheel events — zoom about the pointer via an exponential factor (≈10% per mouse-wheel notch, Chrome's coalesced deltas summed per gesture), clamped to the range; a plain wheel keeps the native scroll-driven pan.
 - **Presets**: Fit, 100%, 150%, 200%.
 - **Resize**: workspace resize re-centers at the current zoom; when the canvas no longer fits, scrollbars appear with the scroll position clamped; resize never re-fits.
 - **Control surface (bottom bar)**: `− [% ▾] + [slider]` — −/+ step 10%, the % readout opens the preset dropdown, the slider spans the range. **Ctrl+0 = Fit**.
@@ -170,6 +171,7 @@ Inter, Work Sans, Barlow, Lora, Playfair Display, Bebas Neue, Anton, Pacifico, D
 |---|---|
 | Ctrl+Z / Ctrl+Y | undo / redo (in a text session: field-local) |
 | Ctrl+= / Ctrl+− | zoom ±10% about the viewport center |
+| Ctrl+wheel / touchpad pinch | zoom about the pointer |
 | Ctrl+0 | Fit |
 | Ctrl+A | select all |
 | Ctrl+G / Ctrl+Shift+G | group / ungroup |
@@ -215,7 +217,7 @@ Suggested session boundaries (each session builds against this spec, one module 
 - [ ] Undo/redo walks every boundary type; redo clears on new edit; selection restored by id; depth capped at 100.
 - [ ] Selection: click/shift/marquee (intersect, empty-canvas start incl. clipped areas)/click-empty/Ctrl+A; locked objects selectable but inert; Del skips them.
 - [ ] Group: ≥2 required; single level; flatten-on-group; enter via double-click; children fixed; exit click-empty/Escape; arrange/flip/lock per §7; one z-order slot; serialization round-trips (ADR 0002).
-- [ ] Zoom: Fit on load; 10–800%; presets; Ctrl+=/−/0; scrollbars drive translate; resize clamps, never re-fits.
+- [ ] Zoom: Fit on load; 10–800%; presets; Ctrl+=/−/0; scrollbars drive translate; resize clamps, never re-fits; Ctrl+wheel / touchpad pinch zooms about the pointer.
 - [ ] Save → JSON envelope v1; Import validates loudly (unknown types rejected); import is undoable.
 - [ ] Export: all four formats at 300 DPI (3.125 multiplier), document rotation applied, text flushed first, fonts ready awaited, 8192 px ceiling enforced, naming per spec.
 - [ ] Every hotkey in §13 works; text-session keys never leak to the document stack.

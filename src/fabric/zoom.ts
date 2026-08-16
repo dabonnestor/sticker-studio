@@ -18,6 +18,24 @@ export const ZOOM_MAX_PERCENT = 800
 export const ZOOM_STEP_PERCENT = 10
 
 /**
+ * Wheel zoom sensitivity (build spec §9 extension — the wheel zoom): the
+ * exponent per CSS px of deltaY. A mouse-wheel notch is ≈100 px, so one notch
+ * zooms e^0.1 ≈ +10.5% — close to the ±10% keyboard step — and a pinch
+ * gesture's summed deltas ride the same curve.
+ */
+export const WHEEL_ZOOM_SENSITIVITY = 0.001
+
+/**
+ * The zoom factor a wheel deltaY applies (build spec §9 extension — Ctrl+wheel
+ * and the touchpad pinch): exponential, so zooming in then out returns exactly
+ * to the start (the factors multiply to 1), and the feel is proportional at
+ * every zoom level. A negative delta (wheel up, pinch out) zooms in.
+ */
+export function wheelZoomFactor(deltaY: number): number {
+  return Math.exp(-deltaY * WHEEL_ZOOM_SENSITIVITY)
+}
+
+/**
  * Fit margin (build spec §9) — the whole Document fits inside the workspace
  * minus a fixed 48 px margin on every side: the fit zoom scales the Document
  * so its centered box leaves exactly this margin at rest.

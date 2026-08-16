@@ -2,6 +2,7 @@ import { useEffect, useRef, type MouseEvent } from "react"
 
 import { useStage } from "@/components/stage-context"
 import { createStageCanvas, StageCanvas } from "@/fabric/stage-canvas"
+import { wheelZoomFactor } from "@/fabric/zoom"
 import { exposeStageCanvas } from "@/lib/dev"
 
 /** The previous canvas's async dispose, awaited before re-creating (§14). */
@@ -30,6 +31,42 @@ export function Stage() {
 
     let resizeObserver: ResizeObserver | null = null
 
+    /**
+     * Wheel zoom (§9 extension): a touchpad pinch and Ctrl+wheel both arrive
+     * as wheel events with ctrlKey — the browser's page-zoom gesture. The
+     * preventDefault stops the page zoom, and the zoom anchors at the pointer
+     * (setZoomPercentAboutClientPoint). A plain wheel keeps the native
+     * scroll-driven pan. The listener is native with `passive: false` — React's
+     * synthetic onWheel is passive at the root, where preventDefault would not
+     * stick. Chrome coalesces the pinch's fine-grained deltas; the event's own
+     * delta is their sum, so the single-event fallback reads the same value.
+     * Firefox reports wheel notches as lines — converted to px, so the notch
+     * lands near the ±10% keyboard step on both.
+     */
+    const onWheel = (event: WheelEvent) => {
+      if (!event.ctrlKey) return
+      event.preventDefault()
+      // The DOM lib's WheelEvent predates the method — the Chromium API is
+      // the same event type, so the cast only widens the declaration.
+      const coalesced =
+        (
+          event as WheelEvent & {
+            getCoalescedEvents?: () => WheelEvent[]
+          }
+        ).getCoalescedEvents?.() ?? [event]
+      let deltaY = 0
+      for (const e of coalesced) {
+        deltaY += e.deltaMode === 1 ? e.deltaY * 16 : e.deltaY
+      }
+      if (!canvas) return
+      const percent = canvas.getZoomPercent() * wheelZoomFactor(deltaY)
+      canvas.setZoomPercentAboutClientPoint(
+        percent,
+        event.clientX,
+        event.clientY,
+      )
+    }
+
     const mount = async () => {
       // `dispose` is async in Fabric 7 (build spec §14): when its destroy is
       // deferred behind a pending render, the next mount must wait for it
@@ -48,12 +85,14 @@ export function Stage() {
         resizeObserver = new ResizeObserver(() => canvas!.recenter())
         resizeObserver.observe(workspace)
       }
+      workspace.addEventListener("wheel", onWheel, { passive: false })
     }
     void mount()
 
     return () => {
       cancelled = true
       resizeObserver?.disconnect()
+      workspace.removeEventListener("wheel", onWheel)
       registerCanvas(null)
       exposeStageCanvas(null)
       pendingDispose.current = canvas
