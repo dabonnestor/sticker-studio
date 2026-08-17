@@ -7,10 +7,16 @@ import {
   groupObjects,
   isGroup,
   isGrouped,
+  refitParentGroup,
   ungroupObjects,
 } from "@/fabric/groups"
 import { createShape } from "@/fabric/shapes"
-import { TEXT_DEFAULT_FONT_SIZE, createText, isTextObject } from "@/fabric/text"
+import {
+  TEXT_DEFAULT_FONT_SIZE,
+  applyTextProps,
+  createText,
+  isTextObject,
+} from "@/fabric/text"
 import { createStageCanvas } from "@/fabric/stage-canvas"
 
 // The app registers the document custom properties at startup (main.tsx);
@@ -276,5 +282,91 @@ describe("grouping — group / ungroup", () => {
     const flat = flattenGroups(canvas, [a, group])
     expect(flat.map((obj) => obj.id)).toEqual([a.id, b.id, c.id])
     expect(canvas.getObjects()).toHaveLength(3)
+  })
+})
+
+/**
+ * refitParentGroup (the group-clip regression) — an edit that changes a
+ * child's size (a text property commit, a border-width change, an auto-fit
+ * re-hug) re-fits the parent group to its children's current bounds. Fabric
+ * re-fits a group only on child *gesture* events (`changed`, `modified`, …);
+ * a toolbar property commit fires none, so the group stays sized to the
+ * pre-edit child and the grown child renders past the group's cached bounds
+ * — clipped at the cache canvas edge. The re-fit hugs the group to the grown
+ * child while every child keeps its world position.
+ */
+describe("refitParentGroup — a child edit re-fits the group, never clipping it", () => {
+  let canvas: ReturnType<typeof createStageCanvas>
+
+  beforeEach(() => {
+    canvas = createStageCanvas(
+      document.createElement("canvas"),
+      document.createElement("canvas"),
+    )
+  })
+
+  afterEach(async () => {
+    await canvas.dispose()
+  })
+
+  it("a grown text child re-fits the group to hug it — children keep their world positions", () => {
+    // Square 192 px at center 0 (−96..96); text "Text" (42 px at 24 px) at
+    // center 250. The group hugs the union: −96..271-ish (the +1 is the
+    // text's phantom Fabric stroke width in the fit math) → 367.5.
+    // The measurer scales with the size — 10 px per char at 24 px — so a
+    // size commit grows the box like a real font would.
+    const measure = (s: string, style: { fontSize: number }) =>
+      s.length * 10 * (style.fontSize / 24)
+    const shape = createShape("square")
+    shape.set({ left: 0, top: 0 })
+    const text = createText(measure)
+    text.set({ left: 250, top: 0 })
+    canvas.add(shape, text)
+    const group = groupObjects(canvas, [shape, text])!
+    const widthBefore = group.width
+    expect(widthBefore).toBeCloseTo(367.5, 6)
+
+    // The commit grows the box (the auto-fit re-hug: 4 × 20 + 2 = 82) but
+    // fires no gesture event — the group stays at the pre-edit size, which
+    // is the clipping state.
+    applyTextProps(text, { fontSize: 48 }, measure)
+    expect(text.width).toBe(82)
+    expect(group.width).toBeCloseTo(widthBefore, 6)
+
+    // The refit's contract: the group grows *around* the children — capture
+    // their positions at refit time (applyTextProps pinned the top edge, so
+    // the grown box's center legitimately sits lower by Δh/2) and assert the
+    // re-fit moves nobody.
+    const textCenter = text.getCenterPoint()
+    const shapeCenter = shape.getCenterPoint()
+    refitParentGroup(text)
+    // The group grew by half the box's width delta (82 − 42)/2 = 20 — the
+    // square pins the left edge, the growth extends the right.
+    expect(group.width).toBeCloseTo(387.5, 6)
+    expect(group.width - widthBefore).toBeCloseTo(20, 6)
+    expect(text.getCenterPoint().x).toBeCloseTo(textCenter.x, 6)
+    expect(text.getCenterPoint().y).toBeCloseTo(textCenter.y, 6)
+    expect(shape.getCenterPoint().x).toBeCloseTo(shapeCenter.x, 6)
+    expect(shape.getCenterPoint().y).toBeCloseTo(shapeCenter.y, 6)
+  })
+
+  it("a top-level object is its own bounds — a no-op", () => {
+    const obj = createShape("square")
+    obj.set({ left: 0, top: 0 })
+    canvas.add(obj)
+    expect(() => refitParentGroup(obj)).not.toThrow()
+    expect(obj.left).toBe(0)
+  })
+
+  it("an ActiveSelection member is not a document-Group child — a no-op", () => {
+    const a = createShape("square")
+    a.set({ left: 0, top: 0 })
+    const b = createShape("circle")
+    b.set({ left: 200, top: 0 })
+    canvas.add(a, b)
+    const selection = new ActiveSelection([a, b], { canvas })
+    const width = selection.width
+    expect(() => refitParentGroup(a)).not.toThrow()
+    expect(selection.width).toBe(width)
   })
 })

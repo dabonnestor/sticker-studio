@@ -18,7 +18,12 @@ import {
   type ArrangeCommand,
 } from "@/fabric/arrange"
 import { flipObjects, type FlipCommand } from "@/fabric/flip"
-import { groupObjects, isGrouped, ungroupObjects } from "@/fabric/groups"
+import {
+  groupObjects,
+  isGrouped,
+  refitParentGroup,
+  ungroupObjects,
+} from "@/fabric/groups"
 import {
   DOCUMENT_BACKGROUND_COLOR,
   DOCUMENT_BORDER_COLOR,
@@ -463,6 +468,9 @@ export function StageProvider({ children }: { children: ReactNode }) {
       const obj = canvas.getActiveObjects()[0]
       if (!isTextObject(obj)) return
       applyTextProps(obj, patch, getTextMeasurer())
+      // A size-affecting commit (family/size/spacing) re-hugged the box — a
+      // group sized to the pre-edit child would clip it (see refitParentGroup).
+      refitParentGroup(obj)
       canvas.requestRenderAll()
       setSelection(canvas.getActiveObjects())
       // The family/weight dropdown hover previews apply without recording —

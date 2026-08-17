@@ -1,7 +1,8 @@
 import { Circle, Ellipse, Group, Rect, Triangle, util } from "fabric"
-import { describe, expect, it } from "vitest"
+import { afterEach, beforeEach, describe, expect, it } from "vitest"
 
 import { registerCustomProperties } from "@/fabric/custom-properties"
+import { groupObjects } from "@/fabric/groups"
 import {
   DEFAULT_BORDER_COLOR,
   createShape,
@@ -12,6 +13,7 @@ import {
   setBorderWidth,
   setFillColor,
 } from "@/fabric/shapes"
+import { createStageCanvas } from "@/fabric/stage-canvas"
 
 /**
  * Shape model (build spec §4, §5). Default sizes are inches-specified
@@ -329,6 +331,52 @@ describe("shape model", () => {
       expect(revived.clipPath).toBeInstanceOf(Triangle)
       // the grown clip survives — at ×2 the extension is 8/2 = 4 local px
       expect((revived.clipPath as Triangle).width).toBe(292)
+    })
+  })
+
+  describe("grouped shapes — an edit re-fits the group, never clipping it (regression)", () => {
+    let canvas: ReturnType<typeof createStageCanvas>
+
+    beforeEach(() => {
+      canvas = createStageCanvas(
+        document.createElement("canvas"),
+        document.createElement("canvas"),
+      )
+    })
+
+    afterEach(async () => {
+      await canvas.dispose()
+    })
+
+    /** Two 192 px squares at 0..192 and 204..396, grouped. */
+    function groupedSquares() {
+      const a = createShape("square")
+      a.set({ left: 0, top: 0 })
+      const b = createShape("square")
+      b.set({ left: 300, top: 0 })
+      canvas.add(a, b)
+      const group = groupObjects(canvas, [a, b])!
+      return { a, b, group }
+    }
+
+    it("a border-width change re-fits the group — the border renders past the cut edge", () => {
+      const { a, group } = groupedSquares()
+      const widthBefore = group.width
+      setBorderWidth(a, 20)
+      // The stroke is centered on the cut — the group hugs the full border
+      // (half a stroke beyond the cut on the outer side) instead of clipping
+      // it at the pre-edit bounds.
+      expect(group.width).toBeCloseTo(widthBefore + 10, 6)
+    })
+
+    it("a cut-size change re-fits the group — the scaled shape is never clipped", () => {
+      const { a, group } = groupedSquares()
+      const widthBefore = group.width
+      resizeToCut(a, { width: 500, height: 192 })
+      // a's cut grows to ±250 around its center (0) — past b's right edge
+      // (396) — and the group hugs the new union, -250..396.
+      expect(group.width).toBeCloseTo(646, 6)
+      expect(group.width).toBeGreaterThan(widthBefore)
     })
   })
 })

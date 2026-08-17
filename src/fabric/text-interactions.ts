@@ -1,5 +1,6 @@
 import type { Canvas, Textbox } from "fabric"
 
+import { refitParentGroup } from "@/fabric/groups"
 import {
   TEXT_DEFAULT_STRING,
   fitToContent,
@@ -73,7 +74,12 @@ export function commitTextSession(
 ): void {
   if (obj.text === "") obj.set("text", TEXT_DEFAULT_STRING)
   forceUppercase(obj)
-  if (obj.autoFit) fitToContent(obj, measure)
+  if (obj.autoFit) {
+    fitToContent(obj, measure)
+    // The re-hug grew the box — a group sized to the pre-session text would
+    // clip it (see refitParentGroup). A top-level text is its own bounds.
+    refitParentGroup(obj)
+  }
 }
 
 /**
@@ -167,7 +173,14 @@ export function wireTextInteractions(
     // creation width. Once a manual resize has turned autoFit off the user
     // owns the width, and the re-fit stops.
     const onTextChanged = () => {
-      if (obj.autoFit) fitToContent(obj, measure)
+      if (obj.autoFit) {
+        fitToContent(obj, measure)
+        // Fabric's own `changed` (the group layout trigger) fires before the
+        // re-hug, so the group hugs the pre-fit width — re-fit it to the
+        // grown box, or the group clips the new text on this very frame (see
+        // refitParentGroup). A top-level text is its own bounds.
+        refitParentGroup(obj)
+      }
     }
     canvas.on("text:changed", onTextChanged)
 

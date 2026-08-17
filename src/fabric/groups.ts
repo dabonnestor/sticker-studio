@@ -42,6 +42,26 @@ export function isGrouped(obj: FabricObject): boolean {
 }
 
 /**
+ * Re-fit the parent group to its children's current bounds after an edit
+ * that changed a child's size (a text property commit, a border-width
+ * change, an auto-fit re-hug). The group's bounds are computed at group time
+ * and Fabric re-fits them only on child *gesture* events (`changed`,
+ * `modified`, …) — a toolbar property commit fires none, so the group stays
+ * sized to the pre-edit child, and the grown child renders past the group's
+ * cached bounds: clipped at the cache canvas edge. `triggerLayout` (the
+ * fit-content layout) re-measures the union bounds and shifts the group so
+ * every child keeps its world position. A no-op outside a group — top-level
+ * objects are already their own bounds, and ActiveSelection members are the
+ * selection's, not a document Group's (§7 Q5).
+ */
+export function refitParentGroup(obj: FabricObject): void {
+  const group = obj.group
+  if (group instanceof Group && !(group instanceof ActiveSelection)) {
+    group.triggerLayout()
+  }
+}
+
+/**
  * Dissolve one group in place: the group leaves its z-slot and its children
  * land in that same slot, internal order preserved. The exit bakes the
  * group's transform into each child (`removeAll` → `_onObjectRemoved` →

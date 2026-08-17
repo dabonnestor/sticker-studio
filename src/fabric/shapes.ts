@@ -7,6 +7,7 @@ import {
 } from "fabric"
 
 import { stampDocumentProps } from "@/fabric/document-props"
+import { refitParentGroup } from "@/fabric/groups"
 
 /**
  * Shape model (build spec §4, §5). One Fabric object per shape:
@@ -172,6 +173,9 @@ export function setBorderWidth(obj: FabricObject, width: number): void {
   const stroke = Math.min(width, Math.min(cut.width, cut.height))
   obj.set("strokeWidth", stroke)
   restampBorderClip(obj)
+  // The border renders past the cut edge — a group sized to the pre-edit
+  // child would clip the thicker border (see refitParentGroup).
+  refitParentGroup(obj)
 }
 
 /**
@@ -186,10 +190,16 @@ export function restampBorderClip(obj: FabricObject): void {
   const clip = obj.clipPath
   if (!clip) return
   const half = obj.strokeWidth / 2
+  // The shape's own geometry extends the clip — `radius`/`rx`/`ry` exist
+  // only on the circle/ellipse classes; the base FabricObject type is
+  // geometry-agnostic, so the shape narrows to the kind matching its clip.
   if (clip instanceof Circle) {
-    clip.set("radius", obj.radius + half / obj.scaleX)
+    clip.set("radius", (obj as Circle).radius + half / obj.scaleX)
   } else if (clip instanceof Ellipse) {
-    clip.set({ rx: obj.rx + half / obj.scaleX, ry: obj.ry + half / obj.scaleY })
+    clip.set({
+      rx: (obj as Ellipse).rx + half / obj.scaleX,
+      ry: (obj as Ellipse).ry + half / obj.scaleY,
+    })
   } else {
     clip.set({
       width: obj.width + obj.strokeWidth / obj.scaleX,
@@ -210,6 +220,10 @@ export function resizeToCut(obj: FabricObject, target: CutExtent): void {
     scaleY: obj.scaleY * (target.height / cut.height),
   })
   restampBorderClip(obj)
+  // A group sized to the pre-edit child would clip the scaled cut (see
+  // refitParentGroup) — the size edit is a property commit, no gesture
+  // event for the group's layout to re-fit on.
+  refitParentGroup(obj)
 }
 
 /** Set the shape background — the object's fill (§4: fill = background). */

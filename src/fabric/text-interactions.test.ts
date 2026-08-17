@@ -1,8 +1,10 @@
-import { Canvas, Textbox } from "fabric"
+import { Canvas, Textbox, type Object as FabricObject } from "fabric"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
 
+import { groupObjects } from "@/fabric/groups"
+import { createShape } from "@/fabric/shapes"
 import { createText, fitTextWidth, type TextMeasurer } from "@/fabric/text"
-import { wireTextInteractions } from "@/fabric/text-interactions"
+import { commitTextSession, wireTextInteractions } from "@/fabric/text-interactions"
 
 /**
  * Text interaction wiring (build spec §6) — driven end-to-end on a real
@@ -216,5 +218,73 @@ describe("wireTextInteractions — session lifecycle", () => {
     type("world")
     pressKey("Enter", 13, { ctrlKey: true }) // commit
     expect(textbox.text).toBe("world")
+  })
+})
+
+/**
+ * The group-clip regression — a text child inside a group re-fits the parent
+ * group when its auto-fit re-hugs the box. Fabric re-fits a group on the
+ * child's `changed` (per keystroke) *before* the app's live re-hug, and on
+ * `modified` after the session exit — so without the explicit re-fit, the
+ * group stays sized to the pre-fit box and the grown text renders clipped at
+ * the group's cached bounds.
+ */
+describe("wireTextInteractions — grouped text never clips", () => {
+  let canvas: Canvas
+  let textbox: Textbox
+
+  /** Square 0..192 + text "Text" (42 px) at center 250 → 229..271, grouped. */
+  function groupedTextbox(): { textbox: Textbox; group: FabricObject } {
+    const shape = createShape("square")
+    shape.set({ left: 0, top: 0 })
+    textbox = createText(measure)
+    textbox.set({ left: 250, top: 0 })
+    canvas.add(shape, textbox)
+    const group = groupObjects(canvas, [shape, textbox], measure)!
+    return { textbox, group }
+  }
+
+  beforeEach(() => {
+    canvas = new Canvas(document.createElement("canvas"), {
+      width: 600,
+      height: 600,
+    })
+    wireTextInteractions(canvas, measure)
+  })
+
+  afterEach(async () => {
+    await canvas.dispose()
+  })
+
+  it("typing inside a group re-fits the group to the re-hugged box — the growth is never clipped", () => {
+    const { textbox, group } = groupedTextbox()
+    const widthBefore = group.width
+    textbox.enterEditing()
+    const ta = textbox.hiddenTextarea
+    if (!ta) throw new Error("no textarea — not editing")
+    // One keystroke: the input syncs into the box, and the wiring re-fits
+    // the group after Fabric's own `changed` layout — the box's live re-hug
+    // happens after that layout, so without the re-fit the group would sit
+    // at the pre-keystroke width and clip the growth.
+    ta.value = "hello"
+    ta.selectionStart = ta.selectionEnd = 5
+    ta.dispatchEvent(new Event("input", { bubbles: true }))
+    expect(textbox.width).toBe(52) // 5 × 10 + 2 — the box re-hugged live
+    // The union grows on the box's side only: the square pins the left edge
+    // (the +1 is the text's phantom Fabric stroke width, in the fit math),
+    // so the group grows by half the box's width delta — 10/2.
+    expect(group.width - widthBefore).toBeCloseTo(5, 6)
+    expect(group.width).toBeGreaterThan(widthBefore)
+  })
+
+  it("a session commit on a grouped text re-fits the group — the re-hug is not clipped", () => {
+    const { textbox, group } = groupedTextbox()
+    const widthBefore = group.width
+    textbox.set("text", "hello") // wraps at the old width — the commit re-fits
+    commitTextSession(textbox, measure)
+    expect(textbox.width).toBe(52)
+    // Same half-width growth as the keystroke path.
+    expect(group.width - widthBefore).toBeCloseTo(5, 6)
+    expect(group.width).toBeGreaterThan(widthBefore)
   })
 })
