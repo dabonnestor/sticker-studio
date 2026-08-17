@@ -128,29 +128,29 @@ describe("uniform scaling", () => {
     expect(shape.strokeWidth).toBe(8) // the border itself never thickened
   })
 
-  it("scales text uniformly like a shape and hands the width to the user", () => {
+  it("scales text uniformly like a shape — a corner scale keeps auto-fit (a size change, not a width handoff)", () => {
     const text = createText()
     canvas.add(text)
     text.set({ scaleX: 1.5, scaleY: 0.5 }) // gesture start — the ratio
     scale(text)
-    text.set({ scaleX: 3 }) // later tick — scaleY derives, auto-fit stops
+    text.set({ scaleX: 3 }) // later tick — scaleY derives; auto-fit survives
     scale(text)
     expect(text.scaleX / text.scaleY).toBeCloseTo(3, 10)
     expect(text.scaleY).toBeCloseTo(1, 10)
-    expect(text.autoFit).toBe(false)
+    expect(text.autoFit).toBe(true)
   })
 
   it("a committed text scale bakes into the size — the toolbar readout follows the corner drag", () => {
     const text = createText()
     canvas.add(text)
-    const width = text.width
     text.set({ scaleX: 2, scaleY: 2 }) // the corner drag's committed scale
     canvas.fire("object:modified", { target: text } as never)
     // The size field is the text's source of truth (§6): the gesture folds
-    // into fontSize, the wrap width scales with it, and the transform
-    // resets — no stale scale is left on the object.
+    // into fontSize, the box re-hugs its content at the new size (the stub
+    // measurer: 4 chars × 10 + 2 = 42 — not the proportional 2 × width),
+    // and the transform resets — no stale scale is left on the object.
     expect(text.fontSize).toBe(TEXT_DEFAULT_FONT_SIZE * 2)
-    expect(text.width).toBe(width * 2)
+    expect(text.width).toBe(42)
     expect(text.scaleX).toBe(1)
     expect(text.scaleY).toBe(1)
   })

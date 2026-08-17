@@ -213,8 +213,9 @@ export function forceUppercase(obj: Textbox): void {
 /**
  * Apply a text-property patch to the object (§6). Commits go through
  * `set()` — Fabric re-measures text layout and marks the object dirty.
- * Auto-fit survives family/size changes: while the box has never been
- * manually resized it still hugs its content, so the width re-fits.
+ * Auto-fit survives family/size/letter-spacing changes: while the box has
+ * never been manually resized it still hugs its content, so the width
+ * re-fits (the spacing widens the measured longest line).
  *
  * The top edge is pinned across the whole commit: a family/size/line-height
  * set re-wraps the box against the current width, and a changed line count
@@ -266,7 +267,9 @@ export function applyTextProps(
   if (
     measure &&
     obj.autoFit &&
-    (patch.fontFamily !== undefined || patch.fontSize !== undefined)
+    (patch.fontFamily !== undefined ||
+      patch.fontSize !== undefined ||
+      patch.charSpacing !== undefined)
   ) {
     fitToContent(obj, measure)
   }
@@ -286,12 +289,21 @@ export function applyTextProps(
  * top edge is pinned across the re-measure, like `applyTextProps`. No-op at
  * scale 1 — moves, rotations, and plain session commits pass through.
  *
+ * While the box still auto-fits, the width re-hugs the content at the folded
+ * size instead of keeping the proportional width: a corner scale is a size
+ * change, like a toolbar size commit — the proportional width only
+ * approximates the fit (the size rounds down), and a scale-down would leave
+ * the box a hair short of the text, wrapping it. A wrap box (autoFit off —
+ * the wrap-width drag handed the width over) keeps its manual width,
+ * scaled. Without a measurer (model callers, tests) the proportional width
+ * stays.
+ *
  * The factor is the geometric mean of the two axes (absolute — a flip
  * mirrors one): uniform corner gestures keep them equal, while a text folded
  * out of a scaled group can carry a matrix whose per-axis decomposition
  * differs, and the mean is the size that preserves the glyph area.
  */
-export function bakeTextScale(obj: Textbox): void {
+export function bakeTextScale(obj: Textbox, measure?: TextMeasurer): void {
   if (obj.scaleX === 1 && obj.scaleY === 1) return
   const s = Math.sqrt(Math.abs(obj.scaleX * obj.scaleY))
   const top = obj.getPositionByOrigin(obj.originX, "top")
@@ -301,6 +313,7 @@ export function bakeTextScale(obj: Textbox): void {
     scaleX: 1,
     scaleY: 1,
   })
+  if (measure && obj.autoFit) fitToContent(obj, measure)
   obj.setPositionByOrigin(top, obj.originX, "top")
   obj.setCoords()
 }

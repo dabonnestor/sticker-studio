@@ -258,7 +258,7 @@ describe("applyTextProps — the nine properties (§6)", () => {
     })
   })
 
-  describe("auto-fit re-fits on family/size changes while never resized", () => {
+  describe("auto-fit re-fits on family/size/letter-spacing changes while never resized", () => {
     it("re-fits the width when the size changes", () => {
       const t = createText(measure) // "Text" → 42
       applyTextProps(t, { fontSize: 48 }, measure)
@@ -271,6 +271,16 @@ describe("applyTextProps — the nine properties (§6)", () => {
       const t = createText(measure)
       applyTextProps(t, { fontFamily: "Lora" }, measure)
       expect(t.width).toBe(fitTextWidth(t.text, { ...STYLE, fontFamily: "Lora" }, 0, measure))
+    })
+
+    it("re-fits the width when the letter spacing changes", () => {
+      const t = createText(measure)
+      t.set("text", "ABC")
+      fitToContent(t, measure) // 3 × 10 + 2 = 32
+      applyTextProps(t, { charSpacing: 100 }, measure)
+      // The spacing widens the measured longest line, gap per character:
+      // 30 + 2 × 2.4 (0.1 em at 24 px) + 2 = 36.8 → 37.
+      expect(t.width).toBe(37)
     })
   })
 })
@@ -330,6 +340,34 @@ describe("bakeTextScale — a corner drag folds into the font size (§6)", () =>
     expect(t.width).toBe(104)
     expect(t.scaleX).toBe(1)
     expect(t.scaleY).toBe(1)
+  })
+
+  it("re-hugs the content at the folded size while auto-fit is set", () => {
+    // A corner scale is a size change — scaling "hello" (width 52) down to
+    // half would leave the proportional width (26) short of the text at the
+    // folded size; the box re-measures and hugs the content instead.
+    const t = createText(measure)
+    t.set("text", "hello")
+    fitToContent(t, measure) // width 52
+    t.set({ scaleX: 0.5, scaleY: 0.5 })
+    bakeTextScale(t, measure)
+    expect(t.fontSize).toBe(12)
+    expect(t.width).toBe(52)
+    expect(t.scaleX).toBe(1)
+    expect(t.scaleY).toBe(1)
+  })
+
+  it("a wrap box keeps its manual width, scaled — no re-hug over the handoff", () => {
+    // The width-wrap drag handed the width over (autoFit off): the bake
+    // scales the manual width proportionally and never re-fits over it.
+    const t = createText(measure)
+    t.autoFit = false
+    t.set("width", 200)
+    t.set({ scaleX: 0.5, scaleY: 0.5 })
+    bakeTextScale(t, measure)
+    expect(t.fontSize).toBe(12)
+    expect(t.width).toBe(100)
+    expect(t.autoFit).toBe(false)
   })
 
   it("rounds the baked size to integer px — the toolbar's readout stays clean", () => {

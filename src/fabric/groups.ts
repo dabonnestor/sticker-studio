@@ -6,7 +6,7 @@ import {
 } from "fabric"
 
 import { stampDocumentProps } from "@/fabric/document-props"
-import { bakeTextScale, isTextObject } from "@/fabric/text"
+import { bakeTextScale, isTextObject, type TextMeasurer } from "@/fabric/text"
 
 /**
  * Single-level grouping (build spec §7, ADR 0003) — the structural commands
@@ -49,16 +49,20 @@ export function isGrouped(obj: FabricObject): boolean {
  * rotation, scale, flip, and cut geometry. Returns the children in group
  * order — topmost child last, the Document's internal order.
  */
-function extractGroup(canvas: Canvas, group: Group): FabricObject[] {
+function extractGroup(
+  canvas: Canvas,
+  group: Group,
+  measure?: TextMeasurer,
+): FabricObject[] {
   const slot = canvas.getObjects().indexOf(group)
   canvas.remove(group)
   const children = group.removeAll()
   // A text child scaled inside the group exits it carrying the folded scale
   // and a stale font size — bake the scale into the size here, so the size
   // field (the text's source of truth) reads correctly the moment the
-  // ungroup commits.
+  // ungroup commits (re-hugging the content while the box still auto-fits).
   for (const child of children) {
-    if (isTextObject(child)) bakeTextScale(child)
+    if (isTextObject(child)) bakeTextScale(child, measure)
   }
   children.forEach((child, i) => canvas.insertAt(slot + i, child))
   return children
@@ -73,10 +77,11 @@ function extractGroup(canvas: Canvas, group: Group): FabricObject[] {
 export function flattenGroups(
   canvas: Canvas,
   objects: readonly FabricObject[],
+  measure?: TextMeasurer,
 ): FabricObject[] {
   const flat: FabricObject[] = []
   for (const obj of objects) {
-    if (obj instanceof Group) flat.push(...extractGroup(canvas, obj))
+    if (obj instanceof Group) flat.push(...extractGroup(canvas, obj, measure))
     else flat.push(obj)
   }
   return flat
@@ -99,10 +104,11 @@ export function flattenGroups(
 export function groupObjects(
   canvas: Canvas,
   objects: readonly FabricObject[],
+  measure?: TextMeasurer,
 ): Group | null {
   if (objects.length < 2) return null
   if (objects.some(isGrouped)) return null
-  const flat = flattenGroups(canvas, objects)
+  const flat = flattenGroups(canvas, objects, measure)
   if (flat.length < 2) return null
   const stack = canvas.getObjects()
   const zIndex = new Map(flat.map((obj) => [obj, stack.indexOf(obj)]))
@@ -130,11 +136,12 @@ export function groupObjects(
 export function ungroupObjects(
   canvas: Canvas,
   objects: readonly FabricObject[],
+  measure?: TextMeasurer,
 ): FabricObject[] {
   const children: FabricObject[] = []
   for (const obj of objects) {
     if (obj instanceof Group && !obj.locked) {
-      children.push(...extractGroup(canvas, obj))
+      children.push(...extractGroup(canvas, obj, measure))
     }
   }
   return children

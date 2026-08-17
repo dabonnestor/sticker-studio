@@ -561,7 +561,7 @@ export function StageProvider({ children }: { children: ReactNode }) {
     if (canvas.enteredGroup && objects.includes(canvas.enteredGroup)) {
       canvas.exitEnteredGroup()
     }
-    const group = groupObjects(canvas, objects)
+    const group = groupObjects(canvas, objects, getTextMeasurer())
     if (!group) return
     canvas.setActiveObject(group)
     canvas.requestRenderAll()
@@ -570,7 +570,7 @@ export function StageProvider({ children }: { children: ReactNode }) {
 
   const ungroupSelection = useCallback(() => {
     if (!canvas?.history) return
-    const children = ungroupObjects(canvas, canvas.getActiveObjects())
+    const children = ungroupObjects(canvas, canvas.getActiveObjects(), getTextMeasurer())
     if (children.length === 0) return
     // Ungrouping the entered group exits it — the group reference dies with
     // the command, and the fixed child state must not linger (§7 Q5). Runs

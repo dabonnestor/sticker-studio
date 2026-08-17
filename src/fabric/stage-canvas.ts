@@ -1393,7 +1393,7 @@ export function createStageCanvas(
   // keeps the toolbar's size field the source of truth on every path.
   const bakeActiveTextScale = () => {
     const active = canvas.getActiveObject()
-    if (isTextObject(active)) bakeTextScale(active)
+    if (isTextObject(active)) bakeTextScale(active, getTextMeasurer())
   }
   canvas.on("selection:created", bakeActiveTextScale)
   canvas.on("selection:updated", bakeActiveTextScale)
@@ -1462,21 +1462,20 @@ export function createStageCanvas(
 
   // Shapes and text scale uniformly from a corner — the aspect ratio is
   // frozen at the gesture start, so a corner drag never distorts the object
-  // (§5 shapes, §6 text: the scale fold is gone — text scales like a shape,
-  // scale stays on the object). Square/rectangle also expose the side
-  // handles: a drag on one (mt/mb scale the height, ml/mr the width) scales
-  // that axis freely, outside the ratio lock — so a square can grow into a
-  // taller or wider rectangle. The first `object:scaling` tick records the
-  // ratio; later ticks keep it; the end of the gesture (any transform
-  // commit) clears it for the next one. Scaling also hands a text's width to
-  // the user — a re-fit at session exit would measure in local units and
-  // fight the scale.
+  // (§5 shapes, §6 text: text scales like a shape, scale stays on the object
+  // and folds into the size at the gesture end — a corner scale is a size
+  // change, so auto-fit survives it; only the wrap-width drag hands the
+  // width over). Square/rectangle also expose the side handles: a drag on
+  // one (mt/mb scale the height, ml/mr the width) scales that axis freely,
+  // outside the ratio lock — so a square can grow into a taller or wider
+  // rectangle. The first `object:scaling` tick records the ratio; later
+  // ticks keep it; the end of the gesture (any transform commit) clears it
+  // for the next one.
   const gestureRatios = new WeakMap<FabricObject, number>()
   canvas.on("object:scaling", (event) => {
     const obj = event.target
     const kind = getShapeKind(obj)
     if (!kind && !isTextObject(obj)) return
-    if (isTextObject(obj)) obj.set("autoFit", false)
     const corner = event.transform?.corner
     const axisHandle = corner === "mt" || corner === "mb" || corner === "ml" || corner === "mr"
     if (axisHandle && (kind === "square" || kind === "rectangle")) {
@@ -1497,11 +1496,12 @@ export function createStageCanvas(
   canvas.on("object:modified", (event) => {
     if (event.target) gestureRatios.delete(event.target)
     // A text corner drag leaves the box carrying the gesture's scale — bake
-    // it into the font size (the toolbar's readout) at the commit boundary.
-    // Registered before the History (constructed last), so its snapshot sees
-    // the baked state and undo/redo restore the size, not the transform.
-    // Plain moves, rotations, and session exits pass through (scale 1).
-    if (isTextObject(event.target)) bakeTextScale(event.target)
+    // it into the font size (the toolbar's readout) at the commit boundary,
+    // re-hugging the content while the box still auto-fits. Registered
+    // before the History (constructed last), so its snapshot sees the baked
+    // state and undo/redo restore the size, not the transform. Plain moves,
+    // rotations, and session exits pass through (scale 1).
+    if (isTextObject(event.target)) bakeTextScale(event.target, getTextMeasurer())
   })
 
   // Text (§6): text scales uniformly with the shapes above, and the text
