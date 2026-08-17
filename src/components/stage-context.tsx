@@ -17,6 +17,7 @@ import {
   arrangeObjects,
   type ArrangeCommand,
 } from "@/fabric/arrange"
+import { copyObjects, pasteObjects } from "@/fabric/clipboard"
 import { flipObjects, type FlipCommand } from "@/fabric/flip"
 import {
   groupObjects,
@@ -194,6 +195,19 @@ interface StageContextValue {
    * undoable step (ADR 0001).
    */
   deleteSelection: () => void
+  /**
+   * Copy the selection to the app's internal clipboard (Ctrl+C, §13) — a
+   * snapshot; nothing enters the OS clipboard. Selection is view state and
+   * copy changes nothing, so it is never undoable and never serialized.
+   */
+  copySelection: () => void
+  /**
+   * Paste the clipboard (Ctrl+V, §13) — clones of the copied selection,
+   * nudged down-right, landing above the source and selected. Clones are
+   * fresh creations: new ids, unlocked. One undoable step (ADR 0001); a
+   * no-op with an empty clipboard.
+   */
+  pasteSelection: () => Promise<void>
   /**
    * Lock/unlock the selection (§7 Q3) — a whole-selection toggle: a fully
    * locked selection unlocks, otherwise everything locks. Locked objects
@@ -546,6 +560,20 @@ export function StageProvider({ children }: { children: ReactNode }) {
     canvas.history.commit()
   }, [canvas])
 
+  const copySelection = useCallback(() => {
+    if (!canvas) return
+    copyObjects(canvas)
+  }, [canvas])
+
+  const pasteSelection = useCallback(async () => {
+    if (!canvas?.history) return
+    // The enliven is async — the paste commits when the clones land. A
+    // no-op paste (empty clipboard) commits nothing: the History's dedup
+    // skips the unchanged snapshot.
+    await pasteObjects(canvas, getTextMeasurer())
+    canvas.history.commit()
+  }, [canvas])
+
   const toggleLock = useCallback(() => {
     if (!canvas?.history) return
     const objects = canvas.getActiveObjects()
@@ -666,6 +694,27 @@ export function StageProvider({ children }: { children: ReactNode }) {
     return () => document.removeEventListener("keydown", onKeyDown)
   }, [canvas, deleteSelection])
 
+  // Copy/paste hotkeys (§13): Ctrl+C copies the selection to the app's
+  // internal clipboard, Ctrl+V pastes clones of it — nudged down-right,
+  // above the source, selected, one undoable step. The editable gate keeps
+  // the keys native in the toolbar's fields and the text session's hidden
+  // textarea (text copy/paste inside a session).
+  useEffect(() => {
+    if (!canvas) return
+    const onKeyDown = (event: KeyboardEvent) => {
+      const key = event.key.toLowerCase()
+      if (key !== "c" && key !== "v") return
+      if (!event.ctrlKey && !event.metaKey) return
+      if (event.altKey) return
+      if (isEditableTarget(document.activeElement)) return
+      event.preventDefault()
+      if (key === "c") copySelection()
+      else void pasteSelection()
+    }
+    document.addEventListener("keydown", onKeyDown)
+    return () => document.removeEventListener("keydown", onKeyDown)
+  }, [canvas, copySelection, pasteSelection])
+
   // Arrange hotkeys (§13): Ctrl+] / Ctrl+[ step the selection forward /
   // backward, Ctrl+Shift+] / Ctrl+Shift+[ move it to the very front / back.
   // Keyed on `code` (BracketLeft/Right), not `key` — Shift rewrites the key
@@ -773,6 +822,8 @@ export function StageProvider({ children }: { children: ReactNode }) {
         flipSelection,
         commitOpacity,
         deleteSelection,
+        copySelection,
+        pasteSelection,
         toggleLock,
         groupSelection,
         ungroupSelection,

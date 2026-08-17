@@ -170,6 +170,7 @@ Inter, Work Sans, Barlow, Lora, Playfair Display, Bebas Neue, Anton, Pacifico, D
 | Keys | Action |
 |---|---|
 | Ctrl+Z / Ctrl+Y | undo / redo (in a text session: field-local) |
+| Ctrl+C / Ctrl+V | copy / paste the selection (the app's internal clipboard; pastes an unlocked duplicate nudged down-right, in the z-slot above the copied object; repeat pastes cascade; one undoable step) |
 | Ctrl+= / Ctrl+− | zoom ±10% about the viewport center |
 | Ctrl+wheel / touchpad pinch | zoom about the pointer |
 | Ctrl+0 | Fit |
@@ -221,6 +222,7 @@ Suggested session boundaries (each session builds against this spec, one module 
 - [ ] Save → JSON envelope v1; Import validates loudly (unknown types rejected); import is undoable.
 - [ ] Export: all four formats at 300 DPI (3.125 multiplier), document rotation applied, text flushed first, fonts ready awaited, 8192 px ceiling enforced, naming per spec.
 - [ ] Every hotkey in §13 works; text-session keys never leak to the document stack.
+- [ ] Copy/paste: Ctrl+C / Ctrl+V duplicate the selection as fresh objects (new ids, unlocked) nudged down-right and selected; multi-selections paste back as separate objects; group clones keep their structure; a child copied inside an entered group pastes at top level at its world position; the paste is one undoable step; Ctrl+C/V stay native inside text sessions and toolbar fields.
 - [ ] Smart guides: the §17 acceptance items all pass.
 
 ## 17. Smart guides
