@@ -574,7 +574,7 @@ function FontFamilyField({
         <Button
           variant="ghost"
           size="sm"
-          className="h-7 max-w-32 gap-1 px-2 text-xs font-normal"
+          className="h-7 w-32 flex justify-between gap-1 px-2 text-xs font-normal"
           disabled={disabled}
           aria-label="Font family"
         >
