@@ -53,6 +53,11 @@ import {
   parseDesignFile,
   serializeDesignFile,
 } from "@/fabric/design-file"
+import {
+  exportDocument,
+  getExportHost,
+  type ExportFormat,
+} from "@/fabric/export"
 import type { Unit } from "@/lib/units"
 import { stepZoomPercent } from "@/fabric/zoom"
 
@@ -251,6 +256,16 @@ interface StageContextValue {
    * downloads `<basename>.json` (untitled fallback). Never an undoable step.
    */
   saveDesignFile: () => void
+  /**
+   * Export the current Document as the given format (build spec §11) —
+   * flushes any pending text edit first (the same step as save), serializes
+   * the committed Document, and runs the shared export pipeline (offscreen
+   * render, font wait, 8192-px ceiling, per-format download). Reports
+   * "Preparing export…" while working and the finished filename (or a clear
+   * error) in the status area. Export never records an undoable step and
+   * never mutates the Document or history.
+   */
+  exportCurrent: (format: ExportFormat) => Promise<void>
   /**
    * Import a Design file (§10) — reads the text, validates loudly (unknown
    * types / bad envelope rejected with a clear error in the status area,
@@ -713,6 +728,46 @@ export function StageProvider({ children }: { children: ReactNode }) {
     reportStatus(`Saved ${designFileName}.json`)
   }, [canvas, designFileName, flushPendingTextEdit, reportStatus])
 
+  const exportCurrent = useCallback(
+    async (format: ExportFormat) => {
+      if (!canvas) return
+      // Commit any pending text edit before serializing (§11 "commit first" —
+      // the same step as Save): a textbox mid-edit hasn't committed its
+      // session, so the serialization would capture a half-typed string.
+      flushPendingTextEdit(canvas)
+      // Serialize the committed Document — the same envelope a Design file
+      // carries; only the canvas payload and the envelope fields feed the
+      // offscreen render (view state is excluded by construction).
+      const file = serializeDesignFile(canvas)
+      reportStatus("Preparing export…")
+      try {
+        const { filename, warning } = await exportDocument(
+          {
+            format,
+            baseName: designFileName,
+            width: file.size.width,
+            height: file.size.height,
+            rotation: file.rotation,
+            borderWidth: file.border.width,
+            borderColor: file.border.color,
+            payload: file.canvas,
+          },
+          getExportHost(),
+        )
+        // Export is not an undoable step (§11) — the pipeline only ever
+        // renders a private offscreen copy, never the live canvas or history.
+        reportStatus(
+          warning ? `Exported ${filename} — ${warning}` : `Exported ${filename}`,
+        )
+      } catch (error) {
+        // Refusal (too large for the raster ceiling) and render failures
+        // surface clearly in the status area (§11).
+        reportStatus(error instanceof Error ? error.message : "Export failed")
+      }
+    },
+    [canvas, designFileName, flushPendingTextEdit, reportStatus],
+  )
+
   const importDesignFile = useCallback(
     async (file: { name: string; text: () => Promise<string> }) => {
       if (!canvas?.history) return
@@ -995,6 +1050,7 @@ export function StageProvider({ children }: { children: ReactNode }) {
         exitGroup,
         saveDesignFile,
         importDesignFile,
+        exportCurrent,
         designFileName,
         status,
         reportStatus,

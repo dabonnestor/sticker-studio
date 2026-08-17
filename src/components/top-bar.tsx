@@ -11,18 +11,17 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
-
-/** The four export formats (build spec §11). Wired in the export build. */
-const EXPORT_FORMATS = ["PNG", "JPEG", "PDF", "SVG"] as const
+import { EXPORT_FORMATS } from "@/fabric/export"
 
 /**
  * Top bar (build spec §3): logo, Import File, Save File, Export dropdown.
  * Import/Save are wired by the design-file build (§10); Export by the export
- * build. The hidden file input opens for Import; Save downloads the current
- * Document as a Design file envelope.
+ * build (§11). The hidden file input opens for Import; Save downloads the
+ * current Document as a Design file envelope; each Export item renders the
+ * committed Document in that format.
  */
 export function TopBar() {
-  const { importDesignFile, saveDesignFile } = useStage()
+  const { importDesignFile, saveDesignFile, exportCurrent } = useStage()
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   const onImportChosen = (event: ChangeEvent<HTMLInputElement>) => {
@@ -71,7 +70,9 @@ export function TopBar() {
           <DropdownMenuLabel>Export</DropdownMenuLabel>
           <DropdownMenuSeparator />
           {EXPORT_FORMATS.map((format) => (
-            <DropdownMenuItem key={format}>{format}</DropdownMenuItem>
+            <DropdownMenuItem key={format} onClick={() => void exportCurrent(format)}>
+              {format}
+            </DropdownMenuItem>
           ))}
         </DropdownMenuContent>
       </DropdownMenu>

@@ -2,3 +2,6 @@ allowBuilds:
   # fabric ships `canvas` (Node native) as an optional dependency; this app
   # is browser-only, so never build it.
   canvas: false
+  # jsPDF (export) pulls core-js, whose postinstall just prints a funding
+  # notice — it is code that vite bundles, not a build step. Skip it.
+  core-js: false
