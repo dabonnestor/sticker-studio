@@ -778,6 +778,24 @@ export function StageProvider({ children }: { children: ReactNode }) {
     return () => document.removeEventListener("keydown", onKeyDown)
   }, [canvas, selectAll])
 
+  // Add Text hotkey (§13): T drops a new Text at the viewport center, already
+  // in its text session — the same as the sidebar's Add Text button. Modifier
+  // keys are gated so Ctrl+T stays the browser's native new-tab; the editable
+  // gate keeps T native in the toolbar's fields and the text session's hidden
+  // textarea, where typing a "t" must never spawn a text box.
+  useEffect(() => {
+    if (!canvas) return
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key.toLowerCase() !== "t") return
+      if (event.ctrlKey || event.metaKey || event.altKey) return
+      if (isEditableTarget(document.activeElement)) return
+      event.preventDefault()
+      addText()
+    }
+    document.addEventListener("keydown", onKeyDown)
+    return () => document.removeEventListener("keydown", onKeyDown)
+  }, [canvas, addText])
+
   // Escape deselects — and exits the entered group (§13) — outside a text
   // session. The editable gate covers the session's hidden textarea, where
   // Escape reverts the session natively (§6) and must not reach the stage.
