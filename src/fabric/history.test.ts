@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest"
 
 import { registerCustomProperties } from "@/fabric/custom-properties"
 import { HISTORY_DEPTH } from "@/fabric/history"
+import { loadEnvelope } from "@/fabric/design-file"
 import { createShape, DEFAULT_FILL } from "@/fabric/shapes"
 import { createStageCanvas } from "@/fabric/stage-canvas"
 import {
@@ -233,6 +234,61 @@ describe("history — snapshot stack", () => {
     await canvas.history.undo()
     expect(canvas.borderWidth).toBe(0)
     expect(canvas.borderColor).toBe("#18181b")
+  })
+
+  it("the document rotation is document state — undo restores it", async () => {
+    addSquare(100, 100)
+    canvas.rotation = 90
+    canvas.history.commit()
+
+    await canvas.history.undo()
+    expect(canvas.rotation).toBe(0)
+  })
+
+  it("suspended recording + one commit is a single undoable step — the import path", async () => {
+    // A Design-file import (build spec §10) wraps its flush + load in
+    // suspendRecording and commits once: undo restores the pre-import state
+    // in a single step, even though the load spawned object:added storms and
+    // the flush (were a text session open) would fire object:modified.
+    const id = addSquare(100, 100).id
+    canvas.history.suspendRecording()
+    try {
+      // Emulate the import's load — an envelope apply + a fresh payload.
+      const payload = {
+        version: "7.4.0",
+        objects: [
+          {
+            ...createShape("triangle").toObject(),
+            type: "Triangle",
+          },
+        ],
+        background: canvas.backgroundColor,
+      }
+      await loadEnvelope(
+        canvas,
+        { width: 800, height: 400, rotation: 45, borderWidth: 2, borderColor: "#00ff00" },
+        payload as never,
+      )
+    } finally {
+      canvas.history.resumeRecording()
+    }
+    canvas.history.commit()
+
+    expect(canvas.history.canUndo).toBe(true)
+    await canvas.history.undo()
+    // Back to the pre-import state in one step — the sealed snapshot.
+    expect(canvas.width).toBe(600)
+    expect(canvas.rotation).toBe(0)
+    expect(canvas.borderWidth).toBe(0)
+    expect(canvas.getObjects().length).toBe(1)
+    expect(canvas.getObjects().find((o) => o.id === id)).toBeDefined()
+    // And the import restored to the loaded document in its own redo.
+    await canvas.history.redo()
+    expect(canvas.width).toBe(800)
+    expect(canvas.rotation).toBe(45)
+    expect(canvas.borderWidth).toBe(2)
+    expect(canvas.getObjects().length).toBe(1)
+    expect(canvas.getObjects()[0]).toHaveProperty("id")
   })
 
   it("dispose detaches the boundary listener", async () => {

@@ -68,8 +68,18 @@ function TooltipLabel({
  * range. The status area is live from the export build on.
  */
 export function BottomBar() {
-  const { canUndo, canRedo, undo, redo, zoom, setZoom, zoomIn, zoomOut, fitZoom } =
-    useStage()
+  const {
+    canUndo,
+    canRedo,
+    undo,
+    redo,
+    zoom,
+    setZoom,
+    zoomIn,
+    zoomOut,
+    fitZoom,
+    status,
+  } = useStage()
 
   return (
     <TooltipProvider>
@@ -150,7 +160,7 @@ export function BottomBar() {
           className="min-w-0 text-xs text-muted-foreground"
           data-testid="status-area"
         >
-          Ready
+          {status}
         </span>
       </footer>
     </TooltipProvider>

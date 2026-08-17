@@ -23,6 +23,14 @@ declare module "fabric" {
     borderWidth: number
     /** Document border color — envelope-owned (ADR 0002). */
     borderColor: string
+    /**
+     * Document rotation in degrees — envelope-owned (ADR 0002): Fabric 7's
+     * canvas has no rotation property, and `canvas.toJSON()` never serializes
+     * one, so the Design file envelope carries it. Rendered by export (Build
+     * 8 §11); the stage stays unrotated (the workspace layout and overlay
+     * mirrors assume the identity viewport).
+     */
+    rotation: number
   }
   interface Textbox {
     /**

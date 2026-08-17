@@ -1,5 +1,7 @@
+import { useRef, type ChangeEvent } from "react"
 import { ChevronDown, FolderOpen, Save, Sticker } from "lucide-react"
 
+import { useStage } from "@/components/stage-context"
 import { Button } from "@/components/ui/button"
 import {
   DropdownMenu,
@@ -15,9 +17,22 @@ const EXPORT_FORMATS = ["PNG", "JPEG", "PDF", "SVG"] as const
 
 /**
  * Top bar (build spec §3): logo, Import File, Save File, Export dropdown.
- * Import/Save are wired by the design-file build; Export by the export build.
+ * Import/Save are wired by the design-file build (§10); Export by the export
+ * build. The hidden file input opens for Import; Save downloads the current
+ * Document as a Design file envelope.
  */
 export function TopBar() {
+  const { importDesignFile, saveDesignFile } = useStage()
+  const fileInputRef = useRef<HTMLInputElement>(null)
+
+  const onImportChosen = (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0]
+    // Reset the input so picking the same file again re-triggers change.
+    event.target.value = ""
+    if (!file) return
+    void importDesignFile(file)
+  }
+
   return (
     <header className="flex h-12 shrink-0 items-center gap-2 border-b bg-background px-4">
       <div className="mr-4 flex items-center gap-2">
@@ -29,11 +44,19 @@ export function TopBar() {
 
       <div className="flex-1" />
 
-      <Button variant="outline" size="sm">
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept=".json,application/json"
+        className="hidden"
+        onChange={onImportChosen}
+        aria-label="Import a design file"
+      />
+      <Button variant="outline" size="sm" onClick={() => fileInputRef.current?.click()}>
         <FolderOpen aria-hidden />
         Import File
       </Button>
-      <Button variant="outline" size="sm">
+      <Button variant="outline" size="sm" onClick={saveDesignFile}>
         <Save aria-hidden />
         Save File
       </Button>

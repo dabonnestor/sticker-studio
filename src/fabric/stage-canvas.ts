@@ -70,6 +70,14 @@ export const DOCUMENT_BACKGROUND_COLOR = "#ffffff"
 export const DOCUMENT_BORDER_WIDTH = 0
 export const DOCUMENT_BORDER_COLOR = DEFAULT_BORDER_COLOR
 
+/**
+ * Default Document rotation — 0° (§10, ADR 0002): the document, unrotated
+ * at creation. The envelope carries it; export renders rotated (Build 8
+ * §11). The stage stays unrotated — the workspace layout and the overlay
+ * mirrors (marquee, controls, smart guides) assume the identity viewport.
+ */
+export const DOCUMENT_ROTATION = 0
+
 /** Rotation-handle size — larger than the 13px corner handles so the icon reads. */
 export const ROTATE_HANDLE_SIZE = 20
 
@@ -1314,6 +1322,11 @@ export function createStageCanvas(
   // is the document: the border lives here, mirrored by the stage toolbar.
   canvas.borderWidth = DOCUMENT_BORDER_WIDTH
   canvas.borderColor = DOCUMENT_BORDER_COLOR
+
+  // Document rotation (envelope-owned, ADR 0002) — 0° at creation. The
+  // envelope carries it and export renders it; the stage stays unrotated, so
+  // the stage canvas never applies it to the viewport transform.
+  canvas.rotation = DOCUMENT_ROTATION
 
   // Document identity (ADR 0002): stamp the id/locked defaults at the
   // document boundary so every creation path — sidebar, console-added

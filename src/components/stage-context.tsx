@@ -47,6 +47,12 @@ import {
   isTextObject,
   type TextPropsPatch,
 } from "@/fabric/text"
+import {
+  designFileBasename,
+  loadEnvelope,
+  parseDesignFile,
+  serializeDesignFile,
+} from "@/fabric/design-file"
 import type { Unit } from "@/lib/units"
 import { stepZoomPercent } from "@/fabric/zoom"
 
@@ -239,6 +245,33 @@ interface StageContextValue {
    * (a plain deselect when no group is entered).
    */
   exitGroup: () => void
+  /**
+   * Save the current Document as a Design file (§10) — flushes any pending
+   * text edit first (the same step as export), serializes the envelope, and
+   * downloads `<basename>.json` (untitled fallback). Never an undoable step.
+   */
+  saveDesignFile: () => void
+  /**
+   * Import a Design file (§10) — reads the text, validates loudly (unknown
+   * types / bad envelope rejected with a clear error in the status area,
+   * nothing changed), strips the envelope, and `loadFromJSON` the payload as
+   * one undoable step. Undo restores the pre-import Document. Sets the
+   * design-file basename from the imported file's name (round-trips Save).
+   */
+  importDesignFile: (file: { name: string; text: () => Promise<string> }) => Promise<void>
+  /** The current working file's basename — Save round-trips it (untitled default). */
+  designFileName: string
+  /**
+   * The current bottom-bar status message — save/import progress and errors
+   * (ADR 0002's "validates loudly"). Survives until the next report.
+   */
+  status: string
+  /**
+   * Surface a transient message in the bottom-bar status area — save/import
+   * progress and errors (ADR 0002's "validates loudly"). The next report (or
+   * the caller) replaces it.
+   */
+  reportStatus: (message: string) => void
 }
 
 const StageContext = createContext<StageContextValue | null>(null)
@@ -282,6 +315,11 @@ export function StageProvider({ children }: { children: ReactNode }) {
   const [unit, setUnit] = useState<Unit>("in")
   const [historyState, setHistoryState] = useState({ canUndo: false, canRedo: false })
   const [zoom, setZoomState] = useState(100)
+  // The current working file's basename (§10) — defaults to untitled; an
+  // import sets it from the file's name so Save round-trips the same file.
+  const [designFileName, setDesignFileName] = useState("untitled")
+  // The transient bottom-bar status message — save/import progress and errors.
+  const [status, setStatus] = useState("Ready")
 
   const registerCanvas = useCallback((next: StageCanvas | null) => {
     setCanvas(next)
@@ -636,6 +674,114 @@ export function StageProvider({ children }: { children: ReactNode }) {
     canvas.exitEnteredGroup()
   }, [canvas])
 
+  const reportStatus = useCallback((message: string) => {
+    setStatus(message)
+  }, [])
+
+  /**
+   * Flush any pending text edit before serializing the Document (§11 "commit
+   * first" — the same step export runs): a textbox mid-edit hasn't committed
+   * its session, so `canvas.toJSON()` would capture a half-typed string.
+   * `exitEditing()` fires the text-session commit (and, through it,
+   * `text:editing:exited` → the History's `object:modified` boundary). The
+   * flush is itself an undoable step (§6) — the session commits on exit.
+   */
+  const flushPendingTextEdit = useCallback(
+    (targetCanvas: Canvas) => {
+      const active = targetCanvas.getActiveObject()
+      if (isTextObject(active) && active.isEditing) active.exitEditing()
+    },
+    [],
+  )
+
+  const saveDesignFile = useCallback(() => {
+    if (!canvas) return
+    // Commit any pending text edit before serializing (§11 commit-first).
+    flushPendingTextEdit(canvas)
+    const file = serializeDesignFile(canvas)
+    const blob = new Blob([JSON.stringify(file, null, 2)], {
+      type: "application/json",
+    })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement("a")
+    a.href = url
+    a.download = `${designFileName}.json`
+    a.click()
+    URL.revokeObjectURL(url)
+    // Save is not an undoable step and never mutates the Document (§10) —
+    // although the text flush above is its own step (§6).
+    reportStatus(`Saved ${designFileName}.json`)
+  }, [canvas, designFileName, flushPendingTextEdit, reportStatus])
+
+  const importDesignFile = useCallback(
+    async (file: { name: string; text: () => Promise<string> }) => {
+      if (!canvas?.history) return
+      let text: string
+      try {
+        text = await file.text()
+      } catch {
+        reportStatus("Couldn't read that file")
+        return
+      }
+      let design: ReturnType<typeof parseDesignFile>
+      try {
+        design = parseDesignFile(text)
+      } catch (error) {
+        // Validates loudly (ADR 0002) — unknown types, bad envelope, any
+        // structural break surface here; nothing in the Document changed.
+        reportStatus(error instanceof Error ? error.message : "Invalid design file")
+        return
+      }
+      // Import is ONE undoable step (§8, §10) — undo restores the pre-import
+      // Document. The flush of a pending text edit fires `object:modified`
+      // (a commit boundary), so recording is suspended across the flush and
+      // the load, then the whole import commits as the single step below.
+      canvas.history.suspendRecording()
+      try {
+        // Flush any pending text edit so the pre-import state captures a
+        // committed Document — import replaces the whole Document, and the
+        // session's hidden textarea would otherwise leak into it.
+        flushPendingTextEdit(canvas)
+        // loadEnvelope applies the envelope fields and `loadFromJSON` — the
+        // whole import path (§10), shared with the History's restore.
+        await loadEnvelope(
+          canvas,
+          {
+            width: design.size.width,
+            height: design.size.height,
+            rotation: design.rotation,
+            borderWidth: design.border.width,
+            borderColor: design.border.color,
+          },
+          design.canvas,
+        )
+        canvas.requestRenderAll()
+      } finally {
+        canvas.history.resumeRecording()
+      }
+      // The import as ONE undoable step (ADR 0001) — undo restores the
+      // pre-import Document. The commit dedup skips a no-op.
+      canvas.history.commit()
+      const name = designFileBasename(file.name)
+      setDesignFileName(name)
+      setDocumentSizeState({ width: canvas.width, height: canvas.height })
+      setCanvasPropsState({
+        backgroundColor: (canvas.backgroundColor as string) || DOCUMENT_BACKGROUND_COLOR,
+        borderWidth: canvas.borderWidth,
+        borderColor: canvas.borderColor,
+      })
+      reportStatus(`Imported ${name}.json`)
+    },
+    [
+      canvas,
+      flushPendingTextEdit,
+      reportStatus,
+      setDesignFileName,
+      setDocumentSizeState,
+      setCanvasPropsState,
+    ],
+  )
+
   // Undo/redo hotkeys (§13): Ctrl+Z / Ctrl+Y walk the document-state stack.
   // The editable gate keeps Ctrl+Z field-local inside a text session — the
   // hidden textarea's native undo handles it, and the session commits only
@@ -847,6 +993,11 @@ export function StageProvider({ children }: { children: ReactNode }) {
         ungroupSelection,
         selectAll,
         exitGroup,
+        saveDesignFile,
+        importDesignFile,
+        designFileName,
+        status,
+        reportStatus,
       }}
     >
       {children}

@@ -5,6 +5,8 @@ import {
   type Object as FabricObject,
 } from "fabric"
 
+import { loadEnvelope } from "@/fabric/design-file"
+
 /**
  * Snapshot-based undo/redo (ADR 0001, build spec §8). Fabric ships no
  * undo/redo and documents are a few KB of JSON, so history is a document-
@@ -34,9 +36,8 @@ export const HISTORY_DEPTH = 100
 
 /**
  * One document-state snapshot — the canvas payload plus the envelope (§8).
- * The envelope fields — size and the document border — are document state
- * today; document rotation joins the envelope with the design-file build
- * (§10) and must be snapshotted here alongside them.
+ * The envelope fields — size, rotation, and the document border — are
+ * document state, snapshotted alongside the canvas payload (ADR 0002).
  */
 export interface HistoryEntry {
   /** `canvas.toJSON()` — the canvas payload, restored verbatim. */
@@ -47,6 +48,8 @@ export interface HistoryEntry {
   /** Document border — envelope-owned (ADR 0002); width 0 = off. */
   borderWidth: number
   borderColor: string
+  /** Document rotation in degrees — envelope-owned (ADR 0002). */
+  rotation: number
   /** Object ids to reselect after restore — selection is never serialized. */
   selectionIds: string[]
 }
@@ -64,6 +67,7 @@ function entriesEqual(a: HistoryEntry, b: HistoryEntry): boolean {
     a.height === b.height &&
     a.borderWidth === b.borderWidth &&
     a.borderColor === b.borderColor &&
+    a.rotation === b.rotation &&
     JSON.stringify(a.payload) === JSON.stringify(b.payload)
   )
 }
@@ -101,6 +105,28 @@ export class History {
    * queued behind another keeps suppression active across the gap.
    */
   private pendingRestores = 0
+
+  /**
+   * Import-time recording suppression (build spec §8, §10): a Design-file
+   * import is ONE undoable step, but its flush of a pending text edit fires
+   * `object:modified` (a commit boundary) before the import's own commit.
+   * The import suspends recording around the flush + load, then commits the
+   * whole import as the single step. A counter: nested suspensions balance.
+   */
+  private suppressedWrites = 0
+
+  /**
+   * Suppress commit recording — the design-file import path (build spec §10)
+   * wraps its flush + loadWithEnvelope so the import snapshots once.
+   */
+  suspendRecording(): void {
+    this.suppressedWrites++
+  }
+
+  /** Re-enable commit recording — must balance every suspendRecording. */
+  resumeRecording(): void {
+    this.suppressedWrites--
+  }
 
   /**
    * Serializes restores: `loadFromJSON` is async and not re-entrant-safe, so
@@ -153,13 +179,14 @@ export class History {
     // a commit between the synchronous stack pop and the queued restore
     // would serialize a state the restore is about to overwrite, clear redo,
     // and leave the stack inconsistent with the canvas.
-    if (this.pendingRestores > 0) return
+    if (this.pendingRestores > 0 || this.suppressedWrites > 0) return
     const entry: HistoryEntry = {
       payload: this.canvas.toJSON(),
       width: this.canvas.width,
       height: this.canvas.height,
       borderWidth: this.canvas.borderWidth,
       borderColor: this.canvas.borderColor,
+      rotation: this.canvas.rotation,
       selectionIds: this.canvas.getActiveObjects().map((obj) => obj.id),
     }
     const top = this.undoStack[this.undoStack.length - 1]
@@ -204,8 +231,9 @@ export class History {
   }
 
   /**
-   * Async full-document restore (ADR 0001): dimensions and the document
-   * border first — `loadFromJSON` never touches the canvas size — then the
+   * Async full-document restore (ADR 0001): apply the envelope — dimensions,
+   * rotation, and the document border, the same `loadEnvelope` path a
+   * Design-file import uses (never touched by `loadFromJSON`) — then the
    * payload. Recording is suppressed for the whole restore. The selection is
    * recreated from the entry's ids — missing ids (an object deleted since)
    * are silently skipped; nothing selected when none survive.
@@ -213,11 +241,7 @@ export class History {
   private async restore(entry: HistoryEntry): Promise<void> {
     try {
       const canvas = this.canvas
-      canvas.discardActiveObject()
-      canvas.setDimensions({ width: entry.width, height: entry.height })
-      canvas.borderWidth = entry.borderWidth
-      canvas.borderColor = entry.borderColor
-      await canvas.loadFromJSON(entry.payload)
+      await loadEnvelope(canvas, entry, entry.payload)
       const objects = entry.selectionIds
         .map((id) => findObjectById(canvas, id))
         .filter((obj): obj is FabricObject => obj !== undefined)
