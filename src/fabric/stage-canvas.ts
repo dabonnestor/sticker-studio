@@ -1068,6 +1068,33 @@ export class StageCanvas extends Canvas {
   }
 
   /**
+   * Paint the Document background across the whole element (build spec §11).
+   * The stage's zoom model (ADR-adjacent, §9) enlarges the element to
+   * `document × zoom` — canvas.width stays the Document size, and the
+   * viewport transform carries the zoom. Fabric's own background renderer
+   * draws a `0..width / 0..height` rect and *then* applies the viewport
+   * transform, but a Canvas 2D path is rasterized under the matrix active at
+   * path construction, so the zoom never reaches the fill: at zoom>100% the
+   * background covers only `document × DPR` and the enlarged element's outer
+   * ring shows the raw (transparent) bitmap. Because the element is the
+   * Document at any zoom, the background fills the element's full bitmap.
+   * Gradients, patterns, and `backgroundImage` fall through to the base (the
+   * Document background is a plain color today, §11).
+   */
+  override _renderBackground(ctx: CanvasRenderingContext2D): void {
+    if (typeof this.backgroundColor !== "string" || this.backgroundImage) {
+      super._renderBackground(ctx)
+      return
+    }
+    const element = this.getElement()
+    ctx.save()
+    ctx.setTransform(1, 0, 0, 1, 0, 0)
+    ctx.fillStyle = this.backgroundColor
+    ctx.fillRect(0, 0, element.width, element.height)
+    ctx.restore()
+  }
+
+  /**
    * True while the selection controls painted on the overlay this frame —
    * the smart-guides painter's skip-clear probe: the controls mirror's own
    * per-frame clear already wipes stale paint, so a clear at this point
