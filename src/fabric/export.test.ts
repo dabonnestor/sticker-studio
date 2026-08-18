@@ -284,6 +284,45 @@ describe("the real host — offscreen prepare", () => {
     expect(border.strokeWidth).toBe(4)
   })
 
+  it("exports shape borders at the raster's proportional width — no SVG stroke pin", async () => {
+    const host = createExportHost()
+    const prepared = await host.prepare(
+      baseInput({
+        borderWidth: 0,
+        // A shape at scale 3 with an 8px fixed-px border (strokeUniform).
+        payload: {
+          width: 600,
+          height: 600,
+          objects: [
+            {
+              type: "Rect",
+              left: 300,
+              top: 300,
+              width: 192,
+              height: 192,
+              scaleX: 3,
+              scaleY: 3,
+              originX: "center",
+              originY: "center",
+              stroke: "#18181b",
+              strokeWidth: 8,
+              strokeUniform: true,
+              fill: "#ffd23f",
+            },
+          ],
+        } as never,
+      }),
+    )
+    const svg = await host.toSvg(prepared, [])
+    // The editor's fixed-px flag must not survive as a viewport-pinned stroke:
+    // `non-scaling-stroke` would keep the border at 8 px no matter how the SVG
+    // is scaled, unlike the rasters which bake it proportionally. Instead the
+    // serializer writes 8/scale = 8/3 so the scale(3) transform multiplies it
+    // back to 8 design units — the same proportion the 300 DPI raster paints.
+    expect(svg).not.toContain("non-scaling-stroke")
+    expect(svg).toMatch(/stroke-width: 2\.6[67]/)
+  })
+
   it("sizes a rotated document to its rotated bounds and bakes the angle in", async () => {
     const host = createExportHost()
     const payload = {

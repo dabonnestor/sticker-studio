@@ -410,6 +410,22 @@ export function createExportHost(): ExportHost {
     },
 
     async toSvg(prepared, usedFamilies) {
+      // Shape borders are a fixed screen-px constant in the editor
+      // (strokeUniform, §4) — an interactive convenience. Dragged verbatim into
+      // an SVG that becomes `vector-effect="non-scaling-stroke"`, which pins
+      // the stroke to the viewport px: the border would never scale with the
+      // document, so the vector export falls behind the rasters as soon as the
+      // SVG is placed or viewed larger than 100%. Neutralize the flag for
+      // export only — divide the width by the element's total scale so the
+      // SVG transform multiplies it back to the design px, exactly like the
+      // 300 DPI raster bakes it. The raw serializer reads object state (no
+      // re-render) and the canvas is a private export copy, so neither the
+      // raster formats nor the live Document are affected.
+      for (const obj of prepared.canvas.getObjects()) {
+        if (!obj.strokeUniform || !obj.strokeWidth) continue
+        obj.strokeUniform = false
+        obj.strokeWidth = obj.strokeWidth / Math.abs(obj.getObjectScaling().x)
+      }
       let svg = prepared.canvas.toSVG()
       // Embed each used family's bytes as a base64 data URI — Fabric's
       // createSVGFontFacesMarkup references `config.fontPaths[family]` as an
