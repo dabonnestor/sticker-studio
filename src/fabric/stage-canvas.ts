@@ -18,6 +18,7 @@ import {
   type InteractiveFabricObject,
   type Object as BaseFabricObject,
   type TCanvasSizeOptions,
+  type TCornerPoint,
   type TMat2D,
   type TPointerEvent,
   type Transform,
@@ -611,6 +612,26 @@ export class StageCanvas extends Canvas {
   /** The current zoom as a percentage (§9) — the viewport transform's scale. */
   getZoomPercent(): number {
     return this.zoomPercentValue
+  }
+
+  /**
+   * The visible scene region for off-screen culling (skipOffscreen is on by
+   * default) — the Document rect, unchanged by zoom. The base computes this
+   * as `canvas.width/height` (the Document size) divided by the zoom, which
+   * is right when the element is the viewport; under the stage's zoom model
+   * the element grows to `document × zoom` while `canvas.width` stays the
+   * Document size, so at zoom>100 the base would report a shrinking box of
+   * the scene and cull every object outside it — a centered shape vanished
+   * at ≈300% once it left the shrinking box. Here the element IS the whole
+   * Document at any zoom, so the on-screen region is the Document itself.
+   */
+  override calcViewportBoundaries(): TCornerPoint {
+    return (this.vptCoords = {
+      tl: new Point(0, 0),
+      tr: new Point(this.width, 0),
+      bl: new Point(0, this.height),
+      br: new Point(this.width, this.height),
+    })
   }
 
   /**

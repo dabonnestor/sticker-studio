@@ -386,6 +386,32 @@ describe("StageCanvas zoom", () => {
     expect(shape.getCenterPoint().y).toBeCloseTo(center.y, 10)
   })
 
+  it("objects stay on screen at any zoom — the culling viewport is the Document, not a shrinking box", () => {
+    // Off-screen culling (skipOffscreen default) tests objects against
+    // `vptCoords`. Under the stage's zoom model the element grows to
+    // `document × zoom` while canvas.width stays the Document size, so the
+    // base's `calcViewportBoundaries` — canvas.width/zoom — shrinks with the
+    // zoom and would cull a centered square once it left that box (the
+    // disappear-at-300% bug). The visible scene region is the whole Document
+    // at any zoom: the boundaries never move with the zoom, and a centered
+    // object reads on-screen.
+    const shape = createShape("square")
+    shape.set({ left: 300, top: 300 })
+    canvas.add(shape)
+    canvas.centerObject(shape)
+
+    for (const percent of [100, 200, 300, 400, 800]) {
+      canvas.setZoomPercent(percent)
+      canvas.calcViewportBoundaries() // re-derived at every render start
+      const { tl, br } = canvas.vptCoords
+      expect(tl.x).toBe(0)
+      expect(tl.y).toBe(0)
+      expect(br.x).toBe(600) // the Document, not 600 / (percent / 100)
+      expect(br.y).toBe(600)
+      expect(shape.isOnScreen()).toBe(true) // never culled off screen
+    }
+  })
+
   it("early-verify: the mirrored selection chrome stays glued at non-100% zoom", () => {
     // The oCoords are viewport-space (the vpt is folded in), so the mirrored
     // cursor path — the same findControl the in-document hover runs —
