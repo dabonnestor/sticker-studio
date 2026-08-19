@@ -30,6 +30,7 @@ import {
   DOCUMENT_BORDER_COLOR,
   DOCUMENT_BORDER_WIDTH,
   DOCUMENT_HEIGHT,
+  DOCUMENT_ROTATION,
   DOCUMENT_WIDTH,
   type StageCanvas,
 } from "@/fabric/stage-canvas"
@@ -60,7 +61,7 @@ import {
   type ExportFormat,
 } from "@/fabric/export"
 import type { Unit } from "@/lib/units"
-import { stepZoomPercent } from "@/fabric/zoom"
+import { stepDocumentRotation, stepZoomPercent } from "@/fabric/zoom"
 
 /** A shape-property commit against the selected shape (build spec §5). */
 export interface ShapePropsPatch {
@@ -146,6 +147,18 @@ interface StageContextValue {
    * workspace minus the margin, centered.
    */
   fitZoom: () => void
+  /**
+   * The Document rotation in degrees (§10) — document state: one undoable
+   * step per rotate, envelope-owned, honored by export; the stage displays
+   * cardinal rotations.
+   */
+  rotation: number
+  /**
+   * Rotate the Document ±90° (§10) — the rotate-canvas control. Document
+   * state: the rotate is ONE undoable step (ADR 0001), like a size or border
+   * commit.
+   */
+  rotateDocument: (direction: 1 | -1) => void
   /** Add a shape of the given kind, centered and selected (§5). */
   addShape: (kind: ShapeKind) => void
   /**
@@ -339,6 +352,10 @@ export function StageProvider({ children }: { children: ReactNode }) {
   const [unit, setUnit] = useState<Unit>("in")
   const [historyState, setHistoryState] = useState({ canUndo: false, canRedo: false })
   const [zoom, setZoomState] = useState(100)
+  // The Document rotation in degrees (§10) — document state like size and the
+  // border: undoable, envelope-owned, exported; mirrored so the toolbar's
+  // rotate control reads and steps it.
+  const [rotation, setRotationState] = useState(DOCUMENT_ROTATION)
   // The current working file's basename (§10) — defaults to untitled; an
   // import sets it from the file's name so Save round-trips the same file.
   const [designFileName, setDesignFileName] = useState("untitled")
@@ -354,6 +371,7 @@ export function StageProvider({ children }: { children: ReactNode }) {
         borderWidth: next.borderWidth,
         borderColor: next.borderColor,
       })
+      setRotationState(next.getRotation())
     }
   }, [])
 
@@ -403,6 +421,21 @@ export function StageProvider({ children }: { children: ReactNode }) {
     }
   }, [canvas])
 
+  // The Document rotation mirrors into React for the toolbar's rotate control
+  // (build spec §10) — the same `onZoomChanged` pattern. The rotate control
+  // calls `setRotation`, which fires this; undo/redo and import refresh it
+  // through `refreshDocumentMirrors` (the restore paths set `canvas.rotation`
+  // directly).
+  useEffect(() => {
+    if (!canvas) return
+    const sync = () => setRotationState(canvas.getRotation())
+    canvas.onRotationChanged = sync
+    sync()
+    return () => {
+      canvas.onRotationChanged = undefined
+    }
+  }, [canvas])
+
   const setZoom = useCallback(
     (percent: number) => {
       if (!canvas) return
@@ -427,7 +460,19 @@ export function StageProvider({ children }: { children: ReactNode }) {
     canvas.fitToWorkspace()
   }, [canvas])
 
-  /** Re-mirror the document size and border — both are document state (§8). */
+  const rotateDocument = useCallback(
+    (direction: 1 | -1) => {
+      if (!canvas?.history) return
+      // Step ±90° through the four cardinals; setRotation re-lays-out the
+      // rotated viewport and fires the mirror. One undoable step per click
+      // (ADR 0001) — the History's dedup makes a no-op wrap a no-op.
+      canvas.setRotation(stepDocumentRotation(canvas.getRotation(), direction))
+      canvas.history.commit()
+    },
+    [canvas],
+  )
+
+  /** Re-mirror the document size, border, and rotation — document state (§8). */
   const refreshDocumentMirrors = useCallback(
     (canvas: Canvas) => {
       setDocumentSizeState({ width: canvas.width, height: canvas.height })
@@ -436,6 +481,7 @@ export function StageProvider({ children }: { children: ReactNode }) {
         borderWidth: canvas.borderWidth,
         borderColor: canvas.borderColor,
       })
+      setRotationState(canvas.rotation)
     },
     [],
   )
@@ -856,6 +902,7 @@ export function StageProvider({ children }: { children: ReactNode }) {
         borderWidth: canvas.borderWidth,
         borderColor: canvas.borderColor,
       })
+      setRotationState(canvas.rotation)
       reportStatus(`Imported ${name}.json`)
     },
     [
@@ -1063,6 +1110,8 @@ export function StageProvider({ children }: { children: ReactNode }) {
         zoomIn,
         zoomOut,
         fitZoom,
+        rotation,
+        rotateDocument,
         addShape,
         commitShapeProps,
         addText,

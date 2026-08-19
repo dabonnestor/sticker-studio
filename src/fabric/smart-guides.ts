@@ -22,16 +22,17 @@
 
 import {
   ActiveSelection,
+  Point,
   Rect,
   type BasicTransformEvent,
   type Canvas,
   type FabricObject,
-  type Point,
 } from "fabric"
 import { AligningGuidelines } from "../../node_modules/fabric/extensions/aligning_guidelines/index.ts"
 import type { AligningLineConfig } from "../../node_modules/fabric/extensions/aligning_guidelines/typedefs.ts"
 
 import type { StageCanvas } from "@/fabric/stage-canvas"
+import { displayRotationDeg } from "@/fabric/zoom"
 
 /**
  * Snap tolerance — a flat 6 screen px (ADR 0004). Snap engages at ≤6 and
@@ -142,7 +143,8 @@ function parseGuideLines(lines: Set<string>): Array<{ x: number; y: number }> {
  * cache entry — the `setXY`-triggering one, in insertion order — is solid
  * when the axis snapped and the rest dashed; a suppressed axis (Alt/Option)
  * paints all its lines dashed — nothing snapped (ADR 0004). The dash phase
- * restarts per line, so coincident lines read identically.
+ * restarts per line, so coincident lines read identically. Only for an
+ * unrotated viewport, where a scene guide IS an axis-aligned overlay line.
  */
 function paintGuideAxis(
   ctx: CanvasRenderingContext2D,
@@ -163,6 +165,61 @@ function paintGuideAxis(
       ctx.moveTo(0, coord)
       ctx.lineTo(width, coord)
     }
+    ctx.stroke()
+  }
+  if (snapped) {
+    ctx.strokeStyle = SNAP_GUIDE_SOLID_COLOR
+    ctx.setLineDash([])
+    lineAt(coords[0])
+    if (coords.length > 1) {
+      ctx.strokeStyle = SNAP_GUIDE_NEAR_COLOR
+      ctx.setLineDash(SNAP_GUIDE_DASH)
+      for (const coord of coords.slice(1)) lineAt(coord)
+    }
+  } else {
+    ctx.strokeStyle = SNAP_GUIDE_NEAR_COLOR
+    ctx.setLineDash(SNAP_GUIDE_DASH)
+    for (const coord of coords) lineAt(coord)
+  }
+}
+
+/** How far a guide's segment extends past the Document in scene px — far
+ * enough that, rotated and scaled, the segment still crosses the whole
+ * workspace, so the overlay trims it into the full-extent guide. */
+const GUIDE_SEGMENT_MARGIN = 100000
+
+/**
+ * Paint one axis's guide lines under a rotated viewport (§10): each scene
+ * guide is a doc-aligned line (constant scene x or y), so its overlay image
+ * is the line through any two of its scene points mapped through the full
+ * viewport transform — a rotated line when the view is. The segment's two
+ * endpoints sit far beyond the Document (GUIDE_SEGMENT_MARGIN) on the guide's
+ * axis, so after the transform the segment spans the entire workspace in every
+ * orientation. Same solid-first/dashed-rest styling as `paintGuideAxis`.
+ */
+function paintGuideSegment(
+  ctx: CanvasRenderingContext2D,
+  coords: number[],
+  snapped: boolean,
+  toViewport: (sceneX: number, sceneY: number) => Point,
+  sceneWidth: number,
+  sceneHeight: number,
+  axis: "vertical" | "horizontal",
+): void {
+  if (!coords.length) return
+  ctx.lineWidth = 1
+  const lineAt = (coord: number) => {
+    ctx.beginPath()
+    const near =
+      axis === "vertical"
+        ? toViewport(coord, -GUIDE_SEGMENT_MARGIN)
+        : toViewport(-GUIDE_SEGMENT_MARGIN, coord)
+    const far =
+      axis === "vertical"
+        ? toViewport(coord, sceneHeight + GUIDE_SEGMENT_MARGIN)
+        : toViewport(sceneWidth + GUIDE_SEGMENT_MARGIN, coord)
+    ctx.moveTo(near.x, near.y)
+    ctx.lineTo(far.x, far.y)
     ctx.stroke()
   }
   if (snapped) {
@@ -402,27 +459,55 @@ export class SmartGuides extends AligningGuidelines {
     if (!prepared) return
     const { ctx, offset, width, height } = prepared
     canvas.markGuidesPainted()
-    // The guides paint in viewport space: each scene coordinate maps through
-    // the viewport transform, then the Document's offset inside the overlay
-    // glues the line to the scene — the same mapping the marquee mirror's
-    // `getMarqueeBox` uses (identity viewport today; zoom-ready).
     const v = canvas.viewportTransform
-    const toViewportX = (sceneX: number) => sceneX * v[0] + v[4] + offset.x
-    const toViewportY = (sceneY: number) => sceneY * v[3] + v[5] + offset.y
-    paintGuideAxis(
+    if (displayRotationDeg(canvas.getRotation()) === 0) {
+      // Unrotated viewport: each scene guide IS an axis-aligned overlay line,
+      // so each scene coordinate maps through the viewport transform, then
+      // the Document's offset inside the overlay glues the line to the scene
+      // — the same mapping the marquee mirror's `getMarqueeBox` uses.
+      const toViewportX = (sceneX: number) => sceneX * v[0] + v[4] + offset.x
+      const toViewportY = (sceneY: number) => sceneY * v[3] + v[5] + offset.y
+      paintGuideAxis(
+        ctx,
+        vertical.map(toViewportX),
+        this.snappedX,
+        width,
+        height,
+        "vertical",
+      )
+      paintGuideAxis(
+        ctx,
+        horizontal.map(toViewportY),
+        this.snappedY,
+        width,
+        height,
+        "horizontal",
+      )
+      return
+    }
+    // Rotated viewport: the guides are doc-aligned scene lines, so map two
+    // far scene endpoints through the FULL transform (the cross terms!) and
+    // stroke the segment — the guide rotates with the Document and still
+    // spans the whole workspace after the overlay trims it.
+    const offsetPoint = new Point(offset.x, offset.y)
+    const toViewport = (sceneX: number, sceneY: number) =>
+      new Point(sceneX, sceneY).transform(v).add(offsetPoint)
+    paintGuideSegment(
       ctx,
-      vertical.map(toViewportX),
+      vertical,
       this.snappedX,
-      width,
-      height,
+      toViewport,
+      canvas.width,
+      canvas.height,
       "vertical",
     )
-    paintGuideAxis(
+    paintGuideSegment(
       ctx,
-      horizontal.map(toViewportY),
+      horizontal,
       this.snappedY,
-      width,
-      height,
+      toViewport,
+      canvas.width,
+      canvas.height,
       "horizontal",
     )
   }

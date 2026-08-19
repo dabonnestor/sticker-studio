@@ -25,10 +25,11 @@ declare module "fabric" {
     borderColor: string
     /**
      * Document rotation in degrees — envelope-owned (ADR 0002): Fabric 7's
-     * canvas has no rotation property, and `canvas.toJSON()` never serializes
+     * canvas has no rotation prop, and `canvas.toJSON()` never serializes
      * one, so the Design file envelope carries it. Rendered by export (Build
-     * 8 §11); the stage stays unrotated (the workspace layout and overlay
-     * mirrors assume the identity viewport).
+     * 8 §11); the stage displays cardinal rotations (0/90/180/270) through a
+     * rotated viewport transform, and a non-cardinal value displays
+     * unrotated.
      */
     rotation: number
   }

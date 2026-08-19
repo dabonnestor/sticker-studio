@@ -20,6 +20,7 @@ import {
   ROTATE_HANDLE_SIZE,
   createStageCanvas,
   getMarqueeBox,
+  getMarqueeQuad,
   getOverlayOffset,
   isPointInCutGeometry,
   renderRotateHandle,
@@ -73,6 +74,57 @@ describe("getMarqueeBox", () => {
       IDENTITY,
     )
     expect(box).toEqual({ left: -120, top: 40, width: 240, height: 160 })
+  })
+})
+
+/**
+ * The marquee under a rotated viewport (build spec §10): the drag's scene rect
+ * is a rotated quad in viewport space, and the two-corner box mapping would
+ * paint its axis-aligned bounding box — the wrong shape. The overlay paints
+ * the quad corners instead; the selection itself is scene-plane math and is
+ * unaffected.
+ */
+describe("getMarqueeQuad", () => {
+  it("returns the four corners in order under the identity transform", () => {
+    const quad = getMarqueeQuad(
+      { x: 100, y: 100, deltaX: 200, deltaY: 150 },
+      [1, 0, 0, 1, 0, 0],
+    )
+    expect(quad).toEqual([
+      new Point(100, 100),
+      new Point(300, 100),
+      new Point(300, 250),
+      new Point(100, 250),
+    ])
+  })
+
+  it("rotates with a 90° viewport — a quad, not the bbox of its corners", () => {
+    // A 600×400 Document at 90°: [0, 1, −1, 0, 400, 0] maps each scene corner
+    // x' = −y + 400, y' = x. The axis-aligned bbox of the four images would
+    // be 150×200 at (150,100) — the quad preserves the rotation.
+    const quad = getMarqueeQuad(
+      { x: 100, y: 100, deltaX: 200, deltaY: 150 },
+      [0, 1, -1, 0, 400, 0],
+    )
+    expect(quad).toEqual([
+      new Point(300, 100),
+      new Point(300, 300),
+      new Point(150, 300),
+      new Point(150, 100),
+    ])
+  })
+
+  it("degenerates to a point for a plain press (no drag)", () => {
+    const quad = getMarqueeQuad(
+      { x: 150, y: 80, deltaX: 0, deltaY: 0 },
+      [1, 0, 0, 1, 0, 0],
+    )
+    expect(quad).toEqual([
+      new Point(150, 80),
+      new Point(150, 80),
+      new Point(150, 80),
+      new Point(150, 80),
+    ])
   })
 })
 

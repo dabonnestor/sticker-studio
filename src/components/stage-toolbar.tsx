@@ -23,6 +23,7 @@ import {
   Italic,
   Layers,
   Lock,
+  RotateCw,
   Trash2,
   Type,
   Underline,
@@ -261,6 +262,28 @@ function TooltipLabel({
       </TooltipTrigger>
       <TooltipContent side="bottom">{label}</TooltipContent>
     </Tooltip>
+  )
+}
+
+/**
+ * Document rotation (§10) — the rotate-canvas control: a single button that
+ * steps the Document +90° through 0/90/180/270, one undoable step per click.
+ * Document state, like size and the canvas look — the stage displays the
+ * rotation, export honors it, the Design file carries it.
+ */
+function RotateControl() {
+  const { rotateDocument } = useStage()
+  return (
+    <TooltipLabel label="Rotate canvas">
+      <Button
+        variant="ghost"
+        size="icon-sm"
+        aria-label="Rotate canvas"
+        onClick={() => rotateDocument(1)}
+      >
+        <RotateCw aria-hidden />
+      </Button>
+    </TooltipLabel>
   )
 }
 
@@ -1391,6 +1414,8 @@ export function StageToolbar() {
             <UnitSwitcher />
             <Separator orientation="vertical" className="mx-1 h-5" />
             <CanvasProps />
+            <Separator orientation="vertical" className="mx-1 h-5" />
+            <RotateControl />
           </>
         )}
         {hasShape && <ShapeProps />}

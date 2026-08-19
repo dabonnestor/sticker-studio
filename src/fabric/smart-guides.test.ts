@@ -458,6 +458,22 @@ describe("guide painting", () => {
     expect(overlayCtx.moveTo).toHaveBeenCalledWith(404, 0)
   })
 
+  it("rotates the guides with a rotated viewport — a doc-vertical guide paints screen-horizontal", () => {
+    canvas.setDimensions({ width: 600, height: 400 })
+    canvas.setRotation(90)
+    const moved = squareAt(210, 250)
+    const target = squareAt(400, 400)
+    canvas.add(moved, target)
+    moveTo(canvas, moved, 210, 250) // scene vertical guide at x=304
+    canvas.renderAll()
+    // The 90° viewport maps the scene line x=304 through the FULL transform
+    // (x' = −y + 400, y' = x): the segment spans the workspace as a screen-
+    // horizontal line at y=304 — the segment margin keeps both endpoints far
+    // beyond the overlay, which trims it into the full-width guide.
+    expect(overlayCtx.moveTo).toHaveBeenCalledWith(100400, 304)
+    expect(overlayCtx.lineTo).toHaveBeenCalledWith(-100000, 304)
+  })
+
   it("keeps the tolerance at 6 screen px at non-100% zoom", () => {
     canvas.setZoom(2)
     // Both objects stay inside the zoomed viewport (visible scene [0,300]²) —

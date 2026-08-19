@@ -96,13 +96,17 @@ export async function loadEnvelope(
   payload: ReturnType<Canvas["toJSON"]>,
 ): Promise<void> {
   canvas.discardActiveObject()
+  // The StageCanvas `setDimensions` override re-runs the zoom layout, which
+  // reads `canvas.rotation` — assign the envelope's rotation (and border, the
+  // other layout-independent envelope fields) before it, so an import or
+  // restore that changes a cardinal rotation lays out under the new one.
+  canvas.rotation = envelope.rotation
+  canvas.borderWidth = envelope.borderWidth
+  canvas.borderColor = envelope.borderColor
   canvas.setDimensions({
     width: envelope.width,
     height: envelope.height,
   })
-  canvas.rotation = envelope.rotation
-  canvas.borderWidth = envelope.borderWidth
-  canvas.borderColor = envelope.borderColor
   await canvas.loadFromJSON(payload)
 }
 

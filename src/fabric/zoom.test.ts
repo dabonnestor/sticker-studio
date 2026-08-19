@@ -1,4 +1,4 @@
-import { config } from "fabric"
+import { Point, config } from "fabric"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
 import { createStageCanvas } from "@/fabric/stage-canvas"
@@ -12,7 +12,11 @@ import {
   ZOOM_STEP_PERCENT,
   clampZoomPercent,
   computeFitZoom,
+  displayRotationDeg,
+  normalizeDegrees,
   rotatedBounds,
+  rotatedViewportTransform,
+  stepDocumentRotation,
   stepZoomPercent,
   wheelZoomFactor,
 } from "@/fabric/zoom"
@@ -94,6 +98,104 @@ describe("rotatedBounds", () => {
     const positive = rotatedBounds(600, 400, 45)
     expect(negative.width).toBeCloseTo(positive.width, 10)
     expect(negative.height).toBeCloseTo(positive.height, 10)
+  })
+})
+
+/**
+ * The document rotation's canonical form (§10): normalizeDegrees maps any
+ * angle (imports and history store the literal value) to [0, 360);
+ * displayRotationDeg is the angle the stage displays — the nearest multiple
+ * of 90°, or 0° for a non-cardinal angle the stage can't show.
+ */
+describe("normalizeDegrees", () => {
+  it("keeps an in-range angle", () => {
+    expect(normalizeDegrees(0)).toBe(0)
+    expect(normalizeDegrees(180)).toBe(180)
+    expect(normalizeDegrees(270)).toBe(270)
+  })
+
+  it("wraps 360 back to 0 and negative angles forward", () => {
+    expect(normalizeDegrees(360)).toBe(0)
+    expect(normalizeDegrees(450)).toBe(90)
+    expect(normalizeDegrees(-90)).toBe(270)
+  })
+})
+
+describe("displayRotationDeg", () => {
+  it.each([0, 90, 180, 270])("keeps the cardinal %i", (degrees) => {
+    expect(displayRotationDeg(degrees)).toBe(degrees)
+  })
+
+  it("maps negative and >360 cardinals to their canonical form", () => {
+    expect(displayRotationDeg(-90)).toBe(270)
+    expect(displayRotationDeg(450)).toBe(90)
+  })
+
+  it("falls back to 0 for a non-cardinal angle — the stage display limit", () => {
+    expect(displayRotationDeg(45)).toBe(0)
+    expect(displayRotationDeg(135)).toBe(0)
+    expect(displayRotationDeg(-45)).toBe(0)
+  })
+})
+
+describe("stepDocumentRotation", () => {
+  it("steps forward through the cardinals, wrapping past 270", () => {
+    expect(stepDocumentRotation(0, 1)).toBe(90)
+    expect(stepDocumentRotation(90, 1)).toBe(180)
+    expect(stepDocumentRotation(180, 1)).toBe(270)
+    expect(stepDocumentRotation(270, 1)).toBe(0)
+  })
+
+  it("steps backward, wrapping before 0", () => {
+    expect(stepDocumentRotation(0, -1)).toBe(270)
+    expect(stepDocumentRotation(90, -1)).toBe(0)
+    expect(stepDocumentRotation(270, -1)).toBe(180)
+  })
+})
+
+/**
+ * The stage's rotated viewport transform (build spec §10): scene → element
+ * for a Document rotated about its center inside its axis-aligned bounding
+ * box. The exact cardinal matrices (Fabric's TMat2D convention) and the
+ * center-to-center mapping — the doc center lands on the element center.
+ */
+describe("rotatedViewportTransform", () => {
+  it("0° is the plain zoom — translate zero", () => {
+    expect(rotatedViewportTransform(600, 400, 1, 0)).toEqual([1, 0, 0, 1, 0, 0])
+    expect(rotatedViewportTransform(600, 400, 2, 0)).toEqual([2, 0, 0, 2, 0, 0])
+  })
+
+  it("90° rotates clockwise and centers the swapped box", () => {
+    // bounds become 400×600, so the element center (200,300) must hold the
+    // scene center (300,200).
+    expect(rotatedViewportTransform(600, 400, 1, 90)).toEqual([0, 1, -1, 0, 400, 0])
+    expect(rotatedViewportTransform(600, 400, 2, 90)).toEqual([0, 2, -2, 0, 800, 0])
+  })
+
+  it("180° maps the scene center to the element center", () => {
+    expect(rotatedViewportTransform(600, 400, 1, 180)).toEqual([-1, 0, 0, -1, 600, 400])
+    expect(rotatedViewportTransform(600, 400, 2, 180)).toEqual([-2, 0, 0, -2, 1200, 800])
+  })
+
+  it("270° mirrors the 90° translate", () => {
+    expect(rotatedViewportTransform(600, 400, 1, 270)).toEqual([0, -1, 1, 0, 0, 600])
+    expect(rotatedViewportTransform(600, 400, 2, 270)).toEqual([0, -2, 2, 0, 0, 1200])
+  })
+
+  it("maps the scene center to the element center at every cardinal", () => {
+    const sceneCenter = new Point(300, 200)
+    expect(sceneCenter.transform(rotatedViewportTransform(600, 400, 1, 0))).toEqual(
+      new Point(300, 200),
+    )
+    expect(sceneCenter.transform(rotatedViewportTransform(600, 400, 1, 90))).toEqual(
+      new Point(200, 300),
+    )
+    expect(sceneCenter.transform(rotatedViewportTransform(600, 400, 1, 180))).toEqual(
+      new Point(300, 200),
+    )
+    expect(sceneCenter.transform(rotatedViewportTransform(600, 400, 1, 270))).toEqual(
+      new Point(200, 300),
+    )
   })
 })
 
@@ -429,6 +531,178 @@ describe("StageCanvas zoom", () => {
     expect(
       canvas.getWorkspaceCursor(shape.oCoords.br.x + 1, shape.oCoords.br.y + 1),
     ).toBe("nwse-resize")
+  })
+})
+
+/**
+ * The Document rotation display (build spec §10): setRotation re-lays-out the
+ * stage so the Document renders rotated about its center — the element is the
+ * Document's rotated bounding box, the viewport transform carries the
+ * rotation, and the scene↔scroll mapping inverts through it. Rotation is
+ * Document state: undoable, envelope-owned, honored by export.
+ */
+describe("document rotation display", () => {
+  let canvas: ReturnType<typeof createStageCanvas>
+  let workspace: HTMLElement
+
+  function createWorkspace(width = 1000, height = 700) {
+    const el = document.createElement("div")
+    Object.defineProperty(el, "clientWidth", {
+      get: () => width,
+      configurable: true,
+    })
+    Object.defineProperty(el, "clientHeight", {
+      get: () => height,
+      configurable: true,
+    })
+    return el
+  }
+
+  function resizeWorkspace(width: number, height: number) {
+    Object.defineProperty(workspace, "clientWidth", {
+      get: () => width,
+      configurable: true,
+    })
+    Object.defineProperty(workspace, "clientHeight", {
+      get: () => height,
+      configurable: true,
+    })
+  }
+
+  /** The canvas element's CSS size — the rotated Document presentation. */
+  function elementSize() {
+    const el = canvas.getElement()
+    return {
+      width: Number.parseFloat(el.style.width),
+      height: Number.parseFloat(el.style.height),
+      bitmapWidth: el.width,
+      bitmapHeight: el.height,
+    }
+  }
+
+  beforeEach(() => {
+    workspace = createWorkspace()
+    canvas = createStageCanvas(
+      document.createElement("canvas"),
+      document.createElement("canvas"),
+      workspace,
+    )
+    canvas.setDimensions({ width: 600, height: 400 })
+  })
+
+  afterEach(async () => {
+    await canvas.dispose()
+  })
+
+  it("reports the value and notifies once — a no-op set is silent", () => {
+    const listener = vi.fn()
+    canvas.onRotationChanged = listener
+    canvas.setRotation(90)
+    expect(canvas.getRotation()).toBe(90)
+    expect(listener).toHaveBeenCalledTimes(1)
+    canvas.setRotation(90)
+    expect(listener).toHaveBeenCalledTimes(1)
+  })
+
+  it("90° swaps the element to the rotated bounds, keeps the model", () => {
+    canvas.setRotation(90)
+    expect(canvas.viewportTransform).toEqual([0, 1, -1, 0, 400, 0])
+    expect(elementSize()).toEqual({
+      width: 400,
+      height: 600,
+      bitmapWidth: 400,
+      bitmapHeight: 600,
+    })
+    expect(canvas.width).toBe(600) // canvas.width stays the Document size
+  })
+
+  it("180° keeps the box, flips both axes of the transform", () => {
+    canvas.setRotation(180)
+    expect(canvas.viewportTransform).toEqual([-1, 0, 0, -1, 600, 400])
+    expect(elementSize()).toEqual({
+      width: 600,
+      height: 400,
+      bitmapWidth: 600,
+      bitmapHeight: 400,
+    })
+  })
+
+  it("a document resize re-applies the layout at the current rotation", () => {
+    canvas.setRotation(90)
+    canvas.setDimensions({ width: 500, height: 300 })
+    expect(canvas.viewportTransform).toEqual([0, 1, -1, 0, 300, 0])
+    expect(elementSize()).toEqual({
+      width: 300,
+      height: 500,
+      bitmapWidth: 300,
+      bitmapHeight: 500,
+    })
+  })
+
+  it("the workspace center shows the Document center at every cardinal", () => {
+    canvas.setRotation(90)
+    expect(canvas.getViewportCenterScenePoint().x).toBeCloseTo(300, 10)
+    expect(canvas.getViewportCenterScenePoint().y).toBeCloseTo(200, 10)
+    canvas.setRotation(180)
+    expect(canvas.getViewportCenterScenePoint().x).toBeCloseTo(300, 10)
+    expect(canvas.getViewportCenterScenePoint().y).toBeCloseTo(200, 10)
+  })
+
+  it("a center-anchored zoom keeps the rotated anchor fixed", () => {
+    canvas.setRotation(90)
+    const anchor = canvas.getViewportCenterScenePoint()
+    canvas.setZoomPercent(200, true)
+    expect(canvas.getViewportCenterScenePoint().x).toBeCloseTo(anchor.x, 10)
+    expect(canvas.getViewportCenterScenePoint().y).toBeCloseTo(anchor.y, 10)
+    // The zoom layout keeps the rotated element: 400×600 → 800×1200 at 200%.
+    expect(elementSize().width).toBe(800)
+    expect(elementSize().height).toBe(1200)
+  })
+
+  it("recenters the rotated element into the workspace", () => {
+    resizeWorkspace(300, 300)
+    canvas.setRotation(90) // element 400×600, content 400×600
+    expect(workspace.scrollLeft).toBeCloseTo(50, 10)
+    expect(workspace.scrollTop).toBeCloseTo(150, 10)
+  })
+
+  it("fit at a cardinal rotation fits the rotated bounds", () => {
+    // Unrotated: min((1000−96)/600, (700−96)/400) = 150.67%. Rotated 90° the
+    // box is 400×600 — y binds: (700−96)/600 = 100.67%.
+    canvas.fitToWorkspace()
+    expect(canvas.getZoomPercent()).toBeCloseTo(150.6667, 4)
+    canvas.setRotation(90)
+    canvas.fitToWorkspace()
+    expect(canvas.getZoomPercent()).toBeCloseTo(100.6667, 4)
+  })
+
+  it("a non-cardinal rotation displays unrotated (export still honors it)", () => {
+    canvas.setRotation(45)
+    expect(canvas.getRotation()).toBe(45)
+    expect(canvas.viewportTransform).toEqual([1, 0, 0, 1, 0, 0])
+    expect(elementSize()).toEqual({
+      width: 600,
+      height: 400,
+      bitmapWidth: 600,
+      bitmapHeight: 400,
+    })
+  })
+
+  it("enters the undo stack as one step — undo/redo walk the rotation", async () => {
+    canvas.setRotation(90)
+    canvas.history.commit()
+    expect(canvas.history.canUndo).toBe(true)
+    await canvas.history.undo()
+    expect(canvas.getRotation()).toBe(0)
+    expect(canvas.viewportTransform).toEqual([1, 0, 0, 1, 0, 0])
+    await canvas.history.redo()
+    expect(canvas.getRotation()).toBe(90)
+    expect(canvas.viewportTransform).toEqual([0, 1, -1, 0, 400, 0])
+  })
+
+  it("does not serialize in canvas.toJSON — the envelope owns it", () => {
+    canvas.setRotation(90)
+    expect(JSON.stringify(canvas.toJSON())).not.toContain("rotation")
   })
 })
 

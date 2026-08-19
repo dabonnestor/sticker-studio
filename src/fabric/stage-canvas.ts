@@ -50,7 +50,13 @@ import { DEFAULT_BORDER_COLOR, getShapeKind, restampBorderClip } from "@/fabric/
 import { SNAP_TOLERANCE_PX, SmartGuides } from "@/fabric/smart-guides"
 import { wireTextInteractions } from "@/fabric/text-interactions"
 import { bakeTextScale, isTextObject } from "@/fabric/text"
-import { clampZoomPercent, computeFitZoom } from "@/fabric/zoom"
+import {
+  clampZoomPercent,
+  computeFitZoom,
+  displayRotationDeg,
+  rotatedBounds,
+  rotatedViewportTransform,
+} from "@/fabric/zoom"
 
 /**
  * Initial Document size — 600×600 px at the 96 DPI display basis. The canvas
@@ -74,8 +80,10 @@ export const DOCUMENT_BORDER_COLOR = DEFAULT_BORDER_COLOR
 /**
  * Default Document rotation — 0° (§10, ADR 0002): the document, unrotated
  * at creation. The envelope carries it; export renders rotated (Build 8
- * §11). The stage stays unrotated — the workspace layout and the overlay
- * mirrors (marquee, controls, smart guides) assume the identity viewport.
+ * §11). The stage displays cardinal rotations (0/90/180/270 — see
+ * `displayRotationDeg`) through a rotated viewport transform; a non-cardinal
+ * rotation imported from a Design file displays unrotated here and still
+ * exports correctly.
  */
 export const DOCUMENT_ROTATION = 0
 
@@ -378,7 +386,8 @@ export interface MarqueeBox {
  * The marquee rectangle in viewport space (§7 extension): the drag's start
  * and current extent — `_groupSelector`'s scene-plane values — mapped
  * through the viewport transform, normalized to a box. Pure, so the overlay
- * paint and the tests share one mapping.
+ * paint and the tests share one mapping. Only valid for an unrotated
+ * viewport — under a rotated viewport the marquee is a quad (getMarqueeQuad).
  */
 export function getMarqueeBox(
   selector: { x: number; y: number; deltaX: number; deltaY: number },
@@ -395,6 +404,29 @@ export function getMarqueeBox(
     width: Math.abs(extent.x - start.x),
     height: Math.abs(extent.y - start.y),
   }
+}
+
+/**
+ * The marquee rectangle's four corners in viewport space, in order (§7
+ * extension, build spec §10): the scene rect's corners mapped through the
+ * viewport transform. Under a rotated viewport the two-corner box mapping
+ * (`getMarqueeBox`) collapses to the axis-aligned bounding box of the
+ * transformed corners — the wrong shape — so the rotated overlay paints the
+ * quad instead. The selection itself is scene-plane math and is unaffected.
+ * Pure, so the overlay paint and the tests share one mapping.
+ */
+export function getMarqueeQuad(
+  selector: { x: number; y: number; deltaX: number; deltaY: number },
+  viewportTransform: TMat2D,
+): Point[] {
+  return [
+    new Point(selector.x, selector.y).transform(viewportTransform),
+    new Point(selector.x + selector.deltaX, selector.y).transform(viewportTransform),
+    new Point(selector.x + selector.deltaX, selector.y + selector.deltaY).transform(
+      viewportTransform,
+    ),
+    new Point(selector.x, selector.y + selector.deltaY).transform(viewportTransform),
+  ]
 }
 
 /** The Document's rect in the workspace, as the overlay mapping needs it. */
@@ -541,6 +573,13 @@ export class StageCanvas extends Canvas {
   onZoomChanged?: () => void
 
   /**
+   * Fired after the rotation changes (§10) — the React mirror's subscription:
+   * the same pattern as `onZoomChanged`. Document state (undoable, serialized
+   * via the envelope), unlike zoom's view state.
+   */
+  onRotationChanged?: () => void
+
+  /**
    * The group currently entered (§7 Q5), or null. While entered, presses
    * target the group's children (the findTarget override resolves them —
    * children aren't in the canvas collection) and children are fixed in
@@ -612,6 +651,36 @@ export class StageCanvas extends Canvas {
   /** The current zoom as a percentage (§9) — the viewport transform's scale. */
   getZoomPercent(): number {
     return this.zoomPercentValue
+  }
+
+  /**
+   * The document rotation in degrees (§10) — the literal `canvas.rotation`
+   * (envelope-owned), which the design-tool rotate control steps in 90°
+   * increments and a Design file import may set to any angle.
+   */
+  getRotation(): number {
+    return this.rotation
+  }
+
+  /**
+   * Set the document rotation (build spec §10) — the rotate-canvas control's
+   * stage side. Document state, exactly like size: the envelope carries it,
+   * history snapshots it, and export renders it; the stage here re-lays-out
+   * the viewport so the Document displays rotated about its center. The
+   * layout reads `displayRotationDeg` — a non-cardinal rotation displays
+   * unrotated on stage (a `recenter()` keeps the workspace view sensible, in
+   * that case a no-op statement reset). No-op when the value is unchanged.
+   * Fires `onRotationChanged` for the React mirror; the caller commits the
+   * history step (the rotate control composes with the undo stack like any
+   * property commit).
+   */
+  setRotation(degrees: number): void {
+    if (this.rotation === degrees) return
+    this.rotation = degrees
+    this.applyZoomLayout()
+    this.recenter()
+    this.requestRenderAll()
+    this.onRotationChanged?.()
   }
 
   /**
@@ -702,6 +771,7 @@ export class StageCanvas extends Canvas {
       this.height,
       workspace.width,
       workspace.height,
+      this.displayRotation(),
     )
     this.setZoomPercent(percent)
     this.recenter()
@@ -749,13 +819,18 @@ export class StageCanvas extends Canvas {
    * extension) is whatever scene point sits under the pointer.
    */
   private scenePointAt(workspaceX: number, workspaceY: number): Point {
+    // The workspace position, plus the scroll, minus the element's centering
+    // offset, is an element point; the viewport transform's inverse maps it
+    // to scene space. Under a rotated viewport the transform carries the
+    // rotation, so the mapping stays exact at any displayed orientation. At
+    // 0° (transform `[z, 0, 0, z, 0, 0]`) this reduces to the divide-by-z
+    // form.
     const offset = this.getElementOffset()
     const scroll = this.getScroll()
-    const z = this.zoomPercentValue / 100
     return new Point(
-      (workspaceX - offset.x + scroll.x) / z,
-      (workspaceY - offset.y + scroll.y) / z,
-    )
+      workspaceX + scroll.x - offset.x,
+      workspaceY + scroll.y - offset.y,
+    ).transform(util.invertTransform(this.viewportTransform))
   }
 
   /**
@@ -779,12 +854,26 @@ export class StageCanvas extends Canvas {
       : { width: 0, height: 0 }
   }
 
-  /** The zoomed Document size, rounded to integer CSS px — the element's size. */
+  /**
+   * The rotation the stage displays the Document at (build spec §10): the
+   * cardinal snap of `canvas.rotation`. The layout, fit, and the scroll↔scene
+   * mapping all read this; a non-cardinal rotation displays unrotated.
+   */
+  private displayRotation(): number {
+    return displayRotationDeg(this.rotation)
+  }
+
+  /**
+   * The zoomed Document size, rounded to integer CSS px — the element's size.
+   * At a cardinal rotation the element is the Document's rotated bounding box
+   * (`rotatedBounds` × zoom); at 0° that is exactly `document × zoom`.
+   */
   private getZoomedSize(): { width: number; height: number } {
     const z = this.zoomPercentValue / 100
+    const bounds = rotatedBounds(this.width, this.height, this.displayRotation())
     return {
-      width: Math.round(this.width * z),
-      height: Math.round(this.height * z),
+      width: Math.round(bounds.width * z),
+      height: Math.round(bounds.height * z),
     }
   }
 
@@ -826,7 +915,10 @@ export class StageCanvas extends Canvas {
   /** The scroll that puts the given scene point at the given workspace
    * position — the zoom re-anchor (§9 and its wheel-zoom extension), clamped
    * to the scroll range. The center-anchor zooms pass the workspace center;
-   * the wheel zoom passes the pointer's position. */
+   * the wheel zoom passes the pointer's position. The scene point maps to the
+   * element via the viewport transform (the rotation included), then to a
+   * scroll position by removing the element's centering offset; at 0° this
+   * reduces to the `scene × z` form. */
   private scrollForScenePoint(
     scene: Point,
     workspaceX: number,
@@ -835,14 +927,14 @@ export class StageCanvas extends Canvas {
     const workspace = this.getWorkspaceSize()
     const content = this.getContentSize()
     const offset = this.getElementOffset()
-    const z = this.zoomPercentValue / 100
+    const elementPoint = scene.transform(this.viewportTransform)
     return {
       x: this.clampScroll(
-        scene.x * z + offset.x - workspaceX,
+        elementPoint.x + offset.x - workspaceX,
         content.width - workspace.width,
       ),
       y: this.clampScroll(
-        scene.y * z + offset.y - workspaceY,
+        elementPoint.y + offset.y - workspaceY,
         content.height - workspace.height,
       ),
     }
@@ -851,18 +943,23 @@ export class StageCanvas extends Canvas {
   /**
    * Apply the zoom to the stage: the Document's element — CSS size and
    * bitmaps (the DOMManager re-scales the contexts for the DPR after the
-   * resize, exactly as a document resize does) — grows to `document × zoom`,
-   * and the viewport transform scales the render into it. canvas.width and
-   * canvas.height — the Document size — never change, so the envelope, the
-   * toolbar, and the history keep reading the Document. The transform
-   * translate stays zero — the scroll position IS the pan.
+   * resize, exactly as a document resize does) — grows to `document × zoom`
+   * (its rotated bounding box at a cardinal display rotation), and the
+   * viewport transform scales and rotates the render into it. canvas.width
+   * and canvas.height — the Document size — never change, so the envelope,
+   * the toolbar, and the history keep reading the Document. The transform's
+   * translate carries the rotation's centering (zero at 0°); the scroll
+   * position IS the pan — the scrollbars map their axes through the
+   * transform, so panning stays native at every orientation.
    */
   private applyZoomLayout(): void {
     const z = this.zoomPercentValue / 100
     const size = this.getZoomedSize()
     this.elements.setDimensions(size, this.getRetinaScaling())
     this.elements.setCSSDimensions(size)
-    this.setViewportTransform([z, 0, 0, z, 0, 0] as TMat2D)
+    this.setViewportTransform(
+      rotatedViewportTransform(this.width, this.height, z, this.displayRotation()),
+    )
   }
 
   /**
@@ -1246,7 +1343,16 @@ export class StageCanvas extends Canvas {
     ctx.translate(offset.x, offset.y)
     this.marqueePaintedThisFrame = true
 
-    const box = getMarqueeBox(this._groupSelector!, this.viewportTransform)
+    const selector = this._groupSelector!
+    if (this.displayRotation() !== 0) {
+      // A rotated viewport turns the marquee into a quad — the two-corner
+      // box mapping (getMarqueeBox) would paint the axis-aligned bounding
+      // box of the transformed corners, the wrong shape. Paint the quad.
+      this.paintMarqueePath(ctx, getMarqueeQuad(selector, this.viewportTransform))
+      return
+    }
+
+    const box = getMarqueeBox(selector, this.viewportTransform)
 
     if (this.selectionColor) {
       ctx.fillStyle = this.selectionColor
@@ -1263,6 +1369,45 @@ export class StageCanvas extends Canvas {
       box.width - this.selectionLineWidth,
       box.height - this.selectionLineWidth,
     )
+  }
+
+  /**
+   * Paint the marquee as a filled, dashed-stroked path through four corners —
+   * the rotated-viewport form of the box paint above (build spec §7's look,
+   * §10 rotation). The stroke insets half its width toward the quad's
+   * centroid, so it reads centered on the drag rect's edge like the box
+   * path's inset.
+   */
+  private paintMarqueePath(ctx: CanvasRenderingContext2D, corners: Point[]): void {
+    if (this.selectionColor) {
+      ctx.fillStyle = this.selectionColor
+      ctx.beginPath()
+      ctx.moveTo(corners[0].x, corners[0].y)
+      for (let i = 1; i < corners.length; i++) {
+        ctx.lineTo(corners[i].x, corners[i].y)
+      }
+      ctx.closePath()
+      ctx.fill()
+    }
+    if (!this.selectionLineWidth || !this.selectionBorderColor) return
+    const cx = corners.reduce((sum, c) => sum + c.x, 0) / corners.length
+    const cy = corners.reduce((sum, c) => sum + c.y, 0) / corners.length
+    ctx.lineWidth = this.selectionLineWidth
+    ctx.strokeStyle = this.selectionBorderColor
+    if (this.selectionDashArray.length) ctx.setLineDash(this.selectionDashArray)
+    ctx.beginPath()
+    const inset = this.selectionLineWidth / 2
+    corners.forEach((corner, i) => {
+      const dx = corner.x - cx
+      const dy = corner.y - cy
+      const dist = Math.hypot(dx, dy) || 1
+      const x = corner.x - (dx / dist) * inset
+      const y = corner.y - (dy / dist) * inset
+      if (i === 0) ctx.moveTo(x, y)
+      else ctx.lineTo(x, y)
+    })
+    ctx.closePath()
+    ctx.stroke()
   }
 
   /**
@@ -1372,8 +1517,9 @@ export function createStageCanvas(
   canvas.borderColor = DOCUMENT_BORDER_COLOR
 
   // Document rotation (envelope-owned, ADR 0002) — 0° at creation. The
-  // envelope carries it and export renders it; the stage stays unrotated, so
-  // the stage canvas never applies it to the viewport transform.
+  // envelope carries it and export renders it; the stage displays cardinal
+  // rotations through the viewport transform (a non-cardinal value displays
+  // unrotated).
   canvas.rotation = DOCUMENT_ROTATION
 
   // Document identity (ADR 0002): stamp the id/locked defaults at the
