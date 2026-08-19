@@ -109,9 +109,11 @@ export function BottomBar() {
 
       <Separator orientation="vertical" className="mx-1 h-5" />
 
-      <Button variant="ghost" size="icon" onClick={zoomOut} aria-label="Zoom out">
-        <Minus aria-hidden />
-      </Button>
+      <TooltipLabel label="Zoom out">
+        <Button variant="ghost" size="icon" onClick={zoomOut} aria-label="Zoom out">
+          <Minus aria-hidden />
+        </Button>
+      </TooltipLabel>
       <TooltipLabel label="Zoom">
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
@@ -132,9 +134,11 @@ export function BottomBar() {
           </DropdownMenuContent>
         </DropdownMenu>
       </TooltipLabel>
-      <Button variant="ghost" size="icon" onClick={zoomIn} aria-label="Zoom in">
-        <Plus aria-hidden />
-      </Button>
+      <TooltipLabel label="Zoom in">
+        <Button variant="ghost" size="icon" onClick={zoomIn} aria-label="Zoom in">
+          <Plus aria-hidden />
+        </Button>
+      </TooltipLabel>
       <Slider
         className="w-40"
         value={[zoom]}
