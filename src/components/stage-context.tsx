@@ -39,6 +39,7 @@ import {
   setBorderWidth,
   setFillColor,
 } from "@/fabric/shapes"
+import { createImageFromDataURL } from "@/fabric/images"
 import { setOpacity } from "@/fabric/document-props"
 import type { ShapeKind } from "@/fabric/shapes"
 import {
@@ -167,6 +168,14 @@ interface StageContextValue {
    * weight never pollutes the undo stack (§8).
    */
   commitTextProps: (patch: TextPropsPatch, recordHistory?: boolean) => void
+  /**
+   * Add an uploaded image at the document center, fit to the Document and
+   * selected (§1 — the sidebar's Upload Image). The data URL decodes
+   * asynchronously before the add lands; the placement is still ONE undoable
+   * step (ADR 0001), like a shape add. A corrupt or undecodable image
+   * reports loud in the status area and changes nothing.
+   */
+  addImage: (dataURL: string) => Promise<void>
   /**
    * Rearrange the selection's z-order (§7 Q6) — one slot forward/backward,
    * or to the very front/back. Locked objects are inert (§7 Q3) and skipped,
@@ -491,6 +500,32 @@ export function StageProvider({ children }: { children: ReactNode }) {
     })()
   }, [canvas])
 
+  const reportStatus = useCallback((message: string) => {
+    setStatus(message)
+  }, [])
+
+  const addImage = useCallback(
+    async (dataURL: string) => {
+      if (!canvas?.history) return
+      try {
+        // The load decodes the data URL asynchronously — the add lands when
+        // the pixels exist, so the placement is one atomic undoable step.
+        const obj = await createImageFromDataURL(dataURL, canvas.width, canvas.height)
+        canvas.add(obj)
+        canvas.centerObject(obj)
+        canvas.setActiveObject(obj)
+        canvas.requestRenderAll()
+        // The add is one undoable step (ADR 0001), like a shape add (§5).
+        canvas.history.commit()
+      } catch {
+        // Validates loudly (ADR 0002) — a corrupt or undecodable image
+        // changes nothing and explains itself in the status area.
+        reportStatus("That image couldn't be loaded")
+      }
+    },
+    [canvas, reportStatus],
+  )
+
   const commitCanvasProps = useCallback(
     (patch: CanvasPropsPatch, recordHistory = true) => {
       if (!canvas?.history) return
@@ -688,10 +723,6 @@ export function StageProvider({ children }: { children: ReactNode }) {
     if (!canvas) return
     canvas.exitEnteredGroup()
   }, [canvas])
-
-  const reportStatus = useCallback((message: string) => {
-    setStatus(message)
-  }, [])
 
   /**
    * Flush any pending text edit before serializing the Document (§11 "commit
@@ -1036,6 +1067,7 @@ export function StageProvider({ children }: { children: ReactNode }) {
         commitShapeProps,
         addText,
         commitTextProps,
+        addImage,
         arrangeSelection,
         alignSelection,
         flipSelection,

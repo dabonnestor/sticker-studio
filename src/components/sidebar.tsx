@@ -1,3 +1,4 @@
+import { useRef, type ChangeEvent } from "react"
 import {
   Circle,
   Ellipse,
@@ -31,13 +32,32 @@ function SectionHeading({ children }: { children: string }) {
 }
 
 /**
- * Left sidebar (build spec §3): Text, Shapes, and Image Upload sections.
- * Shape buttons add shapes centered on the canvas; Add Text drops a box at
- * the viewport center, already in its text session (§6). Image Upload arrives
- * with the selection build.
+ * Left sidebar (build spec §3): Text, Shapes, and Image sections. Shape
+ * buttons add shapes centered on the canvas; Add Text drops a box at the
+ * viewport center, already in its text session (§6). Upload Image opens a
+ * file picker for an image file and places it centered, fit to the
+ * Document, selected (§1).
  */
 export function Sidebar() {
-  const { addShape, addText } = useStage()
+  const { addShape, addText, addImage, reportStatus } = useStage()
+  const fileInputRef = useRef<HTMLInputElement>(null)
+
+  const onImageChosen = (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0]
+    // Reset the input so picking the same file again re-triggers change.
+    event.target.value = ""
+    if (!file) return
+    if (!file.type.startsWith("image/")) {
+      reportStatus("Please choose an image file")
+      return
+    }
+    const reader = new FileReader()
+    reader.onerror = () => reportStatus("Couldn't read that file")
+    reader.onload = () => {
+      if (typeof reader.result === "string") void addImage(reader.result)
+    }
+    reader.readAsDataURL(file)
+  }
 
   return (
     <aside className="flex w-56 shrink-0 flex-col gap-5 overflow-y-auto border-r bg-background p-3">
@@ -76,7 +96,20 @@ export function Sidebar() {
 
       <section className="flex flex-col gap-1.5">
         <SectionHeading>Image</SectionHeading>
-        <Button variant="outline" size="sm" className="justify-start gap-2">
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="image/*"
+          className="hidden"
+          onChange={onImageChosen}
+          aria-label="Upload an image file"
+        />
+        <Button
+          variant="outline"
+          size="sm"
+          className="justify-start gap-2"
+          onClick={() => fileInputRef.current?.click()}
+        >
           <ImagePlus aria-hidden />
           Upload Image
         </Button>
