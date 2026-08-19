@@ -348,13 +348,33 @@ describe("the real host — offscreen prepare", () => {
     // A 300×200 rect rotated 90° spans 200×300.
     expect(prepared.canvas.width).toBeCloseTo(200)
     expect(prepared.canvas.height).toBeCloseTo(300)
-    // The object's center (300,100) rotated 90° about (150,100) lands at
-    // (150,250) — the document's bottom edge — with the angle baked in. The
-    // angle is what every renderer honors: the raster renders it, toSVG
-    // serializes it.
+    // The object's center (300,100) rotated 90° about (150,100) lands on the
+    // document's bottom edge — and the rotated content must re-center into the
+    // resized canvas, so that edge sits on the canvas's own: left 100 (its
+    // center), top 300 (its height). The angle is baked in — the raster
+    // renders it, toSVG serializes it. (Content left at the old document
+    // center would render off-center and clip the far edge — the regression
+    // this guards.)
     const obj = prepared.canvas.getObjects()[0]
-    expect(obj.left).toBeCloseTo(150)
-    expect(obj.top).toBeCloseTo(250)
+    expect(obj.left).toBeCloseTo(100)
+    expect(obj.top).toBeCloseTo(300)
     expect(obj.angle).toBeCloseTo(90)
+  })
+
+  it("sizes a rotated document's raster and points to the rotated bounds", async () => {
+    const host = createExportHost()
+    const prepared = await host.prepare(
+      baseInput({ width: 300, height: 200, rotation: 90 }),
+    )
+    // The canvas is the rotated bounds (below), so the 300 DPI raster and the
+    // PDF page must follow the same box. The JPEG compositing canvas and the
+    // jsPDF addImage rect are built from these — if they stayed on the
+    // unrotated 300×200, the 625×938 raster would be drawn into a 938×625
+    // (JPEG) / 225×150 pt (PDF) frame and come out squashed. This guards the
+    // JPEG/PDF distortion at 90°/270° (PNG/SVG render directly and were fine).
+    expect(prepared.canvas.width).toBeCloseTo(200)
+    expect(prepared.canvas.height).toBeCloseTo(300)
+    expect(prepared.raster).toEqual(rasterSize(200, 300))
+    expect(prepared.points).toEqual(pointSize(200, 300))
   })
 })

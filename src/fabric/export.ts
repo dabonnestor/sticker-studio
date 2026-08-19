@@ -350,19 +350,35 @@ export function createExportHost(): ExportHost {
           }),
         )
       }
+      // The box the rendered scene occupies — the rotated bounds, which are
+      // exactly the Document size at 0°. The canvas is sized to it and, below,
+      // the raster/PDF dimensions derive from it, so every format frames the
+      // same box: at a cardinal rotation the JPEG composite and the jsPDF page
+      // must be the swapped W×H, not the unrotated one (a mismatch stretched
+      // them — the aspect swap — at 90°/270°).
+      const bounds = rotatedBounds(input.width, input.height, input.rotation)
       // Document rotation — bake it into the scene (see rotateSceneAboutCenter),
       // sizing the canvas to the rotated bounds so the full rotated Document
       // fits without clipping; the center point is unchanged.
       if (input.rotation) {
-        const bounds = rotatedBounds(input.width, input.height, input.rotation)
         rotateSceneAboutCenter(canvas, input.rotation)
         canvas.setDimensions({ width: bounds.width, height: bounds.height })
+        // Re-center the rotated content. The rotation preserved the Document
+        // center at (w/2, h/2), but the resized canvas centers on
+        // (bounds.w/2, bounds.h/2) — the two coincide only at 0°/180°. Without
+        // this shift a 90°/270° export keeps the scene at the old center,
+        // rendering off-center and clipping the far edge.
+        const dx = bounds.width / 2 - input.width / 2
+        const dy = bounds.height / 2 - input.height / 2
+        for (const obj of canvas.getObjects()) {
+          obj.set({ left: obj.left + dx, top: obj.top + dy })
+        }
       }
       canvas.requestRenderAll()
       return {
         canvas,
-        raster: rasterSize(input.width, input.height),
-        points: pointSize(input.width, input.height),
+        raster: rasterSize(bounds.width, bounds.height),
+        points: pointSize(bounds.width, bounds.height),
       }
     },
 
