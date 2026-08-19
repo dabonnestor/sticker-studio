@@ -23,7 +23,7 @@ import {
   Italic,
   Layers,
   Lock,
-  RotateCw,
+  RotateCcw,
   Trash2,
   Type,
   Underline,
@@ -281,7 +281,7 @@ function RotateControl() {
         aria-label="Rotate canvas"
         onClick={() => rotateDocument(1)}
       >
-        <RotateCw aria-hidden />
+        <RotateCcw aria-hidden />
       </Button>
     </TooltipLabel>
   )
