@@ -1,9 +1,32 @@
 import { BottomBar } from "@/components/bottom-bar"
 import { Sidebar } from "@/components/sidebar"
 import { Stage } from "@/components/stage"
-import { StageProvider } from "@/components/stage-context"
+import { useStage, StageProvider } from "@/components/stage-context"
 import { StageToolbar } from "@/components/stage-toolbar"
 import { TopBar } from "@/components/top-bar"
+
+/**
+ * The shell's content — the child of the {@link StageProvider} so it can read
+ * the `preview` flag: in preview the sidebar and stage toolbar unmount and the
+ * main column fills the window (§3 <Eye> button). Top bar and bottom bar stay.
+ */
+function Shell() {
+  const { preview } = useStage()
+
+  return (
+    <div className="flex h-screen flex-col overflow-hidden bg-background text-foreground">
+      <TopBar />
+      <div className="flex min-h-0 flex-1">
+        {!preview && <Sidebar />}
+        <main className="flex min-w-0 flex-1 flex-col">
+          {!preview && <StageToolbar />}
+          <Stage />
+          <BottomBar />
+        </main>
+      </div>
+    </div>
+  )
+}
 
 /**
  * App shell (build spec §3): top bar, left sidebar, and the main column —
@@ -15,17 +38,7 @@ import { TopBar } from "@/components/top-bar"
 export function AppShell() {
   return (
     <StageProvider>
-      <div className="flex h-screen flex-col overflow-hidden bg-background text-foreground">
-        <TopBar />
-        <div className="flex min-h-0 flex-1">
-          <Sidebar />
-          <main className="flex min-w-0 flex-1 flex-col">
-            <StageToolbar />
-            <Stage />
-            <BottomBar />
-          </main>
-        </div>
-      </div>
+      <Shell />
     </StageProvider>
   )
 }

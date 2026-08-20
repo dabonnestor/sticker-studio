@@ -79,6 +79,8 @@ export function BottomBar() {
     zoomOut,
     fitZoom,
     status,
+    preview,
+    togglePreview,
   } = useStage()
 
   return (
@@ -151,7 +153,14 @@ export function BottomBar() {
 
       <div className="flex-1" />
 
-      <Button variant="ghost" size="icon" aria-label="Preview">
+      <Button
+        variant="ghost"
+        size="icon"
+        aria-label="Preview"
+        aria-pressed={preview}
+        onClick={togglePreview}
+        className={preview ? "bg-muted text-foreground" : undefined}
+      >
         <Eye aria-hidden />
       </Button>
       <Button variant="ghost" size="icon" aria-label="Fullscreen">

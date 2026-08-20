@@ -309,6 +309,14 @@ interface StageContextValue {
    * the caller) replaces it.
    */
   reportStatus: (message: string) => void
+  /**
+   * Preview mode (§3 <Eye> button) — true when the sidebar and stage toolbar
+   * are hidden so the canvas fills the width. View state, not document state:
+   * never serialized, never an undoable step.
+   */
+  preview: boolean
+  /** Toggle {@link preview} on the Eye button (state flips, chrome reflows). */
+  togglePreview: () => void
 }
 
 const StageContext = createContext<StageContextValue | null>(null)
@@ -361,6 +369,9 @@ export function StageProvider({ children }: { children: ReactNode }) {
   const [designFileName, setDesignFileName] = useState("untitled")
   // The transient bottom-bar status message — save/import progress and errors.
   const [status, setStatus] = useState("Ready")
+  // Preview mode (§3 <Eye> button) — hidden sidebar/toolbar, full-width
+  // canvas. View state, never serialized, never an undoable step.
+  const [preview, setPreview] = useState(false)
 
   const registerCanvas = useCallback((next: StageCanvas | null) => {
     setCanvas(next)
@@ -548,6 +559,11 @@ export function StageProvider({ children }: { children: ReactNode }) {
 
   const reportStatus = useCallback((message: string) => {
     setStatus(message)
+  }, [])
+
+  /** Toggle preview mode on the <Eye> button — see {@link preview}. */
+  const togglePreview = useCallback(() => {
+    setPreview((current) => !current)
   }, [])
 
   const addImage = useCallback(
@@ -1135,6 +1151,8 @@ export function StageProvider({ children }: { children: ReactNode }) {
         designFileName,
         status,
         reportStatus,
+        preview,
+        togglePreview,
       }}
     >
       {children}
