@@ -1,4 +1,4 @@
-import { type ReactNode } from "react"
+import { type ReactNode, useEffect, useState } from "react"
 import {
   ChevronDown,
   Eye,
@@ -83,6 +83,22 @@ export function BottomBar() {
     togglePreview,
   } = useStage()
 
+  // Browser fullscreen — distinct from Preview: Preview hides the app's own
+  // chrome (sidebar + stage toolbar) within the window (§3 <Eye>); Fullscreen
+  // pushes the whole window edge-to-edge via requestFullscreen. Mirrored so
+  // the button reads pressed and re-labels while the OS/esc fullscreen.
+  const [isFullscreen, setFullscreen] = useState(false)
+  useEffect(() => {
+    const sync = () => setFullscreen(document.fullscreenElement !== null)
+    document.addEventListener("fullscreenchange", sync)
+    sync()
+    return () => document.removeEventListener("fullscreenchange", sync)
+  }, [])
+  const toggleFullscreen = () => {
+    if (document.fullscreenElement) void document.exitFullscreen()
+    else void document.documentElement.requestFullscreen()
+  }
+
   return (
     <TooltipProvider>
       <footer className="flex h-10 shrink-0 items-center gap-1 border-t bg-background px-3">
@@ -153,19 +169,30 @@ export function BottomBar() {
 
       <div className="flex-1" />
 
-      <Button
-        variant="ghost"
-        size="icon"
-        aria-label="Preview"
-        aria-pressed={preview}
-        onClick={togglePreview}
-        className={preview ? "bg-muted text-foreground" : undefined}
-      >
-        <Eye aria-hidden />
-      </Button>
-      <Button variant="ghost" size="icon" aria-label="Fullscreen">
-        <Maximize aria-hidden />
-      </Button>
+      <TooltipLabel label={preview ? "Exit preview" : "Preview"}>
+        <Button
+          variant="ghost"
+          size="icon"
+          aria-label="Preview"
+          aria-pressed={preview}
+          onClick={togglePreview}
+          className={preview ? "bg-muted text-foreground" : undefined}
+        >
+          <Eye aria-hidden />
+        </Button>
+      </TooltipLabel>
+      <TooltipLabel label={isFullscreen ? "Exit fullscreen" : "Fullscreen"}>
+        <Button
+          variant="ghost"
+          size="icon"
+          aria-label={isFullscreen ? "Exit fullscreen" : "Fullscreen"}
+          aria-pressed={isFullscreen}
+          onClick={toggleFullscreen}
+          className={isFullscreen ? "bg-muted text-foreground" : undefined}
+        >
+          <Maximize aria-hidden />
+        </Button>
+      </TooltipLabel>
 
       <Separator orientation="vertical" className="mx-1 h-5" />
 
