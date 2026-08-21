@@ -1,6 +1,7 @@
 import { useEffect, useRef, type MouseEvent } from "react"
 
 import { useStage } from "@/components/stage-context"
+import { restoreWorkingDraft } from "@/fabric/auto-persist"
 import { createStageCanvas, StageCanvas } from "@/fabric/stage-canvas"
 import { wheelZoomFactor } from "@/fabric/zoom"
 import { exposeStageCanvas } from "@/lib/dev"
@@ -19,7 +20,7 @@ export function Stage() {
   const wrapperRef = useRef<HTMLDivElement | null>(null)
   const workspaceRef = useRef<HTMLDivElement | null>(null)
   const marqueeOverlayRef = useRef<HTMLCanvasElement | null>(null)
-  const { canvas, registerCanvas } = useStage()
+  const { canvas, registerCanvas, reportStatus } = useStage()
 
   useEffect(() => {
     const element = canvasRef.current
@@ -75,6 +76,17 @@ export function Stage() {
       await pendingDispose.current
       if (cancelled) return
       canvas = createStageCanvas(element, marqueeOverlay, workspace)
+      // Auto-persist restore (ticket #32): before registerCanvas sets the
+      // mirrors and before the load-time Fit runs, so the reflected
+      // size/border/rotation and the fit describe the restored sheet — or
+      // boot blank with no draft, and soft-fail (wipe the key, report) on a
+      // corrupt one. The cancelled guard covers StrictMode's double-mount.
+      try {
+        await restoreWorkingDraft(canvas, { onNotice: reportStatus })
+      } catch {
+        // A dispose raced the restore — nothing to mount.
+      }
+      if (cancelled) return
       registerCanvas(canvas)
       exposeStageCanvas(canvas)
       // Fit is the default zoom on load (§9) — the workspace is laid out by
@@ -99,7 +111,7 @@ export function Stage() {
         ? canvas.dispose().then(() => undefined)
         : pendingDispose.current
     }
-  }, [registerCanvas])
+  }, [registerCanvas, reportStatus])
 
   /**
    * Pressing the workspace re-enters Fabric's interaction pipeline at that

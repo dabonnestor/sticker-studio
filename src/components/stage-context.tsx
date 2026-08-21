@@ -8,6 +8,10 @@ import {
 } from "react"
 import { ActiveSelection, type Canvas, type Object as FabricObject } from "fabric"
 
+import {
+  clearWorkingDraft,
+  persistWorkingDraft,
+} from "@/fabric/auto-persist"
 import { getTextMeasurer, preloadFonts } from "@/fabric/fonts"
 import {
   alignObjects,
@@ -317,6 +321,15 @@ interface StageContextValue {
   preview: boolean
   /** Toggle {@link preview} on the Eye button (state flips, chrome reflows). */
   togglePreview: () => void
+  /**
+   * Start a new design (ticket #33) — the auto-persist escape hatch, in the
+   * top-bar File area. Clears the stored working draft (so a refresh boots
+   * blank, not the resumed design), resets the canvas to a fresh factory-
+   * default sheet (default size, no objects, border off, rotation 0, white
+   * background), and clears the undo stack. Scoped to the draft and the
+   * canvas — manual Save/Import/Export are unaffected.
+   */
+  startNewDesign: () => void
 }
 
 const StageContext = createContext<StageContextValue | null>(null)
@@ -561,10 +574,44 @@ export function StageProvider({ children }: { children: ReactNode }) {
     setStatus(message)
   }, [])
 
+  // Auto-persist (map #27, tickets #31–#33): every real document commit — the
+  // same interaction boundaries the History records — writes the working
+  // draft to browser storage. Undo/redo restores and suppressed recording are
+  // not user commits, so they never write; zoom/pan/selection never reach a
+  // commit. The blank-guard and the size ceiling live in persistWorkingDraft.
+  useEffect(() => {
+    if (!canvas?.history) return
+    canvas.history.onCommit = () => persistWorkingDraft(canvas, reportStatus)
+    return () => {
+      canvas.history.onCommit = undefined
+    }
+  }, [canvas, reportStatus])
+
   /** Toggle preview mode on the <Eye> button — see {@link preview}. */
   const togglePreview = useCallback(() => {
     setPreview((current) => !current)
   }, [])
+
+  const startNewDesign = useCallback(() => {
+    if (!canvas?.history) return
+    // Ticket #33: the escape hatch. Clearing the draft first means a refresh
+    // boots blank — not the resumed design — and the reset's own History
+    // commit below is blank-guarded (a factory-fresh sheet is never written).
+    clearWorkingDraft()
+    canvas.discardActiveObject()
+    canvas.remove(...canvas.getObjects())
+    canvas.setDimensions({ width: DOCUMENT_WIDTH, height: DOCUMENT_HEIGHT })
+    canvas.rotation = DOCUMENT_ROTATION
+    canvas.borderWidth = DOCUMENT_BORDER_WIDTH
+    canvas.borderColor = DOCUMENT_BORDER_COLOR
+    canvas.backgroundColor = DOCUMENT_BACKGROUND_COLOR
+    canvas.requestRenderAll()
+    // The undo stack clears with the design — a fresh sheet has no history,
+    // so undo stays dead until the first new edit (ticket #33).
+    canvas.history.reset()
+    refreshDocumentMirrors(canvas)
+    reportStatus("Started a new design")
+  }, [canvas, refreshDocumentMirrors, reportStatus])
 
   const addImage = useCallback(
     async (dataURL: string) => {
@@ -1153,6 +1200,7 @@ export function StageProvider({ children }: { children: ReactNode }) {
         reportStatus,
         preview,
         togglePreview,
+        startNewDesign,
       }}
     >
       {children}

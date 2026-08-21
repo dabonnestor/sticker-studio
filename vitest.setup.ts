@@ -8,7 +8,41 @@
  */
 export {}
 
-// A shared singleton for canvases the tests don't inspect. Tests that assert
+// jsdom ships no browser storage — auto-persist (map #27) writes the working
+// draft to localStorage, so the test surface gets a same-signature in-memory
+// substitute. Purely test-env chrome; the browser provides the real key.
+if (
+  typeof window !== "undefined" &&
+  (window as { localStorage?: unknown }).localStorage === undefined
+) {
+  const store = new Map<string, string>()
+  const storage: Storage = {
+    get length() {
+      return store.size
+    },
+    key(index: number) {
+      return store.size > index ? [...store.keys()][index] : null
+    },
+    getItem(key: string) {
+      return store.has(key) ? store.get(key)! : null
+    },
+    setItem(key: string, value: string) {
+      store.set(key, String(value))
+    },
+    removeItem(key: string) {
+      store.delete(key)
+    },
+    clear() {
+      store.clear()
+    },
+  }
+  Object.defineProperty(window, "localStorage", {
+    value: storage,
+    writable: true,
+  })
+}
+
+// A shared singleton for canvases the tests don't inspect. jsdom asserts
 // paint routing (the workspace overlay mirrors) override `getContext` per
 // canvas with their own `createStubContext()` (canvas-stub.ts).
 import { createStubContext } from "@/fabric/canvas-stub"

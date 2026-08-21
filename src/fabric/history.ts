@@ -140,6 +140,15 @@ export class History {
   /** Fired after every commit/undo/redo — the React mirror's subscription. */
   onChange?: (state: HistoryState) => void
 
+  /**
+   * Fired after a real document commit — a boundary that changed the
+   * serializable state (ADR 0001). The auto-persist layer rides this signal:
+   * the same interaction boundaries the History records are exactly the
+   * boundaries the working draft is written on (map #27). Not fired for
+   * undo/redo restores or suppressed recording — neither is a user commit.
+   */
+  onCommit?: () => void
+
   /** The gesture-end boundary listener, named so dispose can detach it. */
   private readonly onObjectModified = () => {
     this.commit()
@@ -195,6 +204,22 @@ export class History {
     if (this.undoStack.length > HISTORY_DEPTH) this.undoStack.shift()
     if (this.redoStack.length > 0) this.redoStack.length = 0
     this.emitChange()
+    // A real document commit — the auto-persist write boundary (map #27).
+    // The dedup above means a no-op boundary never reaches here.
+    this.onCommit?.()
+  }
+
+  /**
+   * Re-seed the stack to a single entry — the current Document becomes the
+   * only state (undo dead until the first new edit). The auto-persist restore
+   * (map #27, ticket #32) and Start-new (ticket #33) use it: a resumed design
+   * must never undo back to a blank sheet, so the restored — or reset —
+   * Document is the seed, not an entry stacked above others.
+   */
+  reset(): void {
+    this.undoStack.length = 0
+    this.redoStack.length = 0
+    this.commit()
   }
 
   /** Restore the previous document state — one step back (§8). */

@@ -142,6 +142,8 @@ describe("history — snapshot stack", () => {
     expect(ids).toEqual([a.id, b.id].sort())
   })
 
+  // 200+ full-canvas snapshots and restores in this one case — comfortably
+  // past the shell's 5s default under parallel-suite load.
   it("depth caps at 100 — the oldest entries are dropped", async () => {
     // 105 commits on top of the seeded initial state — the cap keeps the
     // newest 100, dropping the seed and the first five commits.
@@ -162,7 +164,7 @@ describe("history — snapshot stack", () => {
     }
     expect(canvas.history.canRedo).toBe(false)
     expect(canvas.getObjects().length).toBe(HISTORY_DEPTH + 5)
-  })
+  }, 20000)
 
   it("restores never create new history entries", async () => {
     addSquare(100, 100)
@@ -289,6 +291,37 @@ describe("history — snapshot stack", () => {
     expect(canvas.borderWidth).toBe(2)
     expect(canvas.getObjects().length).toBe(1)
     expect(canvas.getObjects()[0]).toHaveProperty("id")
+  })
+
+  it("reset re-seeds the stack to the current state — undo dead until an edit", async () => {
+    // A resumed/restarted design carries the current Document as its only
+    // history entry: undo can never reveal a blank sheet (ticket #32, #33).
+    addSquare(100, 100)
+    addSquare(300, 300)
+    expect(canvas.history.canUndo).toBe(true)
+
+    canvas.history.reset()
+    expect(canvas.history.canUndo).toBe(false)
+    expect(canvas.history.canRedo).toBe(false)
+    // The current Document is the single entry — one undo is a no-op that
+    // cannot reveal a blank sheet.
+    await canvas.history.undo()
+    expect(canvas.getObjects().length).toBe(2)
+    // A new edit restores undo above the reseeded state.
+    canvas.add(createShape("circle"))
+    canvas.history.commit()
+    expect(canvas.history.canUndo).toBe(true)
+  })
+
+  it("reset fires onCommit for the reseeded current state", async () => {
+    // The auto-persist write rides onCommit (map #27) — the reset that
+    // restores a design must notify the same boundary.
+    let committed = 0
+    canvas.history.onCommit = () => {
+      committed++
+    }
+    canvas.history.reset()
+    expect(committed).toBe(1)
   })
 
   it("dispose detaches the boundary listener", async () => {

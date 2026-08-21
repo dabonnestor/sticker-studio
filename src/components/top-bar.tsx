@@ -1,5 +1,5 @@
 import { useRef, type ChangeEvent } from "react"
-import { ChevronDown, FolderOpen, Save, Sticker } from "lucide-react"
+import { ChevronDown, FilePlus, FolderOpen, Save, Sticker } from "lucide-react"
 
 import { useStage } from "@/components/stage-context"
 import { Button } from "@/components/ui/button"
@@ -21,7 +21,8 @@ import { EXPORT_FORMATS } from "@/fabric/export"
  * committed Document in that format.
  */
 export function TopBar() {
-  const { importDesignFile, saveDesignFile, exportCurrent } = useStage()
+  const { importDesignFile, saveDesignFile, exportCurrent, startNewDesign } =
+    useStage()
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   const onImportChosen = (event: ChangeEvent<HTMLInputElement>) => {
@@ -42,6 +43,15 @@ export function TopBar() {
       </div>
 
       <div className="flex-1" />
+
+      {/* Start-new (ticket #33): the auto-persist escape hatch — clears the
+          stored working draft and resets the canvas, so the next load boots
+          blank. Deliberately scoped to the draft and the canvas: manual
+          Save/Import/Export below are unaffected. */}
+      <Button variant="outline" size="sm" onClick={startNewDesign}>
+        <FilePlus aria-hidden />
+        New
+      </Button>
 
       <input
         ref={fileInputRef}
