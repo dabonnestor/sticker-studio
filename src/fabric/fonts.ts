@@ -1,4 +1,4 @@
-import { config } from "fabric"
+import { type Canvas, Group, config } from "fabric"
 
 import { FONT_FAMILIES, type FontFamilySpec, type TextMeasureStyle } from "@/fabric/text"
 
@@ -227,6 +227,42 @@ function makeTextMeasurer(): (text: string, style: TextMeasureStyle) => number {
     ctx.font = `${italic}${weight} ${style.fontSize}px ${style.fontFamily}`
     return ctx.measureText(text).width
   }
+}
+
+/**
+ * Re-render the canvas once every font is available.
+ *
+ * The fonts start downloading at startup (§12) and text measures await them,
+ * but the canvas does not: a Textbox restored from a working draft is
+ * rasterized the moment its frame renders — before the webfonts resolve on a
+ * cold or revalidating cache, filling the bitmap with the fallback face. A
+ * canvas never repaints when a late font lands (`font-display: swap` reflows
+ * DOM text, not canvas pixels), and Fabric blits each object's cached bitmap
+ * (`isCacheDirty`, §Object.d.ts `dirty`) — so the wrong font baked into that
+ * cache persists until the user touches the object.
+ *
+ * The Stage calls this once, after its mount restore, so the restored text is
+ * marked dirty and redrawn with the real faces. Marking `dirty` on an object
+ * (and its group children — a group caches its own bitmap on top of the
+ * children's) makes `renderCache` re-draw it on the next repaint. Only objects
+ * are invalidated — shapes and the background carry no text, but re-rendering
+ * them is a no-cost correctness guard. Shares the memoized `preloadFonts()`
+ * promise, so this never downloads twice.
+ */
+export function rerenderOnFontsLoaded(canvas: Canvas): void {
+  void preloadFonts().then(() => {
+    canvas.forEachObject((obj) => {
+      obj.dirty = true
+      // A group caches its own bitmap on top of the children's — children must
+      // be marked too, or the group's cache rows re-blit the stale child caches.
+      if (obj instanceof Group) {
+        obj.getObjects().forEach((child) => {
+          child.dirty = true
+        })
+      }
+    })
+    canvas.requestRenderAll()
+  })
 }
 
 let sharedTextMeasurer: ReturnType<typeof makeTextMeasurer> | null = null
