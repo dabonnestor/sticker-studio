@@ -18,7 +18,7 @@ import {
   type Artwork,
   type Catalog,
 } from "@/fabric/catalog"
-import { createWikimediaCatalog } from "@/fabric/wikimedia-catalog"
+import { createPixabayCatalog } from "@/fabric/pixabay-catalog"
 import { getTextMeasurer, preloadFonts } from "@/fabric/fonts"
 import {
   alignObjects,
@@ -75,11 +75,11 @@ import type { Unit } from "@/lib/units"
 import { stepDocumentRotation, stepZoomPercent } from "@/fabric/zoom"
 
 /**
- * The app's single Catalog (map #34) — the Wikimedia provider behind the thin
+ * The app's single Catalog (map #34) — the Pixabay provider behind the thin
  * facade. The panel and Insert search and embed through this; a provider swap
  * touches only this line (ticket #39's "the caller does not know the shape").
  */
-const catalog = createCatalog(createWikimediaCatalog())
+const catalog = createCatalog(createPixabayCatalog())
 
 /** A shape-property commit against the selected shape (build spec §5). */
 export interface ShapePropsPatch {

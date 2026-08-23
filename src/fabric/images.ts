@@ -8,7 +8,7 @@ import { stampDocumentProps } from "@/fabric/document-props"
  * Nothing here affects geometry or behavior; it is inert metadata.
  */
 export interface ArtworkProvenance {
-  /** The catalog source, e.g. "Wikimedia Commons". */
+  /** The catalog source, e.g. "Pixabay". */
   source: string
   /** The artwork's title — becomes the Image's preset name. */
   title: string

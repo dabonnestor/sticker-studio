@@ -86,7 +86,7 @@ _Avoid_: snap toggle, snap override
 ## Graphics source
 
 **Catalog**:
-The third-party library the app sources illustrated artwork from — searched and browsed inside the app, not self-hosted. Every artwork in it is licensed for commercial sale without attribution.
+The third-party library the app sources illustrated artwork from — searched and browsed inside the app, not self-hosted. Artwork is licensed for commercial use (no attribution required), but the source provides no per-item guarantee it contains no third-party characters or brands — the user holds the responsibility to verify rights before selling; the app filters obvious franchise/character/brand matches heuristically.
 _Avoid_: sticker pack, library, stash
 
 **Artwork**:

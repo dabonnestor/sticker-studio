@@ -112,10 +112,10 @@ describe("inserted artwork provenance (#40)", () => {
   afterEach(() => vi.restoreAllMocks())
 
   const provenance = {
-    source: "Wikimedia Commons",
+    source: "Pixabay",
     title: "Vintage Stamp",
-    url: "https://upload.wikimedia.org/wikipedia/commons/vintage.png",
-    license: "CC0",
+    url: "https://cdn.pixabay.com/photo/vintage_640.jpg",
+    license: "Pixabay Content License",
   }
 
   /** A stand-in FabricImage: records set() and carries width/height. */
@@ -153,10 +153,10 @@ describe("inserted artwork provenance (#40)", () => {
     // The name is preset from the artwork's title (#40).
     expect(fake.props.name).toBe("Vintage Stamp")
     // Provenance carried inertly.
-    expect(fake.props.artworkSource).toBe("Wikimedia Commons")
+    expect(fake.props.artworkSource).toBe("Pixabay")
     expect(fake.props.artworkTitle).toBe("Vintage Stamp")
     expect(fake.props.artworkUrl).toBe(provenance.url)
-    expect(fake.props.artworkLicense).toBe("CC0")
+    expect(fake.props.artworkLicense).toBe("Pixabay Content License")
   })
 
   it("fits and stamps provenance without upscaling a tiny artwork", async () => {
@@ -182,10 +182,10 @@ describe("inserted artwork provenance (#40)", () => {
     const plain = JSON.parse(JSON.stringify(obj.toObject()))
 
     expect(plain.name).toBe("Vintage Stamp")
-    expect(plain.artworkSource).toBe("Wikimedia Commons")
+    expect(plain.artworkSource).toBe("Pixabay")
     expect(plain.artworkTitle).toBe("Vintage Stamp")
     expect(plain.artworkUrl).toBe(provenance.url)
-    expect(plain.artworkLicense).toBe("CC0")
+    expect(plain.artworkLicense).toBe("Pixabay Content License")
   })
 
   it("stampArtworkProvenance is a pure metadata stamp — geometry untouched", () => {

@@ -249,6 +249,44 @@ secondary browse source; weaker than Commons for transparent sticker art embed.
 
 ---
 
+---
+
+## Addendum 2026-08-24 — Production decision: Pixabay adopted (supersedes the recommendation above)
+
+The production graphic source was **switched from Wikimedia Commons to Pixabay**
+(provider swap at the `CatalogProvider` seam; `src/fabric/pixabay-catalog.ts`).
+This supersedes the Wikimedia recommendation above — the historical
+recommendation and the §3 verdict stand as recorded (verified 2026-08-22); this
+addendum records the decision that followed.
+
+**What changed and why.** The app's user directive was to match Sticker Mule's
+catalog (Pixabay), accepted after the license trade-off below was surfaced.
+Wikimedia's `passLicenseBar` provider was deleted in favor of a Pixabay
+provider behind the same seam.
+
+**Accepted trade-off (the §3 FAIL, now taken on as a known constraint).**
+Pixabay's Content License bars selling its content on a standalone basis
+(merchandise/physical products, "no creative effort applied"), and provides
+**no per-item metadata** to screen for third-party trademarks/characters the
+way Wikimedia's `AttributionRequired` did. The app now cannot *guarantee* an
+item is cleared for standalone sticker sale — the shield is heuristic and the
+user holds final responsibility to verify rights before selling.
+
+**Mitigations adopted (implementation, `src/fabric/pixabay-catalog.ts`):**
+- `image_type=illustration` — closest Pixabay match to sticker-art.
+- `safesearch=1` on every request.
+- A `BLOCKED_TERMS` keyword denylist (franchise/character/brand/logo terms)
+  applied verbatim to each hit's `tags` and `pageURL`; blocked hits never
+  surface. Explicitly a heuristic, not a guarantee.
+- Key supplied via `VITE_PIXABAY_KEY` (client-bundle-exposed, per Pixabay's
+  own client-side example); the conflict with the original "keyless" bar is
+  part of the accepted tradeoff.
+
+**Sources re-confirmed 2026-08-24:** Pixabay Terms of Service (Content
+License, "Standalone basis" clause, updated 2024-11-18) —
+https://pixabay.com/service/terms/ ; Pixabay API docs (key, CORS, rate
+limits) — https://pixabay.com/api/docs/
+
 ## Sources
 
 - Openverse API docs — authentication & throttling (anonymous 1 req/s,

@@ -7,125 +7,98 @@ import {
   type CatalogProvider,
 } from "@/fabric/catalog"
 import {
-  passLicenseBar,
-  WIKIMEDIA_SOURCE,
-  createWikimediaCatalog,
-} from "@/fabric/wikimedia-catalog"
+  PIXABAY_SOURCE,
+  createPixabayCatalog,
+} from "@/fabric/pixabay-catalog"
 
 /**
  * The Catalog (map #34, ticket #39; CONTEXT "Catalog", "Artwork", "Insert",
  * "Inserted"): a third-party illustrated-art source the app searches and
- * embeds from. Given a term it returns only license-compliant Artwork — the
- * commercial-sale/no-attribution bar, applied verbatim from the #35 research —
- * each carrying a title, preview, full-resolution URL, and license; embedding
- * an Artwork returns its bytes as a self-contained data URL. The provider
- * seam means the caller never knows the provider's shape, and a provider
- * outage is a distinct, catchable `CatalogError` — never conflated with an
- * empty result set.
+ * embeds from. Given a term the provider returns illustration Artwork —
+ * filtered heuristically (safesearch + a franchise/character/brand denylist,
+ * per the 2026-08-24 research addendum) — each carrying a title, preview,
+ * source URL, and an informational license; embedding an Artwork returns its
+ * bytes as a self-contained data URL. The provider seam means the caller
+ * never knows the provider's shape, and a provider outage is a distinct,
+ * catchable `CatalogError` — never conflated with an empty result set.
  */
 
-/** A minimal extmetadata stand-in shaped like MediaWiki's `{ value }` entries. */
-function em(short: string | undefined, attribution: string | undefined) {
+/** A Pixabay search response body built from raw hits (bypasses the filter). */
+function hitsBody(hits: unknown[]): unknown {
+  return { hits }
+}
+
+/** A clean, unblocked hit fixture. */
+function cleanHit() {
   return {
-    LicenseShortName: short === undefined ? undefined : { value: short },
-    AttributionRequired:
-      attribution === undefined ? undefined : { value: attribution },
+    id: 1,
+    tags: "emoticon, sticker, face",
+    pageURL: "https://pixabay.com/illustrations/emoticon-sticker-1/",
+    previewURL: "https://cdn.pixabay.com/photo/emoticon_150.jpg",
+    webformatURL: "https://cdn.pixabay.com/photo/emoticon_640.jpg",
   }
 }
 
-/** A Wikimedia search JSON body built from raw pages (bypasses the filter). */
-function searchBody(parts: unknown[]): unknown {
-  return { query: { pages: { p1: parts[0], p2: parts[1], p3: parts[2] } } }
-}
-
-/** A fully compliant page fixture. */
-function compliantPage() {
-  return {
-    pageid: 1,
-    ns: 6,
-    title: "File:Emoticon sticker.png",
-    imageinfo: [
-      {
-        url: "https://upload.wikimedia.org/wikipedia/commons/a.png",
-        thumburl: "https://upload.wikimedia.org/wikipedia/commons/512px-a.png",
-        mime: "image/png",
-        extmetadata: em("CC0", "false"),
-      },
-    ],
-  }
-}
-
-describe("Catalog — the license bar (#39)", () => {
-  it("passes public domain / CC0 / PD with no attribution", () => {
-    for (const short of ["Public domain", "CC0", "CC0 1.0", "PD"]) {
-      expect(passLicenseBar(em(short, "false")), short).toBe(true)
-    }
-  })
-
-  it("excludes anything requiring attribution or a restrictive license", () => {
-    expect(passLicenseBar(em("CC0", "true"))).toBe(false)
-    expect(passLicenseBar(em("CC BY-SA 4.0", "true"))).toBe(false)
-    expect(passLicenseBar(em("CC BY", "false"))).toBe(false)
-    expect(passLicenseBar(em("Public domain", "true"))).toBe(false)
-  })
-
-  it("fails closed when a result carries no metadata at all", () => {
-    expect(passLicenseBar(undefined as unknown as Record<string, unknown>)).toBe(false)
-    expect(passLicenseBar(em(undefined, undefined))).toBe(false)
-  })
-})
-
-describe("Wikimedia catalog — search", () => {
-  it("returns only license-compliant Artwork, each with title/preview/source/license", async () => {
-    const pages = [compliantPage()]
+describe("Catalog — the content shield (2026 addendum)", () => {
+  it("answers an empty array for a genuinely empty result set — not an error", async () => {
     const fetchFn = vi.fn().mockResolvedValue({
       ok: true,
       status: 200,
-      json: async () => searchBody(pages),
+      json: async () => ({ hits: [] }),
     })
-    const catalog = createWikimediaCatalog(fetchFn)
+
+    await expect(createPixabayCatalog("test-key", fetchFn).search("sticker")).resolves.toEqual(
+      [],
+    )
+  })
+})
+
+describe("Pixabay catalog — search", () => {
+  it("returns Artwork for unblocked hits, each with title/preview/source/license", async () => {
+    const fetchFn = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => hitsBody([cleanHit()]),
+    })
+    const catalog = createPixabayCatalog("test-key", fetchFn)
 
     const results = await catalog.search("sticker")
 
     expect(results).toHaveLength(1)
     expect(results[0]).toMatchObject({
-      title: "Emoticon sticker",
-      previewUrl: "https://upload.wikimedia.org/wikipedia/commons/512px-a.png",
-      sourceUrl: "https://upload.wikimedia.org/wikipedia/commons/a.png",
-      license: "CC0",
-      source: WIKIMEDIA_SOURCE,
+      title: "Emoticon",
+      previewUrl: "https://cdn.pixabay.com/photo/emoticon_150.jpg",
+      sourceUrl: "https://cdn.pixabay.com/photo/emoticon_640.jpg",
+      license: "Pixabay Content License",
+      source: PIXABAY_SOURCE,
     })
-    // The request carries the gsrsearch that constrains to transparent PNGs.
+    // The request carries the key and the sticker-art / safesearch constraints.
     expect(fetchFn).toHaveBeenCalledOnce()
     const url = new URL(fetchFn.mock.calls[0][0])
-    expect(url.searchParams.get("gsrsearch")).toContain("filetype:bitmap")
-    expect(url.searchParams.get("gsrsearch")).toContain("filemime:image/png")
+    expect(url.searchParams.get("key")).toBe("test-key")
+    expect(url.searchParams.get("q")).toBe("sticker")
+    expect(url.searchParams.get("image_type")).toBe("illustration")
+    expect(url.searchParams.get("safesearch")).toBe("1")
+    expect(url.searchParams.get("per_page")).toBe("30")
   })
 
-  it("silently drops items that fail the license bar — they never surface", async () => {
-    const bad = structuredClone(compliantPage())
-    bad.imageinfo[0].extmetadata = em("CC BY-SA 4.0", "true")
-    const noMeta = { pageid: 2, ns: 6, title: "File:photo.png", imageinfo: [{}] }
+  it("silently drops hits that trip the franchise/character/brand denylist", async () => {
+    const blocked = {
+      ...cleanHit(),
+      id: 2,
+      tags: "pokemon, pikachu, cartoon",
+      pageURL: "https://pixabay.com/illustrations/pokemon-2/",
+    }
     const fetchFn = vi.fn().mockResolvedValue({
       ok: true,
       status: 200,
-      json: async () => searchBody([compliantPage(), bad, noMeta]),
+      json: async () => hitsBody([cleanHit(), blocked]),
     })
 
-    const results = await createWikimediaCatalog(fetchFn).search("sticker")
+    const results = await createPixabayCatalog("test-key", fetchFn).search("sticker")
 
     expect(results).toHaveLength(1)
-    expect(results[0].title).toBe("Emoticon sticker")
-  })
-
-  it("answers an empty array for a genuinely empty result set — not an error", async () => {
-    const fetchFn = vi.fn().mockResolvedValue({
-      ok: true,
-      status: 200,
-      json: async () => ({ batchcomplete: "" }),
-    })
-
-    await expect(createWikimediaCatalog(fetchFn).search("sticker")).resolves.toEqual([])
+    expect(results[0].title).toBe("Emoticon")
   })
 
   it("reports provider-down as a distinct CatalogError, not an empty set", async () => {
@@ -135,46 +108,58 @@ describe("Wikimedia catalog — search", () => {
     ]) {
       const fetchFn = vi.fn().mockImplementationOnce(badRes)
       await expect(
-        createWikimediaCatalog(fetchFn as unknown as typeof fetch).search("sticker"),
+        createPixabayCatalog("test-key", fetchFn as unknown as typeof fetch).search(
+          "sticker",
+        ),
       ).rejects.toBeInstanceOf(CatalogError)
     }
   })
 
+  it("fails fast with a clear CatalogError when no key is configured", async () => {
+    const fetchFn = vi.fn()
+    await expect(
+      createPixabayCatalog("", fetchFn).search("sticker"),
+    ).rejects.toMatchObject({ name: "CatalogError" })
+    expect(fetchFn).not.toHaveBeenCalled()
+  })
+
   it("treats a blank search term as an empty result set", async () => {
     const fetchFn = vi.fn()
-    await expect(createWikimediaCatalog(fetchFn).search("   ")).resolves.toEqual([])
+    await expect(
+      createPixabayCatalog("test-key", fetchFn).search("   "),
+    ).resolves.toEqual([])
     expect(fetchFn).not.toHaveBeenCalled()
   })
 })
 
-describe("Wikimedia catalog — embed", () => {
+describe("Pixabay catalog — embed", () => {
   it("returns the artwork's bytes as a self-contained data URL", async () => {
     const artwork: Artwork = {
-      title: "Emoticon sticker.png",
-      previewUrl: "https://upload.wikimedia.org/wikipedia/commons/512px-a.png",
-      sourceUrl: "https://upload.wikimedia.org/wikipedia/commons/a.png",
-      license: "CC0",
-      source: WIKIMEDIA_SOURCE,
+      title: "emoticon",
+      previewUrl: "https://cdn.pixabay.com/photo/emoticon_150.jpg",
+      sourceUrl: "https://cdn.pixabay.com/photo/emoticon_640.jpg",
+      license: "Pixabay Content License",
+      source: PIXABAY_SOURCE,
     }
     const bytes = new Uint8Array([0x89, 0x50, 0x4e, 0x47])
     const fetchFn = vi.fn().mockResolvedValue({
       ok: true,
       status: 200,
-      blob: async () => new Blob([bytes], { type: "image/png" }),
+      blob: async () => new Blob([bytes], { type: "image/jpeg" }),
     })
 
-    const dataURL = await createWikimediaCatalog(fetchFn).embed(artwork)
+    const data = await createPixabayCatalog("test-key", fetchFn).embed(artwork)
 
-    expect(dataURL.startsWith("data:image/png;base64,")).toBe(true)
+    expect(data.startsWith("data:image/jpeg;base64,")).toBe(true)
     expect(fetchFn).toHaveBeenCalledWith(artwork.sourceUrl, expect.anything())
   })
 
   it("reports a fetch failure as a distinct CatalogError", async () => {
-    const artwork = { title: "a", previewUrl: "p", sourceUrl: "s", license: "CC0", source: WIKIMEDIA_SOURCE }
+    const artwork = { title: "a", previewUrl: "p", sourceUrl: "s", license: "Pixabay Content License", source: PIXABAY_SOURCE }
     const fetchFn = vi.fn().mockResolvedValue({ ok: false, status: 404 })
 
     await expect(
-      createWikimediaCatalog(fetchFn).embed(artwork),
+      createPixabayCatalog("test-key", fetchFn).embed(artwork),
     ).rejects.toBeInstanceOf(CatalogError)
   })
 })
@@ -184,8 +169,8 @@ describe("Catalog facade — the caller never knows the provider", () => {
     title: "a",
     previewUrl: "p",
     sourceUrl: "s",
-    license: "CC0",
-    source: WIKIMEDIA_SOURCE,
+    license: "Pixabay Content License",
+    source: PIXABAY_SOURCE,
   }
 
   it("wraps raw provider failures in a CatalogError", async () => {

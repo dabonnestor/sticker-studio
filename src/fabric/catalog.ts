@@ -1,4 +1,5 @@
 /**
+ /**
  * The Catalog facade (map #34, ticket #39; CONTEXT "Catalog", "Artwork",
  * "Insert", "Inserted"): the app-facing surface a browser both searches and
  * embeds from — the panel and the Insert flow talk to *this*, never to a
@@ -6,10 +7,15 @@
  * implementation injected at construction; the panel is unchanged (#39's "the
  * caller does not know the provider's shape").
  *
- * `search` returns only license-compliant Artwork (the commercial-sale /
- * no-attribution bar); a genuinely empty result set is an empty array, and a
- * provider outage is a `CatalogError` — the two are never conflated. `embed`
- * returns an Artwork's bytes as a self-contained data URL for Insert (#42).
+ * Each provider applies its own content shield — the incumbent (Pixabay)
+ * filters to illustrations, forces `safesearch`, and silently drops hits
+ * matching a franchise/character/brand denylist. The barrier here is a
+ * heuristic, **not** a per-item guarantee like Wikimedia's license bar was:
+ * the user still holds the responsibility to confirm an image carries no
+ * third-party rights before selling. A genuinely empty result set is an
+ * empty array, and a provider outage is a `CatalogError` — the two are never
+ * conflated. `embed` returns an Artwork's bytes as a self-contained data URL
+ * for Insert (#42).
  */
 
 /** One catalog item — illustrated sticker art cleared for commercial sale. */
@@ -20,7 +26,10 @@ export interface Artwork {
   previewUrl: string
   /** The full-resolution source URL — embedded at Insert time (#42). */
   sourceUrl: string
-  /** The license, matched against the no-attribution bar ("CC0", "PD", …). */
+  /**
+   * The license, informational only ("Pixabay Content License", …) — carried
+   * for provenance, not as a no-attribution/sale guarantee.
+   */
   license: string
   /** The catalog source this artwork came from (provenance, #40). */
   source: string
