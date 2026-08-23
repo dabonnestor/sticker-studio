@@ -201,7 +201,7 @@ interface StageContextValue {
   commitTextProps: (patch: TextPropsPatch, recordHistory?: boolean) => void
   /**
    * Add an uploaded image at the document center, fit to the Document and
-   * selected (§1 — the sidebar's Upload Image). The data URL decodes
+   * selected (§1 — the sidebar's Uploads). The data URL decodes
    * asynchronously before the add lands; the placement is still ONE undoable
    * step (ADR 0001), like a shape add. A corrupt or undecodable image
    * reports loud in the status area and changes nothing.

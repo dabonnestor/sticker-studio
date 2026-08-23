@@ -37,7 +37,7 @@ function SectionHeading({ children }: { children: string }) {
 /**
  * Left sidebar (build spec §3): Text, Shapes, and Image sections. Shape
  * buttons add shapes centered on the canvas; Add Text drops a box at the
- * viewport center, already in its text session (§6). Upload Image opens a
+ * viewport center, already in its text session (§6). Uploads opens a
  * file picker for an image file and places it centered, fit to the
  * Document, selected (§1).
  */
@@ -124,7 +124,7 @@ export function Sidebar() {
           onClick={() => fileInputRef.current?.click()}
         >
           <ImagePlus aria-hidden />
-          Upload Image
+          Uploads
         </Button>
         <Button
           variant="outline"
