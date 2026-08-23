@@ -83,7 +83,7 @@ export function Sidebar() {
           onClick={addText}
         >
           <Type aria-hidden />
-          Add Text
+          Text
         </Button>
       </section>
 
@@ -133,7 +133,7 @@ export function Sidebar() {
           onClick={() => setView("artwork")}
         >
           <Puzzle aria-hidden />
-          Artwork
+          Graphics
         </Button>
       </section>
     </aside>

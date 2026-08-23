@@ -148,7 +148,7 @@ export function ArtworkPanel({ onBack }: { onBack: () => void }) {
           <ArrowLeft aria-hidden />
         </Button>
         <span className="text-xs font-medium tracking-wider text-muted-foreground uppercase">
-          Artwork
+          Graphics
         </span>
       </div>
 
