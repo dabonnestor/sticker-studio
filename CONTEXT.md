@@ -82,3 +82,21 @@ _Avoid_: anchor, alignment source
 **Snap suppression**:
 The state of a drag in which Snap is suspended but the Smart guides stay visible — entered by holding Alt/Option mid-drag, letting the object sit freely within an alignment's tolerance while the guide still marks it.
 _Avoid_: snap toggle, snap override
+
+## Graphics source
+
+**Catalog**:
+The third-party library the app sources illustrated artwork from — searched and browsed inside the app, not self-hosted. Every artwork in it is licensed for commercial sale without attribution.
+_Avoid_: sticker pack, library, stash
+
+**Artwork**:
+A single item in the Catalog — a raster graphic (illustrated sticker art, typically transparent background) that can be Inserted as an Image object. Artwork is sourced and embedded at Insert time, never hotlinked from the Catalog afterwards; it is a picture placed in a design, not itself a shape with editable geometry.
+_Avoid_: graphic, asset, sticker, clip art
+
+**Insert**:
+The interaction of bringing an Artwork from the Catalog into the Document as an Image object — one undoable step, the Image sized and centered on the Document. Insert is not a Text session; the resulting object is a normal Image.
+_Avoid_: add graphic, place image, import artwork
+
+**Inserted**:
+Describes an Image whose pixels come from the Catalog — embedded in the Document at Insert (self-contained; the Design file needs no live connection to the Catalog to render or export later).
+_Avoid_: hotlinked, pasted, fetched
