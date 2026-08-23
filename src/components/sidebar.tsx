@@ -1,30 +1,16 @@
 import { useRef, useState, type ChangeEvent } from "react"
 import {
-  Circle,
-  Ellipse,
   FaceSlightlySmiling,
   ImagePlus,
-  RectangleHorizontal,
-  Square,
-  Triangle,
+  Shapes,
   Type,
-  type LucideIcon,
 } from "lucide-react"
 
 import { ArtworkPanel } from "@/components/artwork-panel"
+import { ShapesPanel } from "@/components/shapes-panel"
 
 import { useStage } from "@/components/stage-context"
 import { Button } from "@/components/ui/button"
-import type { ShapeKind } from "@/fabric/shapes"
-
-/** The shape kinds (build spec §5) — labels here, kinds in the model. */
-const SHAPES: { kind: ShapeKind; label: string; icon: LucideIcon }[] = [
-  { kind: "square", label: "Square", icon: Square },
-  { kind: "circle", label: "Circle", icon: Circle },
-  { kind: "rectangle", label: "Rectangle", icon: RectangleHorizontal },
-  { kind: "oval", label: "Oval", icon: Ellipse },
-  { kind: "triangle", label: "Triangle", icon: Triangle },
-]
 
 function SectionHeading({ children }: { children: string }) {
   return (
@@ -42,11 +28,11 @@ function SectionHeading({ children }: { children: string }) {
  * Document, selected (§1).
  */
 export function Sidebar() {
-  const { addShape, addText, addImage, reportStatus } = useStage()
+  const { addText, addImage, reportStatus } = useStage()
   // View state (ticket #41): whether the whole sidebar is given over to the
   // Artwork gallery or shows the default Text/Shapes/Image sections. Picked
   // by the Artwork button; the gallery's back affordance restores the default.
-  const [view, setView] = useState<"default" | "artwork">("default")
+  const [view, setView] = useState<"default" | "artwork" | "shapes">("default")
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   const onImageChosen = (event: ChangeEvent<HTMLInputElement>) => {
@@ -67,9 +53,13 @@ export function Sidebar() {
   }
 
   // Ticket #41 (Variant C): choosing Artwork swaps the entire sidebar for the
-  // gallery; the gallery's back affordance restores this default view.
+  // gallery; the gallery's back affordance restores this default view. The
+  // Shapes panel follows the same pattern.
   if (view === "artwork") {
     return <ArtworkPanel onBack={() => setView("default")} />
+  }
+  if (view === "shapes") {
+    return <ShapesPanel onBack={() => setView("default")} />
   }
 
   return (
@@ -89,26 +79,32 @@ export function Sidebar() {
 
       <section className="flex flex-col gap-1.5">
         <SectionHeading>Shapes</SectionHeading>
-        <div className="grid grid-cols-2 gap-2">
-          {SHAPES.map(({ kind, label, icon: Icon }) => (
-            <Button
-              key={kind}
-              variant="outline"
-              size="sm"
-              className="h-14 flex-col gap-1.5"
-              onClick={() => addShape(kind)}
-            >
-              <Icon aria-hidden />
-              <span className="text-[11px] leading-tight font-normal whitespace-normal">
-                {label}
-              </span>
-            </Button>
-          ))}
-        </div>
+        <Button
+          variant="outline"
+          size="sm"
+          className="justify-start gap-2"
+          onClick={() => setView("shapes")}
+        >
+          <Shapes aria-hidden />
+          Shapes
+        </Button>
       </section>
 
       <section className="flex flex-col gap-1.5">
-        <SectionHeading>Image</SectionHeading>
+        <SectionHeading>Graphics</SectionHeading>
+        <Button
+          variant="outline"
+          size="sm"
+          className="justify-start gap-2"
+          onClick={() => setView("artwork")}
+        >
+          <FaceSlightlySmiling aria-hidden />
+          Graphics
+        </Button>
+      </section>
+
+      <section className="flex flex-col gap-1.5">
+        <SectionHeading>Uploads</SectionHeading>
         <input
           ref={fileInputRef}
           type="file"
@@ -125,15 +121,6 @@ export function Sidebar() {
         >
           <ImagePlus aria-hidden />
           Uploads
-        </Button>
-        <Button
-          variant="outline"
-          size="sm"
-          className="justify-start gap-2"
-          onClick={() => setView("artwork")}
-        >
-          <FaceSlightlySmiling aria-hidden />
-          Graphics
         </Button>
       </section>
     </aside>
