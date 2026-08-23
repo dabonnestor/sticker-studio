@@ -38,9 +38,6 @@ function ArtworkCard({
         className="h-full w-full object-contain transition-transform group-hover:scale-105"
         loading="lazy"
       />
-      <span className="absolute top-1 right-1 rounded-full bg-black/55 px-1.5 py-0.5 text-[9px] leading-none text-white">
-        {artwork.license}
-      </span>
     </button>
   )
 }
@@ -50,7 +47,7 @@ function ArtworkCard({
  */
 function SkeletonGrid() {
   return (
-    <div className="grid grid-cols-3 gap-2">
+    <div className="grid grid-cols-2 gap-2">
       {Array.from({ length: 6 }, (_, i) => (
         <div key={i} className="aspect-square animate-pulse rounded-md bg-muted/60" />
       ))}
@@ -61,23 +58,18 @@ function SkeletonGrid() {
 /**
  * The Artwork gallery (map #34, ticket #41 — Variant C): a search-first panel
  * that replaces the whole sidebar until the back affordance restores it. A
- * search box, results as a 3-across grid of thumbnails each carrying a small
- * license badge, drawn from the Catalog (ticket #39). Nothing failing the
+ * search box, results as a two-column grid of thumbnails, drawn from the
+ * Catalog (ticket #39). Nothing failing the
  * license bar can appear — the Catalog already drops it. An empty search is
  * an explicit empty state; provider-down surfaces through the app's existing
  * status surface (`reportStatus`) rather than a broken grid. Browsing only
  * changes view state — the Document is untouched until `insertArtwork`.
- *
- * On Insert (#42) the panel stays open showing an "Inserted · Undo" line;
- * Undo reverts the insertion alone, and because the grid stays mounted its
- * scroll position survives.
  */
 export function ArtworkPanel({ onBack }: { onBack: () => void }) {
-  const { catalog, insertArtwork, undo, reportStatus } = useStage()
+  const { catalog, insertArtwork, reportStatus } = useStage()
   const [query, setQuery] = useState("")
   const [state, setState] = useState<GalleryState>("idle")
   const [results, setResults] = useState<Artwork[]>([])
-  const [inserted, setInserted] = useState<Artwork | null>(null)
   // Guards against a stale search response clobbering a newer one.
   const searchSeq = useRef(0)
 
@@ -120,20 +112,11 @@ export function ArtworkPanel({ onBack }: { onBack: () => void }) {
   }, [query, runSearch])
 
   const onInsert = useCallback(
-    async (artwork: Artwork) => {
-      setInserted(artwork)
-      const ok = await insertArtwork(artwork)
-      // Only a landed insert shows the Inserted line; a refusal or failure
-      // already surfaced its own message in the status area (#42).
-      if (!ok) setInserted(null)
+    (artwork: Artwork) => {
+      void insertArtwork(artwork)
     },
     [insertArtwork],
   )
-
-  const onUndo = useCallback(() => {
-    void undo()
-    setInserted(null)
-  }, [undo])
 
   return (
     <aside className="flex w-56 shrink-0 flex-col overflow-y-auto border-r bg-background p-3">
@@ -161,8 +144,8 @@ export function ArtworkPanel({ onBack }: { onBack: () => void }) {
           autoFocus
           value={query}
           onChange={(event) => setQuery(event.target.value)}
-          placeholder="Search artwork…"
-          aria-label="Search artwork"
+          placeholder="Search graphics…"
+          aria-label="Search graphics"
           className="pl-7"
         />
       </div>
@@ -170,7 +153,7 @@ export function ArtworkPanel({ onBack }: { onBack: () => void }) {
       <div className="mt-3 flex flex-1 flex-col gap-3">
         {state === "loading" && <SkeletonGrid />}
         {state === "results" && (
-          <div className="grid grid-cols-3 gap-2">
+          <div className="grid grid-cols-2 gap-2">
             {results.map((artwork) => (
               <ArtworkCard key={artwork.sourceUrl} artwork={artwork} onInsert={onInsert} />
             ))}
@@ -191,18 +174,6 @@ export function ArtworkPanel({ onBack }: { onBack: () => void }) {
           </p>
         )}
       </div>
-
-      {/* Insert feedback (#42), above the grid — Undo reverts the insertion. */}
-      {inserted && (
-        <div className="mt-2 flex items-center justify-between gap-1.5 rounded-md border bg-background px-2 py-1.5 text-xs">
-          <span className="min-w-0 truncate text-muted-foreground">
-            Inserted “{inserted.title}”
-          </span>
-          <Button variant="ghost" size="sm" className="h-6 shrink-0 px-2" onClick={onUndo}>
-            Undo
-          </Button>
-        </div>
-      )}
     </aside>
   )
 }

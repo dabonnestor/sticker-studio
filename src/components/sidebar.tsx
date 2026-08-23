@@ -2,8 +2,8 @@ import { useRef, useState, type ChangeEvent } from "react"
 import {
   Circle,
   Ellipse,
+  FaceSlightlySmiling,
   ImagePlus,
-  Puzzle,
   RectangleHorizontal,
   Square,
   Triangle,
@@ -132,7 +132,7 @@ export function Sidebar() {
           className="justify-start gap-2"
           onClick={() => setView("artwork")}
         >
-          <Puzzle aria-hidden />
+          <FaceSlightlySmiling aria-hidden />
           Graphics
         </Button>
       </section>
