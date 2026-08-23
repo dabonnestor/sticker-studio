@@ -10,8 +10,15 @@ import { ActiveSelection, type Canvas, type Object as FabricObject } from "fabri
 
 import {
   clearWorkingDraft,
+  DRAFT_CHAR_CEILING,
   persistWorkingDraft,
 } from "@/fabric/auto-persist"
+import {
+  createCatalog,
+  type Artwork,
+  type Catalog,
+} from "@/fabric/catalog"
+import { createWikimediaCatalog } from "@/fabric/wikimedia-catalog"
 import { getTextMeasurer, preloadFonts } from "@/fabric/fonts"
 import {
   alignObjects,
@@ -44,7 +51,7 @@ import {
   setBorderWidth,
   setFillColor,
 } from "@/fabric/shapes"
-import { createImageFromDataURL } from "@/fabric/images"
+import { createArtworkImage, createImageFromDataURL } from "@/fabric/images"
 import { setOpacity } from "@/fabric/document-props"
 import type { ShapeKind } from "@/fabric/shapes"
 import {
@@ -66,6 +73,13 @@ import {
 } from "@/fabric/export"
 import type { Unit } from "@/lib/units"
 import { stepDocumentRotation, stepZoomPercent } from "@/fabric/zoom"
+
+/**
+ * The app's single Catalog (map #34) — the Wikimedia provider behind the thin
+ * facade. The panel and Insert search and embed through this; a provider swap
+ * touches only this line (ticket #39's "the caller does not know the shape").
+ */
+const catalog = createCatalog(createWikimediaCatalog())
 
 /** A shape-property commit against the selected shape (build spec §5). */
 export interface ShapePropsPatch {
@@ -193,6 +207,21 @@ interface StageContextValue {
    * reports loud in the status area and changes nothing.
    */
   addImage: (dataURL: string) => Promise<void>
+  /**
+   * The app's Catalog (map #34, ticket #39) — searched by the Artwork panel.
+   * The provider seam is internal: the panel never knows the provider's shape.
+   */
+  catalog: Catalog
+  /**
+   * Insert an Artwork as an ordinary Image, fitted and centered (ticket #40,
+   * #42) — embed its full-resolution bytes self-containedly, stamp its
+   * provenance and preset name, one undoable step. An image that would push
+   * the Document past the self-containment ceiling is refused with a clear
+   * message and nothing is inserted (#42). Resolves true on a successful
+   * insert, false when refused or failed — the panel decides its Inserted
+   * line from it.
+   */
+  insertArtwork: (artwork: Artwork) => Promise<boolean>
   /**
    * Rearrange the selection's z-order (§7 Q6) — one slot forward/backward,
    * or to the very front/back. Locked objects are inert (§7 Q3) and skipped,
@@ -630,6 +659,50 @@ export function StageProvider({ children }: { children: ReactNode }) {
         // Validates loudly (ADR 0002) — a corrupt or undecodable image
         // changes nothing and explains itself in the status area.
         reportStatus("That image couldn't be loaded")
+      }
+    },
+    [canvas, reportStatus],
+  )
+
+  const insertArtwork = useCallback(
+    async (artwork: Artwork): Promise<boolean> => {
+      if (!canvas?.history) return false
+      try {
+        // The embed fetches the artwork's full-resolution bytes and returns
+        // them self-contained — the Insert lands only when the pixels exist,
+        // so the placement is one atomic undoable step (#42).
+        const dataURL = await catalog.embed(artwork)
+        const obj = await createArtworkImage(dataURL, canvas.width, canvas.height, {
+          source: artwork.source,
+          title: artwork.title,
+          url: artwork.sourceUrl,
+          license: artwork.license,
+        })
+        canvas.add(obj)
+        canvas.centerObject(obj)
+        // Self-containment ceiling (#42): the whole design must persist within
+        // the ~3.5M-char ceiling. A placement that would break that deadline is
+        // refused here — nothing is inserted — with a clear notice, instead of
+        // a Document the app then couldn't save.
+        if (
+          JSON.stringify(serializeDesignFile(canvas)).length > DRAFT_CHAR_CEILING
+        ) {
+          canvas.remove(obj)
+          canvas.requestRenderAll()
+          reportStatus(
+            "That artwork is too large to save into this design — nothing was inserted",
+          )
+          return false
+        }
+        canvas.setActiveObject(obj)
+        canvas.requestRenderAll()
+        // One undoable step (ADR 0001), like an uploaded image (§1, #40).
+        canvas.history.commit()
+        return true
+      } catch {
+        // Provider-down or an undecodable embed — loud, nothing changed.
+        reportStatus("That artwork couldn't be inserted")
+        return false
       }
     },
     [canvas, reportStatus],
@@ -1180,6 +1253,8 @@ export function StageProvider({ children }: { children: ReactNode }) {
         addText,
         commitTextProps,
         addImage,
+        catalog,
+        insertArtwork,
         arrangeSelection,
         alignSelection,
         flipSelection,

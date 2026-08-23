@@ -13,6 +13,19 @@ declare module "fabric" {
      * while set. Survives save/load.
      */
     locked: boolean
+    /**
+     * Inert provenance of an Inserted artwork (CONTEXT "Inserted", #40) — the
+     * catalog source, title, URL, and license an Image's pixels came from.
+     * Present only on Inserted artwork images; carries no behavior. Registers
+     * as a custom property so the Design file round-trips it (ADR 0002).
+     */
+    artworkSource?: string
+    /** The artwork's title at Insert — the Image's preset `name` source. */
+    artworkTitle?: string
+    /** The artwork's full-resolution source URL at Insert, for provenance. */
+    artworkUrl?: string
+    /** The artwork's license at Insert, matched against the commercial bar. */
+    artworkLicense?: string
   }
   interface Canvas {
     /**

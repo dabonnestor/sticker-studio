@@ -1,10 +1,13 @@
-import { FabricImage } from "fabric"
+import { Rect, FabricImage } from "fabric"
 import { afterEach, describe, expect, it, vi } from "vitest"
 
+import { registerCustomProperties } from "@/fabric/custom-properties"
 import {
   IMAGE_FIT_RATIO,
+  createArtworkImage,
   createImageFromDataURL,
   imageFitScale,
+  stampArtworkProvenance,
 } from "@/fabric/images"
 
 /**
@@ -102,5 +105,95 @@ describe("image placement", () => {
         createImageFromDataURL("data:image/png;base64,AAAA", 600, 600),
       ).rejects.toThrow("bogus")
     })
+  })
+})
+
+describe("inserted artwork provenance (#40)", () => {
+  afterEach(() => vi.restoreAllMocks())
+
+  const provenance = {
+    source: "Wikimedia Commons",
+    title: "Vintage Stamp",
+    url: "https://upload.wikimedia.org/wikipedia/commons/vintage.png",
+    license: "CC0",
+  }
+
+  /** A stand-in FabricImage: records set() and carries width/height. */
+  function fakeImage(width: number, height: number) {
+    const props: Record<string, unknown> = {}
+    return {
+      width,
+      height,
+      id: "",
+      locked: false,
+      set(patch: Record<string, unknown>) {
+        Object.assign(props, patch)
+        return this
+      },
+      props,
+    }
+  }
+
+  it("createArtworkImage is an ordinary image, fitted, stamped with provenance and a preset name", async () => {
+    const fake = fakeImage(2000, 2000)
+    vi.spyOn(FabricImage, "fromURL").mockResolvedValue(fake as unknown as FabricImage)
+
+    const img = await createArtworkImage(
+      "data:image/png;base64,AAAA",
+      600,
+      600,
+      provenance,
+    )
+    expect(img).toBe(fake as unknown as FabricImage)
+
+    // Ordinary placement — the same fit as an uploaded image, identity stamped.
+    expect((fake.props.scaleX as number)).toBeCloseTo((IMAGE_FIT_RATIO * 600) / 2000, 10)
+    expect(fake.id).toMatch(/^[0-9a-f-]{36}$/)
+    expect(fake.locked).toBe(false)
+    // The name is preset from the artwork's title (#40).
+    expect(fake.props.name).toBe("Vintage Stamp")
+    // Provenance carried inertly.
+    expect(fake.props.artworkSource).toBe("Wikimedia Commons")
+    expect(fake.props.artworkTitle).toBe("Vintage Stamp")
+    expect(fake.props.artworkUrl).toBe(provenance.url)
+    expect(fake.props.artworkLicense).toBe("CC0")
+  })
+
+  it("fits and stamps provenance without upscaling a tiny artwork", async () => {
+    const fake = fakeImage(200, 200)
+    vi.spyOn(FabricImage, "fromURL").mockResolvedValue(fake as unknown as FabricImage)
+
+    await createArtworkImage("data:image/png;base64,AAAA", 600, 600, provenance)
+
+    expect(fake.props.scaleX).toBe(1)
+    expect(fake.props.scaleY).toBe(1)
+    expect(fake.props.name).toBe("Vintage Stamp")
+  })
+
+  it("the name and provenance survive serialization — custom properties round-trip", () => {
+    registerCustomProperties()
+    const obj = new Rect()
+    obj.name = provenance.title
+    obj.artworkSource = provenance.source
+    obj.artworkTitle = provenance.title
+    obj.artworkUrl = provenance.url
+    obj.artworkLicense = provenance.license
+
+    const plain = JSON.parse(JSON.stringify(obj.toObject()))
+
+    expect(plain.name).toBe("Vintage Stamp")
+    expect(plain.artworkSource).toBe("Wikimedia Commons")
+    expect(plain.artworkTitle).toBe("Vintage Stamp")
+    expect(plain.artworkUrl).toBe(provenance.url)
+    expect(plain.artworkLicense).toBe("CC0")
+  })
+
+  it("stampArtworkProvenance is a pure metadata stamp — geometry untouched", () => {
+    const fake = fakeImage(100, 100)
+    fake.props.scaleX = 0.5
+    fake.props.scaleY = 0.5
+    stampArtworkProvenance(fake as unknown as FabricImage, provenance)
+    expect(fake.props.scaleX).toBe(0.5)
+    expect(fake.props.scaleY).toBe(0.5)
   })
 })

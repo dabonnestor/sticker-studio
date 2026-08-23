@@ -12,7 +12,19 @@ import { Object as FabricObject, Textbox } from "fabric"
  * `uppercase`/`uppercaseSource`/`autoFit` serializing only on text objects.
  */
 export function registerCustomProperties(): void {
-  FabricObject.customProperties.push("id", "name", "locked")
+  FabricObject.customProperties.push(
+    "id",
+    "name",
+    "locked",
+    // Inserted-artwork provenance (CONTEXT "Inserted", ticket #40): inert
+    // metadata carried so the Design file round-trips it. Registered on the
+    // base object so any Image can own it; undefined elsewhere is skipped by
+    // Fabric's serializer, so plain shapes never serialize it.
+    "artworkSource",
+    "artworkTitle",
+    "artworkUrl",
+    "artworkLicense",
+  )
   Textbox.customProperties = [
     ...FabricObject.customProperties,
     "uppercase",
