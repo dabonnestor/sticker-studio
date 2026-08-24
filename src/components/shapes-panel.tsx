@@ -29,11 +29,16 @@ const SHAPES: { kind: ShapeKind; label: string; icon: LucideIcon }[] = [
  * border off (build spec §5). Browsing only changes view state — the Document
  * is untouched until a tile is picked.
  */
-export function ShapesPanel({ onBack }: { onBack: () => void }) {
+export function ShapesPanel({ onBack, active }: { onBack: () => void; active: boolean }) {
   const { addShape } = useStage()
 
   return (
-    <aside className="flex w-56 shrink-0 flex-col overflow-y-auto border-r bg-background p-3">
+    // Kept mounted across navigation (see the Graphics panel) so returning to a
+    // panel doesn't rebuild it; display:none hides it when another view is up.
+    <aside
+      style={{ display: active ? "flex" : "none" }}
+      className="flex w-56 shrink-0 flex-col overflow-y-auto border-r bg-background p-3"
+    >
       <div className="mb-2 flex items-center gap-1.5">
         <Button
           variant="outline"

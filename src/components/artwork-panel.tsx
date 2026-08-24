@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react"
-import { ArrowLeft, Search } from "lucide-react"
+import { ArrowLeft, Loader2, Search } from "lucide-react"
 
 import { useStage } from "@/components/stage-context"
 import { Button } from "@/components/ui/button"
@@ -20,15 +20,20 @@ type GalleryState =
 function ArtworkCard({
   artwork,
   onInsert,
+  loading,
 }: {
   artwork: Artwork
   onInsert: (artwork: Artwork) => void
+  /** True while this artwork's embed is in flight — swaps the card for a spinner. */
+  loading: boolean
 }) {
   return (
     <button
       type="button"
       title={`${artwork.title} (${artwork.license})`}
       onClick={() => onInsert(artwork)}
+      disabled={loading}
+      aria-busy={loading}
       className="group relative flex aspect-square items-center justify-center overflow-hidden rounded-md border bg-muted/50"
     >
       {/* The preview is a separate fetch; a broken thumbnail keeps the card. */}
@@ -38,6 +43,17 @@ function ArtworkCard({
         className="h-full w-full object-contain transition-transform group-hover:scale-105"
         loading="lazy"
       />
+      {loading && (
+        // The embed (a network fetch + decode) lags the click — a spinner on
+        // this card shows the insert is in progress and blocks re-invoking it.
+        <span
+          role="status"
+          aria-label={`Inserting ${artwork.title}`}
+          className="absolute inset-0 flex items-center justify-center bg-muted/80"
+        >
+          <Loader2 aria-hidden className="size-4 animate-spin text-foreground" />
+        </span>
+      )}
     </button>
   )
 }
@@ -65,7 +81,7 @@ function SkeletonGrid() {
  * status surface (`reportStatus`) rather than a broken grid. Browsing only
  * changes view state — the Document is untouched until `insertArtwork`.
  */
-export function ArtworkPanel({ onBack }: { onBack: () => void }) {
+export function ArtworkPanel({ onBack, active }: { onBack: () => void; active: boolean }) {
   const { catalog, insertArtwork, reportStatus } = useStage()
   const [query, setQuery] = useState("")
   const [state, setState] = useState<GalleryState>("idle")
@@ -76,6 +92,9 @@ export function ArtworkPanel({ onBack }: { onBack: () => void }) {
   const [loadingMore, setLoadingMore] = useState(false)
   // Guards against a stale search response clobbering a newer one.
   const searchSeq = useRef(0)
+  // The source URLs whose embeds are still in flight — the matching card shows
+  // a spinner: multiple inserts can overlap, so each is tracked independently.
+  const [inserting, setInserting] = useState<Set<string>>(() => new Set())
   // The current term, readable without re-creating the loadMore closure.
   const queryRef = useRef("")
   // The current page handle, read synchronously by the loadMore guard.
@@ -188,13 +207,34 @@ export function ArtworkPanel({ onBack }: { onBack: () => void }) {
 
   const onInsert = useCallback(
     (artwork: Artwork) => {
-      void insertArtwork(artwork)
+      // The embed resolves in ms-to-seconds — key the spinner by source URL
+      // (unique per card) so the right card spins, and skip an already-in-
+      // flight insert so clicking a spinning card never double-inserts.
+      const source = artwork.sourceUrl
+      if (inserting.has(source)) return
+      setInserting((prev) => new Set(prev).add(source))
+      // insertArtwork resolves true/false (never rejects), so finally is only
+      // the spinner's teardown — it always clears.
+      void insertArtwork(artwork).finally(() => {
+        setInserting((prev) => {
+          const next = new Set(prev)
+          next.delete(source)
+          return next
+        })
+      })
     },
-    [insertArtwork],
+    [insertArtwork, inserting],
   )
 
   return (
-    <aside ref={asideRef} className="flex w-56 shrink-0 flex-col overflow-y-auto border-r bg-background p-3">
+    // The panel stays mounted across navigation away/back so its search state
+    // (query, results, scroll) survives; display:none hides it when another
+    // panel is active. Only a browser refresh remounts it, resetting the term.
+    <aside
+      ref={asideRef}
+      style={{ display: active ? "flex" : "none" }}
+      className="flex w-56 shrink-0 flex-col overflow-y-auto border-r bg-background p-3"
+    >
       <div className="mb-2 flex items-center gap-1.5">
         <Button
           variant="outline"
@@ -244,7 +284,12 @@ export function ArtworkPanel({ onBack }: { onBack: () => void }) {
         {state === "results" && (
           <div className="grid grid-cols-2 gap-2">
             {results.map((artwork) => (
-              <ArtworkCard key={artwork.sourceUrl} artwork={artwork} onInsert={onInsert} />
+              <ArtworkCard
+                key={artwork.sourceUrl}
+                artwork={artwork}
+                onInsert={onInsert}
+                loading={inserting.has(artwork.sourceUrl)}
+              />
             ))}
           </div>
         )}

@@ -52,18 +52,17 @@ export function Sidebar() {
     reader.readAsDataURL(file)
   }
 
-  // Ticket #41 (Variant C): choosing Artwork swaps the entire sidebar for the
-  // gallery; the gallery's back affordance restores this default view. The
-  // Shapes panel follows the same pattern.
-  if (view === "artwork") {
-    return <ArtworkPanel onBack={() => setView("default")} />
-  }
-  if (view === "shapes") {
-    return <ShapesPanel onBack={() => setView("default")} />
-  }
-
+  // Ticket #41 (Variant C): choosing Artwork or Shapes swaps the whole sidebar
+  // for that panel. All three stay mounted — the inactive ones are display:none
+  // — so a panel's view state (the Graphics panel's search term, results, and
+  // scroll) survives navigating away and back. Only a browser refresh, which
+  // remounts the entire app, resets it.
   return (
-    <aside className="flex w-56 shrink-0 flex-col gap-5 overflow-y-auto border-r bg-background p-3">
+    <>
+      <aside
+        style={{ display: view === "default" ? "flex" : "none" }}
+        className="flex w-56 shrink-0 flex-col gap-5 overflow-y-auto border-r bg-background p-3"
+      >
       <section className="flex flex-col gap-1.5">
         <SectionHeading>Text</SectionHeading>
         <Button
@@ -123,6 +122,9 @@ export function Sidebar() {
           Uploads
         </Button>
       </section>
-    </aside>
+      </aside>
+      <ArtworkPanel active={view === "artwork"} onBack={() => setView("default")} />
+      <ShapesPanel active={view === "shapes"} onBack={() => setView("default")} />
+    </>
   )
 }
