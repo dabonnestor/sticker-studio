@@ -4,7 +4,7 @@ import { ArrowLeft, Search } from "lucide-react"
 import { useStage } from "@/components/stage-context"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { CatalogError, type Artwork } from "@/fabric/catalog"
+import { CatalogError, type Artwork, type CatalogPage } from "@/fabric/catalog"
 
 /** The gallery's states — mirror of the prototype's control-bar states. */
 type GalleryState =
@@ -70,8 +70,18 @@ export function ArtworkPanel({ onBack }: { onBack: () => void }) {
   const [query, setQuery] = useState("")
   const [state, setState] = useState<GalleryState>("idle")
   const [results, setResults] = useState<Artwork[]>([])
+  // The opaque handle to the next page; null means the feed is exhausted.
+  const [cursor, setCursor] = useState<string | null>(null)
+  // True while a follow-up page is in flight — shows the "more" shimmer.
+  const [loadingMore, setLoadingMore] = useState(false)
   // Guards against a stale search response clobbering a newer one.
   const searchSeq = useRef(0)
+  // The current term, readable without re-creating the loadMore closure.
+  const queryRef = useRef("")
+  // The current page handle, read synchronously by the loadMore guard.
+  const cursorRef = useRef<string | null>(null)
+  // Re-entry guard — the observer can fire faster than a page resolves.
+  const fetchingMore = useRef(false)
 
   /** Run a search against the Catalog; surface provider-down via the status. */
   const runSearch = useCallback(
@@ -82,18 +92,24 @@ export function ArtworkPanel({ onBack }: { onBack: () => void }) {
       if (!trimmed) {
         setState("idle")
         setResults([])
+        setCursor(null)
+        cursorRef.current = null
         return
       }
       setState("loading")
       try {
-        const found = await catalog.search(trimmed)
+        const page = await catalog.search(trimmed)
         // Skip a stale response that a newer search already superseded.
         if (seq !== searchSeq.current) return
-        setResults(found)
-        setState(found.length > 0 ? "results" : "empty")
+        setResults(page.artworks)
+        setCursor(page.nextCursor)
+        cursorRef.current = page.nextCursor
+        setState(page.artworks.length > 0 ? "results" : "empty")
       } catch (error) {
         if (seq !== searchSeq.current) return
         setResults([])
+        setCursor(null)
+        cursorRef.current = null
         setState("error")
         reportStatus(
           error instanceof CatalogError
@@ -104,6 +120,65 @@ export function ArtworkPanel({ onBack }: { onBack: () => void }) {
     },
     [catalog, reportStatus],
   )
+
+  /** Append the next page once the grid's tail scrolls into view. */
+  const loadMore = useCallback(async () => {
+    // No page buffered yet, a fetch is already flying, or we've gone stale.
+    if (fetchingMore.current || !cursorRef.current) return
+    const seq = searchSeq.current
+    const term = queryRef.current.trim()
+    fetchingMore.current = true
+    setLoadingMore(true)
+    try {
+      const page: CatalogPage = await catalog.search(term, cursorRef.current)
+      // A newer search (or an edited term) superseded us — drop the page.
+      if (seq !== searchSeq.current || term !== queryRef.current.trim()) return
+      setResults((prev) => {
+        // De-dupe by source URL — page-offset drift can repeat a hit.
+        const seen = new Set(prev.map((artwork) => artwork.sourceUrl))
+        return [...prev, ...page.artworks.filter((a) => !seen.has(a.sourceUrl))]
+      })
+      setCursor(page.nextCursor)
+      cursorRef.current = page.nextCursor
+    } catch {
+      // A failed next page stops the feed; the prior results stay intact.
+      setCursor(null)
+      cursorRef.current = null
+    } finally {
+      fetchingMore.current = false
+      setLoadingMore(false)
+    }
+  }, [catalog])
+
+  // Keep the refs in step with the rendered query as it changes.
+  useEffect(() => {
+    queryRef.current = query
+  }, [query])
+
+  // The dominant scroll container and the "load more" tail it observes.
+  const asideRef = useRef<HTMLElement | null>(null)
+  const sentinelRef = useRef<HTMLDivElement | null>(null)
+  // A stable handle to the latest loadMore — the observer must not capture a
+  // stale closure across re-renders.
+  const loadMoreRef = useRef<() => void>(() => {})
+  loadMoreRef.current = loadMore
+
+  // Fire loadMore the moment the grid's tail enters the aside's viewport. The
+  // aside is the scroll container (overflow-y-auto), so it is the observer's
+  // root — infinite scroll stops naturally once nextCursor runs out (#41).
+  useEffect(() => {
+    const sentinel = sentinelRef.current
+    const root = asideRef.current
+    if (!sentinel || !root) return
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (entry?.isIntersecting) loadMoreRef.current()
+      },
+      { root, rootMargin: "0px 0px 32px 0px" },
+    )
+    observer.observe(sentinel)
+    return () => observer.disconnect()
+  }, [cursor, state])
 
   // Search as the user types (debounced), matching a search-first panel.
   useEffect(() => {
@@ -119,7 +194,7 @@ export function ArtworkPanel({ onBack }: { onBack: () => void }) {
   )
 
   return (
-    <aside className="flex w-56 shrink-0 flex-col overflow-y-auto border-r bg-background p-3">
+    <aside ref={asideRef} className="flex w-56 shrink-0 flex-col overflow-y-auto border-r bg-background p-3">
       <div className="mb-2 flex items-center gap-1.5">
         <Button
           variant="outline"
@@ -150,6 +225,20 @@ export function ArtworkPanel({ onBack }: { onBack: () => void }) {
         />
       </div>
 
+      {state === "results" && query.trim() && (
+        <p className="mt-3 text-xs text-muted-foreground">
+          Showing results for “{query.trim()}” from{" "}
+          <a
+            href="https://pixabay.com"
+            target="_blank"
+            rel="noreferrer noopener"
+            className="underline text-muted-foreground hover:text-foreground"
+          >
+            Pixabay
+          </a>
+        </p>
+      )}
+
       <div className="mt-3 flex flex-1 flex-col gap-3">
         {state === "loading" && <SkeletonGrid />}
         {state === "results" && (
@@ -157,6 +246,18 @@ export function ArtworkPanel({ onBack }: { onBack: () => void }) {
             {results.map((artwork) => (
               <ArtworkCard key={artwork.sourceUrl} artwork={artwork} onInsert={onInsert} />
             ))}
+          </div>
+        )}
+        {state === "results" && cursor !== null && (
+          // The "load more" tail: observing it loads the next page. It stays
+          // only while the provider says a next page exists; loadingMore keeps
+          // a rapid viewport re-fire from stacking fetches.
+          <div
+            ref={sentinelRef}
+            aria-hidden="true"
+            className="flex items-center justify-center py-2 text-xs text-muted-foreground"
+          >
+            {loadingMore ? "Loading more…" : "Scroll for more"}
           </div>
         )}
         {state === "empty" && (

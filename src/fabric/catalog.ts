@@ -48,24 +48,36 @@ export class CatalogError extends Error {
   }
 }
 
+/**
+ * One page of search results: the Artwork on it plus an opaque handle for the
+ * next page — `null` means exhausted. The cursor is deliberately opaque so the
+ * caller never depends on a provider's pagination shape (a page number here,
+ * a token there); it is only ever handed back on the next `search`.
+ */
+export interface CatalogPage {
+  artworks: Artwork[]
+  nextCursor: string | null
+}
+
 /** The provider seam — a future provider follows this shape, only. */
 export interface CatalogProvider {
   /**
-   * Search the source and return only license-compliant Artwork. A genuine
-   * absence of matches is an empty array; a provider outage throws a
-   * {@link CatalogError} — the caller tells the two apart.
+   * Search the catalog and return only license-compliant Artwork. `cursor` is
+   * the opaque handle from a prior page (`null`/omitted for the first page).
+   * A genuine absence of matches is an empty `artworks`; a provider outage
+   * throws a {@link CatalogError} — the caller tells the two apart.
    */
-  search(term: string): Promise<Artwork[]>
+  search(term: string, cursor?: string | null): Promise<CatalogPage>
   /**
-   * Fetch the artwork's full-resolution bytes and return them as a
-   * self-contained data URL — embedded into the Document at Insert (#42).
+   * Fetch the artwork's embedded bytes and return them as a self-contained
+   * data URL — embedded into the Document at Insert (#42).
    */
   embed(artwork: Artwork): Promise<string>
 }
 
 /** The Catalog's surface — the only shape the caller depends on. */
 export interface Catalog {
-  search(term: string): Promise<Artwork[]>
+  search(term: string, cursor?: string | null): Promise<CatalogPage>
   embed(artwork: Artwork): Promise<string>
 }
 
@@ -81,9 +93,9 @@ export function createCatalog(provider: CatalogProvider): Catalog {
     throw error instanceof CatalogError ? error : new CatalogError(message)
   }
   return {
-    async search(term: string): Promise<Artwork[]> {
+    async search(term: string, cursor?: string | null): Promise<CatalogPage> {
       try {
-        return await provider.search(term)
+        return await provider.search(term, cursor)
       } catch (error) {
         return raiseCatalog(error, "The artwork source couldn't be reached")
       }

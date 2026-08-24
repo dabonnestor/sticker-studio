@@ -1,6 +1,7 @@
 import {
   CatalogError,
   type Artwork,
+  type CatalogPage,
   type CatalogProvider,
 } from "@/fabric/catalog"
 
@@ -27,6 +28,9 @@ export const PIXABAY_SOURCE = "Pixabay"
 
 /** The Pixabay search endpoint. */
 const SEARCH_ENDPOINT = "https://pixabay.com/api/"
+
+/** Results per request — the page size the cursor math anchors to. */
+const PER_PAGE = 30
 
 /**
  * A franchise / character / brand / logo keyword whose art must never surface
@@ -105,6 +109,17 @@ function hitsToArtworks(data: any): Artwork[] {
   return out
 }
 
+/**
+ * The page number an opaque cursor encodes. A cursor the provider itself
+ * issued is a page number as a string; `null`/undefined/garbage all mean "the
+ * first page". The first-page case is the common one (the panel passes a fresh
+ * search through with no cursor), so it stays on page 1 — never on 0.
+ */
+function pageFromCursor(cursor?: string | null): number {
+  const page = cursor ? parseInt(cursor, 10) : NaN
+  return Number.isFinite(page) && page > 0 ? page : 1
+}
+
 /** Read the artwork's bytes as a base64 data URL — the embed path (#42). */
 function blobToDataURL(blob: Blob): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -127,11 +142,11 @@ export function createPixabayCatalog(
     (input: string, init?: RequestInit) => fetch(input, init),
 ): CatalogProvider {
   return {
-    async search(term: string): Promise<Artwork[]> {
+    async search(term: string, cursor?: string | null): Promise<CatalogPage> {
       const trimmed = term.trim()
       // A blank term is a genuine "nothing to search for" — an empty set, not
       // a call to the source.
-      if (!trimmed) return []
+      if (!trimmed) return { artworks: [], nextCursor: null }
 
       // Fail-fast on a missing key, not a silent empty grid — the panel
       // surfaces this through reportStatus (ADR 0002: validates loudly).
@@ -141,6 +156,10 @@ export function createPixabayCatalog(
         )
       }
 
+      // The caller passes back our own opaque cursor verbatim; its only
+      // purpose is to recover the page number we stamped on it (#41 scroll).
+      const page = pageFromCursor(cursor)
+
       const url = new URL(SEARCH_ENDPOINT)
       url.searchParams.set("key", key)
       url.searchParams.set("q", trimmed)
@@ -149,7 +168,8 @@ export function createPixabayCatalog(
       url.searchParams.set("image_type", "illustration")
       // The #35-stand-in shield: no adult/edited imagery, always on.
       url.searchParams.set("safesearch", "1")
-      url.searchParams.set("per_page", "30")
+      url.searchParams.set("per_page", String(PER_PAGE))
+      url.searchParams.set("page", String(page))
 
       let response: Response
       try {
@@ -163,7 +183,12 @@ export function createPixabayCatalog(
         throw new CatalogError(`The artwork source failed (${response.status})`)
       }
       const data = await response.json()
-      return hitsToArtworks(data)
+      const total = Number(data?.totalHits ?? data?.total ?? 0)
+      return {
+        artworks: hitsToArtworks(data),
+        // One more page while the offset still has hits left to fetch.
+        nextCursor: page * PER_PAGE < total ? String(page + 1) : null,
+      }
     },
 
     async embed(artwork: Artwork): Promise<string> {

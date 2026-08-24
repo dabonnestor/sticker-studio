@@ -4,6 +4,7 @@ import {
   createCatalog,
   CatalogError,
   type Artwork,
+  type CatalogPage,
   type CatalogProvider,
 } from "@/fabric/catalog"
 import {
@@ -24,8 +25,8 @@ import {
  */
 
 /** A Pixabay search response body built from raw hits (bypasses the filter). */
-function hitsBody(hits: unknown[]): unknown {
-  return { hits }
+function hitsBody(hits: unknown[], totalHits = hits.length): unknown {
+  return { hits, totalHits }
 }
 
 /** A clean, unblocked hit fixture. */
@@ -40,15 +41,15 @@ function cleanHit() {
 }
 
 describe("Catalog — the content shield (2026 addendum)", () => {
-  it("answers an empty array for a genuinely empty result set — not an error", async () => {
+  it("answers an empty page for a genuinely empty result set — not an error", async () => {
     const fetchFn = vi.fn().mockResolvedValue({
       ok: true,
       status: 200,
-      json: async () => ({ hits: [] }),
+      json: async () => ({ hits: [], totalHits: 0 }),
     })
 
     await expect(createPixabayCatalog("test-key", fetchFn).search("sticker")).resolves.toEqual(
-      [],
+      { artworks: [], nextCursor: null },
     )
   })
 })
@@ -62,17 +63,19 @@ describe("Pixabay catalog — search", () => {
     })
     const catalog = createPixabayCatalog("test-key", fetchFn)
 
-    const results = await catalog.search("sticker")
+    const page = await catalog.search("sticker")
 
-    expect(results).toHaveLength(1)
-    expect(results[0]).toMatchObject({
+    expect(page.artworks).toHaveLength(1)
+    expect(page.artworks[0]).toMatchObject({
       title: "Emoticon",
       previewUrl: "https://cdn.pixabay.com/photo/emoticon_150.jpg",
       sourceUrl: "https://cdn.pixabay.com/photo/emoticon_640.jpg",
       license: "Pixabay Content License",
       source: PIXABAY_SOURCE,
     })
-    // The request carries the key and the sticker-art / safesearch constraints.
+    // One hit on the first page and the search is exhausted — no next page.
+    expect(page.nextCursor).toBeNull()
+    // A fresh search with no cursor starts on page 1.
     expect(fetchFn).toHaveBeenCalledOnce()
     const url = new URL(fetchFn.mock.calls[0][0])
     expect(url.searchParams.get("key")).toBe("test-key")
@@ -80,6 +83,7 @@ describe("Pixabay catalog — search", () => {
     expect(url.searchParams.get("image_type")).toBe("illustration")
     expect(url.searchParams.get("safesearch")).toBe("1")
     expect(url.searchParams.get("per_page")).toBe("30")
+    expect(url.searchParams.get("page")).toBe("1")
   })
 
   it("silently drops hits that trip the franchise/character/brand denylist", async () => {
@@ -97,8 +101,8 @@ describe("Pixabay catalog — search", () => {
 
     const results = await createPixabayCatalog("test-key", fetchFn).search("sticker")
 
-    expect(results).toHaveLength(1)
-    expect(results[0].title).toBe("Emoticon")
+    expect(results.artworks).toHaveLength(1)
+    expect(results.artworks[0].title).toBe("Emoticon")
   })
 
   it("reports provider-down as a distinct CatalogError, not an empty set", async () => {
@@ -123,12 +127,59 @@ describe("Pixabay catalog — search", () => {
     expect(fetchFn).not.toHaveBeenCalled()
   })
 
-  it("treats a blank search term as an empty result set", async () => {
+  it("treats a blank search term as an empty page", async () => {
     const fetchFn = vi.fn()
     await expect(
       createPixabayCatalog("test-key", fetchFn).search("   "),
-    ).resolves.toEqual([])
+    ).resolves.toEqual({ artworks: [], nextCursor: null })
     expect(fetchFn).not.toHaveBeenCalled()
+  })
+})
+
+describe("Pixabay catalog — pagination (#41 infinite scroll)", () => {
+  it("hands back a next cursor while the offset still has hits left to fetch", async () => {
+    const hits = [
+      { ...cleanHit(), id: 1 },
+      { ...cleanHit(), id: 2, tags: "bee, bug", pageURL: "https://pixabay.com/illustrations/bee-2/" },
+    ]
+    const fetchFn = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => hitsBody(hits, 31),
+    })
+
+    const page = await createPixabayCatalog("test-key", fetchFn).search("sticker")
+
+    expect(page.artworks).toHaveLength(2)
+    // 30 per page × page 1 < 31 total — one more page remains.
+    expect(page.nextCursor).toBe("2")
+  })
+
+  it("returns a null next cursor once the offset has covered every hit", async () => {
+    const fetchFn = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => hitsBody([cleanHit()], 30),
+    })
+
+    const page = await createPixabayCatalog("test-key", fetchFn).search("sticker")
+
+    expect(page.artworks).toHaveLength(1)
+    // 30 per page × page 1 == 30 total — nothing left beyond this page.
+    expect(page.nextCursor).toBeNull()
+  })
+
+  it("passes the cursor back as the page number on the follow-up request", async () => {
+    const fetchFn = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => hitsBody([cleanHit()], 0),
+    })
+
+    await createPixabayCatalog("test-key", fetchFn).search("sticker", "3")
+
+    const url = new URL(fetchFn.mock.calls[0][0])
+    expect(url.searchParams.get("page")).toBe("3")
   })
 })
 
@@ -183,13 +234,14 @@ describe("Catalog facade — the caller never knows the provider", () => {
     await expect(catalog.embed(artwork)).rejects.toBeInstanceOf(CatalogError)
   })
 
-  it("passes through Artwork unchanged", async () => {
+  it("passes the CatalogPage through unchanged, cursor included", async () => {
+    const page: CatalogPage = { artworks: [artwork], nextCursor: "2" }
     const provider: CatalogProvider = {
-      search: () => Promise.resolve([artwork]),
+      search: () => Promise.resolve(page),
       embed: () => Promise.resolve("data:image/png;base64,AAAA"),
     }
     const catalog = createCatalog(provider)
-    await expect(catalog.search("x")).resolves.toEqual([artwork])
+    await expect(catalog.search("x", "2")).resolves.toEqual(page)
     await expect(catalog.embed(artwork)).resolves.toBe("data:image/png;base64,AAAA")
   })
 })
