@@ -5,6 +5,7 @@ import {
   Group,
   Point,
   Rect,
+  Textbox,
   Triangle,
   type Object as FabricObject,
   type TMat2D,
@@ -27,6 +28,11 @@ import {
   rotationWithSnap,
 } from "@/fabric/stage-canvas"
 import { TEXT_DEFAULT_FONT_SIZE, createText } from "@/fabric/text"
+import { registerCustomProperties } from "@/fabric/custom-properties"
+
+// The document custom properties (ADR 0002) — the restore tests round-trip a
+// locked object and must see its `locked` prop survive save/load.
+registerCustomProperties()
 
 /**
  * Marquee viewport mapping (§7 extension). The marquee mirror paints on the
@@ -1445,6 +1451,35 @@ describe("entered group mode", () => {
       expect(child.lockMovementX).toBe(false)
       expect(child.hasControls).toBe(true)
     }
+  })
+
+  it("a restore re-derives the transform locks of locked objects from the `locked` prop", async () => {
+    // Fabric serializes only `stateProperties`; of a locked object's surface
+    // only the `locked` prop is among them — `hasControls`, the `lock*`
+    // flags, and a text's `editable` are not. A refresh would restore the
+    // flag alone and leave the object reporting locked yet fully editable, so
+    // the restore must rebuild the inert surface from the flag (§7 Q3).
+    setLocked(childA, true) // an individually-locked child inside the group
+    const text = createText()
+    text.set({ left: 0, top: 0 })
+    setLocked(text, true) // a locked top-level text
+    canvas.add(text)
+
+    await canvas.loadFromJSON(canvas.toJSON())
+
+    const restoredGroup = canvas.getObjects()[0] as Group
+    const [lockedChild] = restoredGroup.getObjects()
+    expect(lockedChild.locked).toBe(true)
+    expect(lockedChild.hasControls).toBe(false)
+    expect(lockedChild.lockMovementX).toBe(true)
+    expect(lockedChild.lockScalingY).toBe(true)
+    expect(lockedChild.lockRotation).toBe(true)
+
+    const restoredText = canvas.getObjects()[1] as Textbox
+    expect(restoredText.locked).toBe(true)
+    expect(restoredText.hasControls).toBe(false)
+    expect(restoredText.lockMovementX).toBe(true)
+    expect(restoredText.editable).toBe(false)
   })
 
   it("the entered flags never survive a restore — view state, not document state", async () => {

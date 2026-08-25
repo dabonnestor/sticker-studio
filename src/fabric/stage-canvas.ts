@@ -475,6 +475,23 @@ export function isPointInCutGeometry(clip: BaseFabricObject, local: Point): bool
 }
 
 /**
+ * Re-derive a locked object's transform locks after a restore — recursing
+ * into groups so an individually-locked child comes back inert too. Fabric's
+ * serialization keeps only `stateProperties`, of which a locked object's
+ * `locked` prop is the only member; `hasControls`, `lockMovement*`,
+ * `lockScaling*`, `lockRotation`, and a text's `editable` are not serialized.
+ * Without this, a restored locked object would report `locked` yet be fully
+ * editable — rebuilding the derived surface closes that gap (document-props
+ * §7 Q3: `locked` is the source of truth, the transforms derive from it).
+ */
+function restoreLockedSurface(obj: BaseFabricObject): void {
+  if (obj.locked) setLockedProps(obj, true)
+  if (obj instanceof Group) {
+    for (const child of obj.getObjects()) restoreLockedSurface(child)
+  }
+}
+
+/**
  * The full-props object type the interactive canvas APIs use — Fabric's
  * `FabricObject` export carries the full property surface while the
  * deprecated `Object` export resolves to the base generic; the interactive
@@ -1187,6 +1204,15 @@ export class StageCanvas extends Canvas {
           obj.set("interactive", false)
         }
       }
+      // The `locked` prop survives save/load (ADR 0002 custom properties), but
+      // Fabric serializes only `stateProperties` — of a locked object's locks,
+      // solely `locked` is among them. `hasControls`, `lockMovement*`,
+      // `lockScaling*`, `lockRotation`, and a text's `editable` are not, so a
+      // locked object restored here would report `locked` yet come back fully
+      // modifiable on the stage. Re-derive every lock surface from the
+      // persisted flag (document-props §7 Q3: `locked` is the source of truth,
+      // the transforms derive from it) across the restored tree.
+      for (const obj of this.getObjects()) restoreLockedSurface(obj)
       return canvas
     })
   }
