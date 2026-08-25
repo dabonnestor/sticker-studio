@@ -717,13 +717,7 @@ export class StageCanvas extends Canvas {
     this.applyZoomLayout()
     if (anchor && this.workspaceEl) {
       const workspace = this.getWorkspaceSize()
-      const scroll = this.scrollForScenePoint(
-        anchor,
-        workspace.width / 2,
-        workspace.height / 2,
-      )
-      this.workspaceEl.scrollLeft = scroll.x
-      this.workspaceEl.scrollTop = scroll.y
+      this.scrollToWorkspace(anchor, workspace.width / 2, workspace.height / 2)
     }
     this.onZoomChanged?.()
   }
@@ -733,9 +727,12 @@ export class StageCanvas extends Canvas {
    * extension — the wheel zoom): the anchor the touchpad pinch and Ctrl+wheel
    * zoom about — the scene point under the pointer stays put as the layout
    * changes. The workspace's own rect maps the client point in, so the caller
-   * passes page coordinates unchanged. Same view-state contract as
-   * `setZoomPercent`; without a workspace (tests) there is no pointer to map,
-   * so the plain set is the fallback.
+   * passes page coordinates unchanged. Once an axis overflows, the centring
+   * rule wins over the pointer: that axis's scroll recenters to its midpoint
+   * (`scrollToWorkspace`), so at deep zoom the Document stays centered on
+   * both axes — the pointer anchor applies only while it still fits. Same
+   * view-state contract as `setZoomPercent`; without a workspace (tests)
+   * there is no pointer to map, so the plain set is the fallback.
    */
   setZoomPercentAboutClientPoint(
     percent: number,
@@ -753,9 +750,7 @@ export class StageCanvas extends Canvas {
     const anchor = this.scenePointAt(workspaceX, workspaceY)
     this.zoomPercentValue = clampZoomPercent(percent)
     this.applyZoomLayout()
-    const scroll = this.scrollForScenePoint(anchor, workspaceX, workspaceY)
-    workspaceEl.scrollLeft = scroll.x
-    workspaceEl.scrollTop = scroll.y
+    this.scrollToWorkspace(anchor, workspaceX, workspaceY)
     this.onZoomChanged?.()
   }
 
@@ -781,18 +776,19 @@ export class StageCanvas extends Canvas {
    * Re-center at the current zoom (§9) — the workspace-resize behavior: the
    * Document returns to the workspace center and the scroll clamps into the
    * range (scrollbars appear when the zoomed Document no longer fits). The
-   * zoom itself never changes — resize never re-fits.
+   * zoom itself never changes — resize never re-fits. Shares the zoom-centring
+   * rule with the zoom paths (centerScroll per axis), so an observer-triggered
+   * recenter (e.g. a scrollbar appearing as the element grows) holds the same
+   * centered scroll as a zoom.
    */
   recenter(): void {
     if (!this.workspaceEl) return
     const content = this.getContentSize()
     const workspace = this.getWorkspaceSize()
-    this.workspaceEl.scrollLeft = this.clampScroll(
-      (content.width - workspace.width) / 2,
+    this.workspaceEl.scrollLeft = this.centerScroll(
       content.width - workspace.width,
     )
-    this.workspaceEl.scrollTop = this.clampScroll(
-      (content.height - workspace.height) / 2,
+    this.workspaceEl.scrollTop = this.centerScroll(
       content.height - workspace.height,
     )
   }
@@ -919,6 +915,49 @@ export class StageCanvas extends Canvas {
    * element via the viewport transform (the rotation included), then to a
    * scroll position by removing the element's centering offset; at 0° this
    * reduces to the `scene × z` form. */
+  /**
+   * Scroll the workspace after a zoom, keeping the Document centered within
+   * the workspace (build spec §9): the stage's `margin: auto` wrapper (the
+   * overflow-safe centering) shows the element centered while it fits, and
+   * once the zoomed Document outgrows an axis, that axis's scroll carries the
+   * centering — it climbs to its overflow midpoint, so the thumb sits
+   * centered in its track and both edges stay reachable (the same rule
+   * `recenter` uses, and the vertical's rule since §9). The pointer anchor
+   * (`scrollForScenePoint`) applies only to an axis that has not overflowed,
+   * where there is no scrollbar and it clamps to 0; the centered midpoint is
+   * the rule once an axis can scroll.
+   */
+  private scrollToWorkspace(
+    anchor: Point,
+    workspaceX: number,
+    workspaceY: number,
+  ): void {
+    const scroll = this.scrollForScenePoint(anchor, workspaceX, workspaceY)
+    const content = this.getContentSize()
+    const workspace = this.getWorkspaceSize()
+    // Horizontal: on overflow the scroll carries the centering to the
+    // midpoint (margin:auto held the element at content 0 — the old
+    // justify-center layout's symmetric overhang instead pinned the thumb to
+    // the left and hid the Document's left edge). While it fits there is no
+    // horizontal scrollbar — the midpoint rule clamps to 0.
+    this.workspaceEl!.scrollLeft = this.centerScroll(
+      content.width - workspace.width,
+    )
+    // Vertical: the same centered-midpoint rule as §9; the anchor only
+    // matters before the height overflows (no vertical scrollbar — clamped
+    // to 0 anyway).
+    this.workspaceEl!.scrollTop =
+      content.height > workspace.height
+        ? this.centerScroll(content.height - workspace.height)
+        : scroll.y
+  }
+
+  /** The overflow's centered scroll position — the midpoint, clamped to the
+   * range (a non-overflowing axis would clamp to 0). */
+  private centerScroll(overflow: number): number {
+    return this.clampScroll(overflow / 2, overflow)
+  }
+
   private scrollForScenePoint(
     scene: Point,
     workspaceX: number,

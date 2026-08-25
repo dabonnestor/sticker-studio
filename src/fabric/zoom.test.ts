@@ -384,36 +384,62 @@ describe("StageCanvas zoom", () => {
     expect(listener).toHaveBeenCalledTimes(1)
   })
 
-  it("zooms about the workspace center — the scene point at the center stays", () => {
+  it("zooms about the workspace center — the horizontal centers its scroll midpoint once it overflows", () => {
     // At 100% the center scene point is the Document center: the element is
     // centered in the 1000×700 workspace with (1000−600)/2 = 200px offsets.
     expect(canvas.getViewportCenterScenePoint().x).toBeCloseTo(300, 10)
-    // Zooming to 200% about the center: the content grows to 1200 (the
-    // zoomed Document — no extra gutter), the element offset drops to 0, and
-    // the scroll re-anchors so the same scene point stays at x = 500.
+    // Zooming to 200% about the center: the 1200-wide Document overflows the
+    // 1000 workspace, and the scroll carries the centering to the midpoint —
+    // the thumb sits centered in its track, both edges reachable.
     canvas.setZoomPercent(200, true)
-    expect(workspace.scrollLeft).toBeCloseTo(100, 10)
-    expect(canvas.getViewportCenterScenePoint().x).toBeCloseTo(300, 10)
-    // The round trip returns to the centered scroll — the anchor is stable.
+    expect(workspace.scrollLeft).toBeCloseTo((1200 - 1000) / 2, 10)
     canvas.setZoomPercent(100, true)
     expect(workspace.scrollLeft).toBeCloseTo(0, 10)
   })
 
-  it("zooms about the scene point under the pointer — the anchor stays put", () => {
+  it("zooms about the scene point under the pointer — overflowing axes recenter, fitting axes normalize", () => {
     // jsdom's getBoundingClientRect is all zeros, so the client point equals
-    // the workspace point. At 100% the workspace point (500, 350) — the
-    // center — maps to the Document center (300, 300): offset (200, 50),
-    // scroll 0. Zooming to 200%: the content grows to 1200×1200, the offset
-    // drops to 0, and the scroll re-anchors so the same scene point stays
-    // under the pointer on both axes.
+    // the workspace point. Once the width overflows, the horizontal centers
+    // to its scroll midpoint; the vertical centers on its own overflow too.
     canvas.setZoomPercentAboutClientPoint(200, 500, 350)
     expect(canvas.getZoomPercent()).toBe(200)
-    expect(workspace.scrollLeft).toBeCloseTo(100, 10) // 300·2 − 500
-    expect(workspace.scrollTop).toBeCloseTo(250, 10) // 300·2 − 350
-    // The round trip returns to the centered scroll — the anchor is stable.
+    expect(workspace.scrollLeft).toBeCloseTo((1200 - 1000) / 2, 10)
+    // At 100% back, both axes normalize to 0 (the Document fits again).
     canvas.setZoomPercentAboutClientPoint(100, 500, 350)
     expect(workspace.scrollLeft).toBeCloseTo(0, 10)
     expect(workspace.scrollTop).toBeCloseTo(0, 10)
+  })
+
+  it("centers each overflowing axis at its scroll midpoint — thumb centered, both edges reachable", () => {
+    // `margin: auto` holds the zoomed Document at content 0 once it overflows,
+    // so the scroll itself must carry the centering to the overflow midpoint
+    // — the old justify-center layout instead showed the symmetric overhang at
+    // scrollLeft 0 and hid the Document's left edge (the left-edge bug).
+    canvas.setZoomPercentAboutClientPoint(200, 0, 350)
+    expect(workspace.scrollLeft).toBeCloseTo((1200 - 1000) / 2, 10)
+    expect(workspace.scrollTop).toBeCloseTo((1200 - 700) / 2, 10)
+    canvas.setZoomPercentAboutClientPoint(300, 0, 350)
+    expect(workspace.scrollLeft).toBeCloseTo((1800 - 1000) / 2, 10)
+    expect(workspace.scrollTop).toBeCloseTo((1800 - 700) / 2, 10)
+  })
+
+  it("a pointer-anchored zoom that still fits the width anchors normally — no horizontal scrollbar", () => {
+    // At 150% the zoomed Document (900 × 900) fits the 1000-wide workspace, so
+    // the horizontal axis has no scrollbar — the midpoint rule clamps to 0.
+    canvas.setZoomPercentAboutClientPoint(150, 900, 350)
+    expect(workspace.scrollLeft).toBe(0)
+    // The vertical still outgrows (900 > 700): it centers on its own.
+    expect(workspace.scrollTop).toBeCloseTo((900 - 700) / 2, 10)
+  })
+
+  it("a center-anchored zoom centers the scroll once either axis overflows", () => {
+    // The buttons, keyboard, slider, and presets zoom about the workspace
+    // center; both axes center their scroll at the midpoint on overflow.
+    canvas.setZoomPercent(200, true)
+    expect(workspace.scrollLeft).toBeCloseTo((1200 - 1000) / 2, 10)
+    canvas.setZoomPercent(300, true)
+    expect(workspace.scrollLeft).toBeCloseTo((1800 - 1000) / 2, 10)
+    expect(workspace.scrollTop).toBeCloseTo((1800 - 700) / 2, 10)
   })
 
   it("a point-anchored zoom clamps to the range and notifies like any zoom", () => {
@@ -452,7 +478,9 @@ describe("StageCanvas zoom", () => {
 
   it("resize re-centers at the current zoom, clamps the scroll, never re-fits", () => {
     canvas.setZoomPercent(200, true)
-    expect(workspace.scrollLeft).toBeCloseTo(100, 10)
+    // The 1200-wide zoom doc overflows the 1000 workspace; the scroll centers
+    // at the midpoint, so the horizontal scrollbar's thumb sits centered.
+    expect(workspace.scrollLeft).toBeCloseTo((1200 - 1000) / 2, 10)
     const zoomBefore = canvas.getZoomPercent()
     // A larger workspace: the content (1200 — the zoomed Document) no longer
     // overflows the width, so the scroll clamps to the centered position —
@@ -662,8 +690,11 @@ describe("document rotation display", () => {
   it("recenters the rotated element into the workspace", () => {
     resizeWorkspace(300, 300)
     canvas.setRotation(90) // element 400×600, content 400×600
-    expect(workspace.scrollLeft).toBeCloseTo(50, 10)
-    expect(workspace.scrollTop).toBeCloseTo(150, 10)
+    // Both axes outgrow the 300 workspace: each centers its scroll at the
+    // overflow midpoint, so the element's center lands in the viewport and
+    // both edges stay reachable.
+    expect(workspace.scrollLeft).toBeCloseTo((400 - 300) / 2, 10)
+    expect(workspace.scrollTop).toBeCloseTo((600 - 300) / 2, 10)
   })
 
   it("fit at a cardinal rotation fits the rotated bounds", () => {

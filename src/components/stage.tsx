@@ -178,13 +178,19 @@ export function Stage() {
       onMouseDown={handleMouseDown}
       onMouseMove={handleMouseMove}
     >
-      {/* The flex centering matches the canvas's zoom layout (§9): the
-          element sits centered in the content, which is the workspace floored
-          against the zoomed Document — so the scrollbars appear exactly when
-          the Document no longer fits, and the fit margin is the centering
-          remainder at rest. */}
-      <div className="relative flex min-h-full min-w-full items-center justify-center">
-        <div className="bg-white shadow-md" ref={wrapperRef}>
+      {/* The centering matches the canvas's zoom layout (§9): the element sits
+          centered in the content, which is the workspace floored against the
+          zoomed Document — so the scrollbars appear exactly when the Document
+          no longer fits, and the fit margin is the centering remainder at
+          rest. `margin: auto` on the wrapper is the overflow-safe centering
+          idiom: it centers while the element fits, and resolves to 0 margins
+          once it outgrows the workspace — the left edge lands at content 0
+          (reachable by scrolling) instead of sticking out past the workspace's
+          left edge where no scrollbar could ever reach it. The scroll
+          position is the pan, and the scroll math centers each overflow axis
+          at its scroll midpoint (§9). */}
+      <div className="relative flex min-h-full min-w-full">
+        <div className="m-auto bg-white shadow-md" ref={wrapperRef}>
           <canvas ref={canvasRef} aria-label="Design canvas" />
         </div>
         {/* Marquee mirror (§7 extension): spans the workspace, never
