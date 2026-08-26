@@ -664,6 +664,24 @@ export function StageProvider({ children }: { children: ReactNode }) {
     [canvas, reportStatus],
   )
 
+  // Paste an external clipboard image (a screenshot or a picture copied from
+  // another app) into the canvas. The clicked/stuck path is the same as an
+  // uploaded file (§1): read the Blob to a data URL and hand it to addImage,
+  // which loads, fits to the Document, centers, selects, and commits one
+  // undoable step. Mirror of the sidebar's FileReader flow (sidebar.tsx).
+  const pasteImageFile = useCallback(
+    (file: File | null) => {
+      if (!file || !file.type.startsWith("image/")) return
+      const reader = new FileReader()
+      reader.onerror = () => reportStatus("Couldn't read that pasted image")
+      reader.onload = () => {
+        if (typeof reader.result === "string") void addImage(reader.result)
+      }
+      reader.readAsDataURL(file)
+    },
+    [addImage, reportStatus],
+  )
+
   const insertArtwork = useCallback(
     async (artwork: Artwork): Promise<boolean> => {
       if (!canvas?.history) return false
@@ -1109,11 +1127,12 @@ export function StageProvider({ children }: { children: ReactNode }) {
     return () => document.removeEventListener("keydown", onKeyDown)
   }, [canvas, deleteSelection])
 
-  // Copy/paste hotkeys (§13): Ctrl+C copies the selection to the app's
-  // internal clipboard, Ctrl+V pastes clones of it — nudged down-right,
-  // above the source, selected, one undoable step. The editable gate keeps
-  // the keys native in the toolbar's fields and the text session's hidden
-  // textarea (text copy/paste inside a session).
+  // Copy hotkey (§13): Ctrl+C copies the selection to the app's internal
+  // clipboard. Pasting — both the internal object paste and an external
+  // clipboard image — happens on the native paste event below, which is the
+  // only place the OS clipboard's contents (clipboardData) are readable. The
+  // editable gate keeps the key native in the toolbar's fields and the text
+  // session's hidden textarea.
   useEffect(() => {
     if (!canvas) return
     const onKeyDown = (event: KeyboardEvent) => {
@@ -1122,13 +1141,42 @@ export function StageProvider({ children }: { children: ReactNode }) {
       if (!event.ctrlKey && !event.metaKey) return
       if (event.altKey) return
       if (isEditableTarget(document.activeElement)) return
-      event.preventDefault()
-      if (key === "c") copySelection()
-      else void pasteSelection()
+      if (key === "c") {
+        event.preventDefault()
+        copySelection()
+      }
     }
     document.addEventListener("keydown", onKeyDown)
     return () => document.removeEventListener("keydown", onKeyDown)
-  }, [canvas, copySelection, pasteSelection])
+  }, [canvas, copySelection])
+
+  // Paste — image + object (§13). Ctrl+V fires a native paste event whose
+  // clipboardData holds the OS clipboard. An image (screenshot, copied from
+  // another app) becomes a placed FabricImage via pasteImageFile — the same
+  // §1 pipeline as an uploaded file. A paste with no image on the clipboard
+  // falls through to the internal object paste, so copying in-app keeps
+  // working. Reading the event (not the key) is what makes an external image
+  // reachable, and prevents a Ctrl+V double-paste. The editable gate keeps
+  // native text paste in the toolbar's fields and the text session.
+  useEffect(() => {
+    if (!canvas) return
+    const onPaste = (event: ClipboardEvent) => {
+      if (isEditableTarget(document.activeElement)) return
+      const items = event.clipboardData?.items
+        ? Array.from(event.clipboardData.items)
+        : []
+      // A file item whose type is an image — e.g. a screenshot or a picture
+      // copied from another app — is the external-image paste contract.
+      const image = items.find(
+        (item) => item.kind === "file" && item.type.startsWith("image/"),
+      )
+      event.preventDefault()
+      if (image) void pasteImageFile(image.getAsFile())
+      else void pasteSelection()
+    }
+    document.addEventListener("paste", onPaste)
+    return () => document.removeEventListener("paste", onPaste)
+  }, [canvas, pasteSelection, pasteImageFile])
 
   // Arrange hotkeys (§13): Ctrl+] / Ctrl+[ step the selection forward /
   // backward, Ctrl+Shift+] / Ctrl+Shift+[ move it to the very front / back.
