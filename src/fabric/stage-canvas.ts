@@ -1769,9 +1769,10 @@ export function createStageCanvas(
     if (event.target) gestureRatios.delete(event.target)
     // A text corner drag leaves the box carrying the gesture's scale — bake
     // it into the font size (the toolbar's readout) at the commit boundary,
-    // re-hugging the content while the box still auto-fits. Registered
-    // before the History (constructed last), so its snapshot sees the baked
-    // state and undo/redo restore the size, not the transform. Plain moves,
+    // keeping the box proportional to the drawn gesture while it still
+    // auto-fits (no re-measure settle on release). Registered before the
+    // History (constructed last), so its snapshot sees the baked state and
+    // undo/redo restore the size, not the transform. Plain moves,
     // rotations, and session exits pass through (scale 1).
     if (isTextObject(event.target)) bakeTextScale(event.target, getTextMeasurer())
   })

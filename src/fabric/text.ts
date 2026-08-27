@@ -289,14 +289,20 @@ export function applyTextProps(
  * top edge is pinned across the re-measure, like `applyTextProps`. No-op at
  * scale 1 — moves, rotations, and plain session commits pass through.
  *
- * While the box still auto-fits, the width re-hugs the content at the folded
- * size instead of keeping the proportional width: a corner scale is a size
- * change, like a toolbar size commit — the proportional width only
- * approximates the fit (the size rounds down), and a scale-down would leave
- * the box a hair short of the text, wrapping it. A wrap box (autoFit off —
- * the wrap-width drag handed the width over) keeps its manual width,
- * scaled. Without a measurer (model callers, tests) the proportional width
- * stays.
+ * While the box is auto-fitted, the fold keeps the proportional width —
+ * exactly where the gesture drew it — instead of re-measuring: the re-fit
+ * would pop the box a few px on release as the width re-hugged at the rounded
+ * size, the awkward settle a corner drag shouldn't have (the drag itself
+ * scaled the glyphs smoothly; only the release should not jump). The
+ * proportional width only approximates the fit — the size rounds to an
+ * integer, and a round-up can overshoot by a whisker, which would wrap the
+ * longest line — so the box is floored against the measured fit: it grows
+ * only when the content at the folded size outgrows the drawn width, never
+ * wrapping. Auto-fit survives for the next keystroke — the flag stays set
+ * and the width still hugs the content (it IS that measured fit in the
+ * common case). A wrap box (autoFit off — the wrap-width drag handed the
+ * width over) keeps its manual width, scaled. Without a measurer (model
+ * callers, tests) the proportional width stays.
  *
  * The factor is the geometric mean of the two axes (absolute — a flip
  * mirrors one): uniform corner gestures keep them equal, while a text folded
@@ -313,7 +319,28 @@ export function bakeTextScale(obj: Textbox, measure?: TextMeasurer): void {
     scaleX: 1,
     scaleY: 1,
   })
-  if (measure && obj.autoFit) fitToContent(obj, measure)
+  if (measure && obj.autoFit) {
+    // A corner scale is a size change (§6), but the re-hug must not pop the
+    // box: the gesture already drew the box at width × s, so the fold keeps
+    // that proportional width — the box lands exactly where the drag left
+    // it, no settle on release, like a shape. The proportional width only
+    // approximates the fit — the size rounds to an integer, and a round-up
+    // can overshoot by a whisker, which would wrap the longest line — so the
+    // box is floored against the measured fit, growing only when the content
+    // at the folded size would outgrow the drawn width.
+    const fitted = fitTextWidth(
+      obj.text,
+      {
+        fontSize: obj.fontSize,
+        fontFamily: obj.fontFamily,
+        fontWeight: obj.fontWeight,
+        fontStyle: obj.fontStyle,
+      },
+      obj.charSpacing,
+      measure,
+    )
+    obj.set("width", Math.max(obj.width, fitted))
+  }
   obj.setPositionByOrigin(top, obj.originX, "top")
   obj.setCoords()
 }
