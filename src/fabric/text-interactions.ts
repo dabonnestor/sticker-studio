@@ -5,6 +5,7 @@ import {
   TEXT_DEFAULT_STRING,
   fitToContent,
   forceUppercase,
+  getTextAnchorOrigin,
   isTextObject,
   type TextMeasurer,
 } from "@/fabric/text"
@@ -86,20 +87,24 @@ export function commitTextSession(
  * The revert path of a session exit: restore the pre-session state — the
  * text, the per-character styles, the auto-fit width (typing re-fits it on
  * every keystroke, so the box is wider than it started) and the uppercase
- * source (typing while the flag is set overwrites it). The top edge is
- * pinned across the restore — the session's longer text grew the box, and
- * shrinking it back would pivot the center-anchored object and walk the
- * text vertically by Δh/2 (the same capture-restore as `applyTextProps`).
+ * source (typing while the flag is set overwrites it). The textAlign-anchored
+ * corner is pinned across the restore — the same edge every in-session width
+ * change pinned (the live re-fits and Fabric's own `updateFromTextArea`), so
+ * the box lands exactly where the session found it. Without the horizontal
+ * pin the center-anchored object would re-center on the grown box's middle
+ * and walk back right by ΔW/2 — the more text typed, the farther the nudge —
+ * and the top edge is held across the height shrink of a multi-line session.
  */
 export function revertTextSession(obj: Textbox, state: TextSessionState): void {
-  const top = obj.getPositionByOrigin(obj.originX, "top")
+  const originX = getTextAnchorOrigin(obj)
+  const anchor = obj.getPositionByOrigin(originX, "top")
   obj.set({
     text: state.text,
     styles: state.styles,
     width: state.width,
     uppercaseSource: state.uppercaseSource,
   })
-  obj.setPositionByOrigin(top, obj.originX, "top")
+  obj.setPositionByOrigin(anchor, originX, "top")
   obj.setCoords()
 }
 

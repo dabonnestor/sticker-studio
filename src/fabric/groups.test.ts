@@ -334,16 +334,17 @@ describe("refitParentGroup — a child edit re-fits the group, never clipping it
     expect(group.width).toBeCloseTo(widthBefore, 6)
 
     // The refit's contract: the group grows *around* the children — capture
-    // their positions at refit time (applyTextProps pinned the top edge, so
-    // the grown box's center legitimately sits lower by Δh/2) and assert the
-    // re-fit moves nobody.
+    // their positions at refit time (applyTextProps pinned the text's left
+    // edge, so the grown box's center legitimately sits to its right) and
+    // assert the re-fit moves nobody.
     const textCenter = text.getCenterPoint()
     const shapeCenter = shape.getCenterPoint()
     refitParentGroup(text)
-    // The group grew by half the box's width delta (82 − 42)/2 = 20 — the
-    // square pins the left edge, the growth extends the right.
-    expect(group.width).toBeCloseTo(387.5, 6)
-    expect(group.width - widthBefore).toBeCloseTo(20, 6)
+    // The group grew by the box's full width delta (82 − 42) = 40 — the
+    // commit pinned the text's left edge and the square pins the union's
+    // left edge, so the growth extends the right.
+    expect(group.width).toBeCloseTo(407.5, 6)
+    expect(group.width - widthBefore).toBeCloseTo(40, 6)
     expect(text.getCenterPoint().x).toBeCloseTo(textCenter.x, 6)
     expect(text.getCenterPoint().y).toBeCloseTo(textCenter.y, 6)
     expect(shape.getCenterPoint().x).toBeCloseTo(shapeCenter.x, 6)

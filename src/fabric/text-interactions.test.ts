@@ -182,6 +182,27 @@ describe("wireTextInteractions — session lifecycle", () => {
     expect(textbox.uppercaseSource).toBeUndefined()
   })
 
+  it("Escape reverts without moving the box — the alignment edge stays put (regression)", () => {
+    // The session's live re-fits pin the box's left edge (left-aligned text —
+    // fitToContent anchors the textAlign side), and Fabric's own text sync
+    // pins the same edge — so a revert must land the box exactly where the
+    // session found it. A center-anchored restore re-centered the grown box
+    // instead, walking it right by half the growth — the more text typed,
+    // the bigger the nudge.
+    textbox.set("text", "before")
+    textbox.set({ left: 300, top: 200 })
+    textbox.setCoords()
+    const leftBefore = textbox.getPositionByOrigin("left", "top").x
+    const topBefore = textbox.getPositionByOrigin("left", "top").y
+    edit()
+    type("much longer text than before")
+    expect(textbox.width).toBeGreaterThan(42) // the live re-fit grew the box
+    pressKey("Escape", 27)
+    expect(textbox.text).toBe("before")
+    expect(textbox.getPositionByOrigin("left", "top").x).toBe(leftBefore)
+    expect(textbox.getPositionByOrigin("left", "top").y).toBe(topBefore)
+  })
+
   it("empty-on-exit restores 'Text'", () => {
     textbox.set("text", "before")
     edit()
@@ -270,10 +291,10 @@ describe("wireTextInteractions — grouped text never clips", () => {
     ta.selectionStart = ta.selectionEnd = 5
     ta.dispatchEvent(new Event("input", { bubbles: true }))
     expect(textbox.width).toBe(52) // 5 × 10 + 2 — the box re-hugged live
-    // The union grows on the box's side only: the square pins the left edge
-    // (the +1 is the text's phantom Fabric stroke width, in the fit math),
-    // so the group grows by half the box's width delta — 10/2.
-    expect(group.width - widthBefore).toBeCloseTo(5, 6)
+    // The union grows on the box's side only: the re-hug pins the box's left
+    // edge (the textAlign side) and the square pins the union's left edge,
+    // so the group grows by the box's full width delta — 52 − 42 = 10.
+    expect(group.width - widthBefore).toBeCloseTo(10, 6)
     expect(group.width).toBeGreaterThan(widthBefore)
   })
 
@@ -283,8 +304,8 @@ describe("wireTextInteractions — grouped text never clips", () => {
     textbox.set("text", "hello") // wraps at the old width — the commit re-fits
     commitTextSession(textbox, measure)
     expect(textbox.width).toBe(52)
-    // Same half-width growth as the keystroke path.
-    expect(group.width - widthBefore).toBeCloseTo(5, 6)
+    // Same full-width growth as the keystroke path.
+    expect(group.width - widthBefore).toBeCloseTo(10, 6)
     expect(group.width).toBeGreaterThan(widthBefore)
   })
 })

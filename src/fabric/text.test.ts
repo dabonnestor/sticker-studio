@@ -283,6 +283,56 @@ describe("applyTextProps — the nine properties (§6)", () => {
       expect(t.width).toBe(37)
     })
   })
+
+  describe("the re-fit grows from the alignment edge, never the center (§6)", () => {
+    it("left-aligned text keeps its left edge — the box grows right, not left", () => {
+      const t = createText(measure)
+      t.set("text", "ABC")
+      fitToContent(t, measure) // 32 wide
+      t.set({ left: 100, top: 100 })
+      t.setCoords()
+      const leftEdge = t.getPositionByOrigin("left", "top").x
+      applyTextProps(t, { charSpacing: 100 }, measure) // re-fits to 37 — Δ5
+      expect(t.width).toBe(37)
+      // Center-anchored re-pin would walk the left edge left by ΔW/2 = 2.5.
+      expect(t.getPositionByOrigin("left", "top").x).toBe(leftEdge)
+    })
+
+    it("centered text keeps its center — the grow is symmetric", () => {
+      const t = createText(measure)
+      t.set("text", "ABC")
+      fitToContent(t, measure)
+      t.set({ left: 100, top: 100, textAlign: "center" })
+      t.setCoords()
+      const center = t.getPositionByOrigin("center", "top").x
+      applyTextProps(t, { charSpacing: 100 }, measure)
+      expect(t.getPositionByOrigin("center", "top").x).toBe(center)
+    })
+
+    it("right-aligned text keeps its right edge — the grow is leftward", () => {
+      const t = createText(measure)
+      t.set("text", "ABC")
+      fitToContent(t, measure)
+      t.set({ left: 100, top: 100, textAlign: "right" })
+      t.setCoords()
+      const rightEdge = t.getPositionByOrigin("right", "top").x
+      applyTextProps(t, { charSpacing: 100 }, measure)
+      expect(t.getPositionByOrigin("right", "top").x).toBe(rightEdge)
+    })
+
+    it("a patch that changes the alignment re-anchors to the new side", () => {
+      const t = createText(measure)
+      t.set("text", "ABC")
+      fitToContent(t, measure)
+      t.set({ left: 100, top: 100 })
+      t.setCoords()
+      const centerBefore = t.getPositionByOrigin("center", "top").x
+      applyTextProps(t, { textAlign: "center", charSpacing: 100 }, measure)
+      // The box centered itself where it stood — the alignment set landed
+      // before the anchor capture, then the re-fit grew from the center.
+      expect(t.getPositionByOrigin("center", "top").x).toBe(centerBefore)
+    })
+  })
 })
 
 describe("top-edge pinning — property commits never nudge the box (§6)", () => {
@@ -482,6 +532,23 @@ describe("text session — one interaction boundary (§6)", () => {
       const topBefore = t.getCoords()[0].y
       revertTextSession(t, state)
       expect(t.getCoords()[0].y).toBe(topBefore)
+    })
+
+    it("pins the alignment edge across the restore — no half-width nudge (§6)", () => {
+      // The session's live re-fits pinned the left edge (left-aligned text),
+      // so the restore must put it back exactly there. Re-pinning the
+      // center-anchored box's middle instead walks the text right by
+      // ΔW/2 — the more text typed, the farther the nudge.
+      const t = createText(measure)
+      t.set({ left: 100, top: 100 })
+      t.setCoords()
+      const state = captureTextSession(t) // pre-session: "Text", 42 wide
+      t.set("text", "much longer text than before")
+      fitToContent(t, measure)
+      const edgeBefore = t.getPositionByOrigin("left", "top")
+      revertTextSession(t, state)
+      expect(t.text).toBe("Text")
+      expect(t.getPositionByOrigin("left", "top")).toEqual(edgeBefore)
     })
   })
 })

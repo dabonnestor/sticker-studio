@@ -262,7 +262,15 @@ describe("copy / paste", () => {
     expect(clone.uppercaseSource).toBe("Text")
     expect(clone.fontSize).toBe(36)
     expect(clone.charSpacing).toBe(50)
-    expect(clone.left).toBe(100 + PASTE_NUDGE_PX)
+    // The clone lands a paste-nudge from the source's *left edge* — the
+    // anchor a text keeps when a property commit re-measures it (the box
+    // grows right from its alignment side, never around its center — the
+    // unmeasured box's width re-measures on the size commit, so the center
+    // coordinate drifts with it; the visual left edge does not).
+    expect(clone.getPositionByOrigin("left", "top").x).toBeCloseTo(
+      text.getPositionByOrigin("left", "top").x + PASTE_NUDGE_PX,
+      6,
+    )
   })
 
   it("paste with an empty clipboard is a no-op", async () => {

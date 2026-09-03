@@ -167,18 +167,38 @@ export function fitTextWidth(
 }
 
 /**
+ * The horizontal edge every re-measure pins: the textAlign side — the same
+ * edge Fabric itself pins while editing (`updateFromTextArea` anchors the
+ * textAlign-aligned corner, so typing never walks the box in the design
+ * tools). Left-aligned text keeps its left edge and grows right as content
+ * grows; centered grows symmetrically; right-aligned keeps its right edge.
+ * Justify anchors left (LTR), mirroring Fabric's own mapping. The auto-fit,
+ * the property commits, the scale bake, and the session restore all speak
+ * this one anchor.
+ */
+export function getTextAnchorOrigin(obj: Textbox): "left" | "center" | "right" {
+  const align = obj.textAlign.replace("justify-", "")
+  if (align === "center" || align === "right") return align
+  return "left"
+}
+
+/**
  * Fit the box width to its content — the auto-fit operation, used at
  * creation, live while typing, and at the end of every text session while
  * `autoFit` is set. Height re-measures from the new width's wrapping
  * (Fabric's `set` re-inits dimensions for text layout properties).
  *
- * The top edge is pinned across the re-measure: objects anchor at their
- * center (Fabric's default), so a changed height would pivot the box around
- * the center and walk the text down — the same reason Fabric's own
- * `updateFromTextArea` preserves the top-anchored position on input.
+ * The textAlign-anchored corner (`getTextAnchorOrigin`) is pinned across the
+ * re-measure — Fabric v7 defaults objects to center-anchoring, so a change in
+ * width OR height would pivot the box around its center and walk both edges
+ * (thus the text) by Δ/2. Pinning the anchor — the top of the alignment side,
+ * by default top-left — keeps the box growing right and down only: the edge
+ * the user placed stays put, exactly as Fabric's own `updateFromTextArea`
+ * anchors input.
  */
 export function fitToContent(obj: Textbox, measure: TextMeasurer): void {
-  const top = obj.getPositionByOrigin(obj.originX, "top")
+  const originX = getTextAnchorOrigin(obj)
+  const anchor = obj.getPositionByOrigin(originX, "top")
   obj.set(
     "width",
     fitTextWidth(
@@ -193,7 +213,7 @@ export function fitToContent(obj: Textbox, measure: TextMeasurer): void {
       measure,
     ),
   )
-  obj.setPositionByOrigin(top, obj.originX, "top")
+  obj.setPositionByOrigin(anchor, originX, "top")
   obj.setCoords()
 }
 
@@ -217,19 +237,29 @@ export function forceUppercase(obj: Textbox): void {
  * never been manually resized it still hugs its content, so the width
  * re-fits (the spacing widens the measured longest line).
  *
- * The top edge is pinned across the whole commit: a family/size/line-height
- * set re-wraps the box against the current width, and a changed line count
- * changes the height — without a pin, the center-anchored object pivots
- * around its center and the text visibly walks vertically by Δh/2. The edge
- * is captured before any set and restored after the re-fit (the same
- * capture-restore Fabric's own `updateFromTextArea` uses while typing).
+ * The textAlign-anchored corner is pinned across the whole commit: a
+ * family/size/line-height set re-wraps the box against the current width,
+ * and a changed line count changes the height — without a pin, the
+ * center-anchored object pivots around its center and the text visibly
+ * walks vertically by Δh/2 — and the re-fit changes the width, which would
+ * otherwise grow the box around its center and walk the horizontal edge
+ * (thus the text) by ΔW/2. The pin is the same edge Fabric's own
+ * `updateFromTextArea` anchors input on; the textAlign set lands first, so
+ * a patch that changes the alignment re-anchors the box to the new side
+ * before the corner is captured. Captured before any re-measuring set,
+ * restored after the re-fit (the same capture-restore as `fitToContent`).
  */
 export function applyTextProps(
   obj: Textbox,
   patch: TextPropsPatch,
   measure?: TextMeasurer,
 ): void {
-  const top = obj.getPositionByOrigin(obj.originX, "top")
+  // The alignment set goes before the anchor capture so the box re-anchors
+  // to the new side when the patch changes it — the captured corner, the
+  // re-fit, and the restore all speak the same alignment language.
+  if (patch.textAlign !== undefined) obj.set("textAlign", patch.textAlign)
+  const originX = getTextAnchorOrigin(obj)
+  const anchor = obj.getPositionByOrigin(originX, "top")
   if (patch.fontFamily !== undefined) {
     obj.set("fontFamily", patch.fontFamily)
     // Real faces only (§6): a weight or italic the new family doesn't bundle
@@ -249,7 +279,6 @@ export function applyTextProps(
   if (patch.fontWeight !== undefined) obj.set("fontWeight", patch.fontWeight)
   if (patch.fontStyle !== undefined) obj.set("fontStyle", patch.fontStyle)
   if (patch.underline !== undefined) obj.set("underline", patch.underline)
-  if (patch.textAlign !== undefined) obj.set("textAlign", patch.textAlign)
   if (patch.lineHeight !== undefined) obj.set("lineHeight", patch.lineHeight)
   if (patch.charSpacing !== undefined) obj.set("charSpacing", patch.charSpacing)
   if (patch.uppercase !== undefined) {
@@ -273,7 +302,7 @@ export function applyTextProps(
   ) {
     fitToContent(obj, measure)
   }
-  obj.setPositionByOrigin(top, obj.originX, "top")
+  obj.setPositionByOrigin(anchor, originX, "top")
   obj.setCoords()
 }
 
@@ -286,8 +315,11 @@ export function applyTextProps(
  * source of truth. The wrap width scales with it (the box wraps the same
  * lines it wrapped scaled), and the height re-measures from the new width
  * and size (Fabric's `set` re-inits dimensions for layout properties). The
- * top edge is pinned across the re-measure, like `applyTextProps`. No-op at
- * scale 1 — moves, rotations, and plain session commits pass through.
+ * textAlign-anchored corner is pinned across the re-measure, like
+ * `applyTextProps` — the drawn box is identical after the fold, and the
+ * corner held is the edge the box grows from when the folded content
+ * outgrows the drawn width (the floor below). No-op at scale 1 — moves,
+ * rotations, and plain session commits pass through.
  *
  * While the box is auto-fitted, the fold keeps the proportional width —
  * exactly where the gesture drew it — instead of re-measuring: the re-fit
@@ -312,7 +344,8 @@ export function applyTextProps(
 export function bakeTextScale(obj: Textbox, measure?: TextMeasurer): void {
   if (obj.scaleX === 1 && obj.scaleY === 1) return
   const s = Math.sqrt(Math.abs(obj.scaleX * obj.scaleY))
-  const top = obj.getPositionByOrigin(obj.originX, "top")
+  const originX = getTextAnchorOrigin(obj)
+  const anchor = obj.getPositionByOrigin(originX, "top")
   obj.set({
     fontSize: Math.round(obj.fontSize * s),
     width: obj.width * s,
@@ -341,6 +374,6 @@ export function bakeTextScale(obj: Textbox, measure?: TextMeasurer): void {
     )
     obj.set("width", Math.max(obj.width, fitted))
   }
-  obj.setPositionByOrigin(top, obj.originX, "top")
+  obj.setPositionByOrigin(anchor, originX, "top")
   obj.setCoords()
 }
