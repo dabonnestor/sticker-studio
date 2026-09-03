@@ -3,6 +3,7 @@ import {
   useCallback,
   useContext,
   useEffect,
+  useRef,
   useState,
   type ReactNode,
 } from "react"
@@ -53,6 +54,13 @@ import {
   setFillColor,
 } from "@/fabric/shapes"
 import { createArtworkImage, createImageFromDataURL } from "@/fabric/images"
+import {
+  createGalleryCopy,
+  readRecentUploads,
+  recordRecentUpload,
+  removeStoredUpload,
+  type RecentUpload,
+} from "@/fabric/recent-uploads"
 import { setOpacity } from "@/fabric/document-props"
 import type { ShapeKind } from "@/fabric/shapes"
 import {
@@ -211,6 +219,30 @@ interface StageContextValue {
    * reports loud in the status area and changes nothing.
    */
   addImage: (dataURL: string) => Promise<void>
+  /**
+   * The recent-uploads gallery (the sidebar's Uploads panel): the persisted,
+   * deduped list of images uploaded or pasted this session and before,
+   * newest first. Shared by both intake paths — the panel's file picker and
+   * a pasted clipboard image — so either way into the Document lands in the
+   * same gallery.
+   */
+  recentUploads: RecentUpload[]
+  /**
+   * Record an image into the recent-uploads gallery — the gallery side of an
+   * upload or paste: make the downscaled copy, merge it into the shared
+   * list, and persist. The placement itself (addImage) is the caller's job;
+   * a copy refused as over the size guard is reported through the status
+   * area, since the image itself was already placed.
+   */
+  addRecentUpload: (dataURL: string, name: string) => Promise<void>
+  /**
+   * Remove an image from the recent-uploads gallery — the inverse of
+   * {@link addRecentUpload}: drops the tile (and its stored copy) from the
+   * shared list and persists. Silent — the tile vanishing from the grid is
+   * feedback enough. The Document is untouched — the placed image stays on
+   * the canvas; only the gallery entry goes.
+   */
+  removeRecentUpload: (dataURL: string) => void
   /**
    * The app's Catalogs (map #34, ticket #39) — the Graphics panel's Pixabay
    * source and the Images panel's Unsplash source. The provider seam is
@@ -420,6 +452,17 @@ export function StageProvider({ children }: { children: ReactNode }) {
   const [designFileName, setDesignFileName] = useState("untitled")
   // The transient bottom-bar status message — save/import progress and errors.
   const [status, setStatus] = useState("Ready")
+  // The recent-uploads gallery (map: the Uploads panel) — the persisted,
+  // deduped list of images uploaded or pasted, seeded from storage so it
+  // survives refresh like the working draft.
+  const [recentUploads, setRecentUploads] = useState<RecentUpload[]>(() =>
+    readRecentUploads(),
+  )
+  // The gallery's truth for the merge path: a ref mirror (the CatalogPanel's
+  // queryRef pattern). Two intake paths (an upload and a paste) can complete
+  // their copies out of order; merging against this ref instead of the async
+  // state value keeps each merge up to date.
+  const recentUploadsRef = useRef(recentUploads)
   // Preview mode (§3 <Eye> button) — hidden sidebar/toolbar, full-width
   // canvas. View state, never serialized, never an undoable step.
   const [preview, setPreview] = useState(false)
@@ -676,22 +719,60 @@ export function StageProvider({ children }: { children: ReactNode }) {
     [canvas, reportStatus],
   )
 
+  // The gallery side of an upload or paste — the placement (addImage) is the
+  // caller's. Makes the downscaled storage copy (falling back to the original
+  // bytes when the copy can't be made), merges it into the shared list via the
+  // ref mirror, and persists. A copy over the size guard is refused with the
+  // status area explaining — the image itself was already placed, so only the
+  // gallery entry (which the caller cannot see yet) needs the notice.
+  const addRecentUpload = useCallback(
+    async (dataURL: string, name: string) => {
+      const copy = (await createGalleryCopy(dataURL)) ?? dataURL
+      const recorded = recordRecentUpload(copy, name, recentUploadsRef.current)
+      if (!recorded) {
+        reportStatus("That image was added but it's too large for the recent-uploads gallery")
+        return
+      }
+      recentUploadsRef.current = recorded
+      setRecentUploads(recorded)
+    },
+    [reportStatus],
+  )
+
+  // The gallery-side inverse of addRecentUpload: drop the entry from the
+  // shared list (via the ref mirror, like the add path) and persist. The
+  // removal is silent — no status note, unlike the add path's loud refusal —
+  // because the tile vanishing from the grid is feedback enough.
+  const removeRecentUpload = useCallback(
+    (dataURL: string) => {
+      const next = removeStoredUpload(dataURL, recentUploadsRef.current)
+      recentUploadsRef.current = next
+      setRecentUploads(next)
+    },
+    [],
+  )
+
   // Paste an external clipboard image (a screenshot or a picture copied from
   // another app) into the canvas. The clicked/stuck path is the same as an
   // uploaded file (§1): read the Blob to a data URL and hand it to addImage,
   // which loads, fits to the Document, centers, selects, and commits one
-  // undoable step. Mirror of the sidebar's FileReader flow (sidebar.tsx).
+  // undoable step — and record it into the recent-uploads gallery, exactly
+  // like a manually uploaded file, so a pasted image can be re-placed from
+  // the Uploads panel later.
   const pasteImageFile = useCallback(
     (file: File | null) => {
       if (!file || !file.type.startsWith("image/")) return
       const reader = new FileReader()
       reader.onerror = () => reportStatus("Couldn't read that pasted image")
       reader.onload = () => {
-        if (typeof reader.result === "string") void addImage(reader.result)
+        const dataURL = reader.result
+        if (typeof dataURL !== "string") return
+        void addImage(dataURL)
+        void addRecentUpload(dataURL, file.name || "Pasted image")
       }
       reader.readAsDataURL(file)
     },
-    [addImage, reportStatus],
+    [addImage, addRecentUpload, reportStatus],
   )
 
   const insertArtwork = useCallback(
@@ -1314,6 +1395,9 @@ export function StageProvider({ children }: { children: ReactNode }) {
         addText,
         commitTextProps,
         addImage,
+        recentUploads,
+        addRecentUpload,
+        removeRecentUpload,
         graphicsCatalog,
         imageCatalog,
         insertArtwork,
