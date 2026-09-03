@@ -86,11 +86,11 @@ _Avoid_: snap toggle, snap override
 ## Graphics source
 
 **Catalog**:
-The third-party library the app sources illustrated artwork from — searched and browsed inside the app, not self-hosted. Artwork is licensed for commercial use (no attribution required), but the source provides no per-item guarantee it contains no third-party characters or brands — the user holds the responsibility to verify rights before selling; the app filters obvious franchise/character/brand matches heuristically.
+The third-party library the app sources artwork from — illustrated graphics (Pixabay) and photographs (Unsplash) — searched and browsed inside the app, not self-hosted. Artwork is licensed for commercial use (no attribution required), but the source provides no per-item guarantee it contains no third-party characters or brands — the user holds the responsibility to verify rights before selling; the app filters obvious franchise/character/brand matches heuristically.
 _Avoid_: sticker pack, library, stash
 
 **Artwork**:
-A single item in the Catalog — a raster graphic (illustrated sticker art, typically transparent background) that can be Inserted as an Image object. Artwork is sourced and embedded at Insert time, never hotlinked from the Catalog afterwards; it is a picture placed in a design, not itself a shape with editable geometry.
+A single item in the Catalog — a raster graphic (illustrated sticker art, typically transparent background, or a photograph) that can be Inserted as an Image object. Artwork is sourced and embedded at Insert time, never hotlinked from the Catalog afterwards; it is a picture placed in a design, not itself a shape with editable geometry.
 _Avoid_: graphic, asset, sticker, clip art
 
 **Insert**:

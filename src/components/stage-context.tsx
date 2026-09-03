@@ -19,6 +19,7 @@ import {
   type Catalog,
 } from "@/fabric/catalog"
 import { createPixabayCatalog } from "@/fabric/pixabay-catalog"
+import { createUnsplashCatalog } from "@/fabric/unsplash-catalog"
 import { getTextMeasurer, preloadFonts } from "@/fabric/fonts"
 import {
   alignObjects,
@@ -75,11 +76,14 @@ import type { Unit } from "@/lib/units"
 import { stepDocumentRotation, stepZoomPercent } from "@/fabric/zoom"
 
 /**
- * The app's single Catalog (map #34) — the Pixabay provider behind the thin
- * facade. The panel and Insert search and embed through this; a provider swap
- * touches only this line (ticket #39's "the caller does not know the shape").
+ * The app's two Catalogs (map #34, ticket #39) — the Graphics panel's Pixabay
+ * source and the Images panel's Unsplash source, each behind the thin facade.
+ * The panels and Insert search and embed through these; a provider swap
+ * touches only these lines (ticket #39's "the caller does not know the
+ * shape").
  */
-const catalog = createCatalog(createPixabayCatalog())
+const graphicsCatalog = createCatalog(createPixabayCatalog())
+const imageCatalog = createCatalog(createUnsplashCatalog())
 
 /** A shape-property commit against the selected shape (build spec §5). */
 export interface ShapePropsPatch {
@@ -208,10 +212,13 @@ interface StageContextValue {
    */
   addImage: (dataURL: string) => Promise<void>
   /**
-   * The app's Catalog (map #34, ticket #39) — searched by the Artwork panel.
-   * The provider seam is internal: the panel never knows the provider's shape.
+   * The app's Catalogs (map #34, ticket #39) — the Graphics panel's Pixabay
+   * source and the Images panel's Unsplash source. The provider seam is
+   * internal: the panels never know a provider's shape.
    */
-  catalog: Catalog
+  graphicsCatalog: Catalog
+  /** The Images panel's catalog — photographs from Unsplash. */
+  imageCatalog: Catalog
   /**
    * Insert an Artwork as an ordinary Image, fitted and centered (ticket #40,
    * #42) — embed its full-resolution bytes self-containedly, stamp its
@@ -219,9 +226,10 @@ interface StageContextValue {
    * the Document past the self-containment ceiling is refused with a clear
    * message and nothing is inserted (#42). Resolves true on a successful
    * insert, false when refused or failed — the panel decides its Inserted
-   * line from it.
+   * line from it. The embed goes through the catalog the artwork was searched
+   * with — the panel passes the catalog it holds.
    */
-  insertArtwork: (artwork: Artwork) => Promise<boolean>
+  insertArtwork: (artwork: Artwork, catalog: Catalog) => Promise<boolean>
   /**
    * Rearrange the selection's z-order (§7 Q6) — one slot forward/backward,
    * or to the very front/back. Locked objects are inert (§7 Q3) and skipped,
@@ -683,12 +691,13 @@ export function StageProvider({ children }: { children: ReactNode }) {
   )
 
   const insertArtwork = useCallback(
-    async (artwork: Artwork): Promise<boolean> => {
+    async (artwork: Artwork, catalog: Catalog): Promise<boolean> => {
       if (!canvas?.history) return false
       try {
         // The embed fetches the artwork's full-resolution bytes and returns
         // them self-contained — the Insert lands only when the pixels exist,
-        // so the placement is one atomic undoable step (#42).
+        // so the placement is one atomic undoable step (#42). The embed goes
+        // through the catalog the artwork was searched with.
         const dataURL = await catalog.embed(artwork)
         const obj = await createArtworkImage(dataURL, canvas.width, canvas.height, {
           source: artwork.source,
@@ -1301,7 +1310,8 @@ export function StageProvider({ children }: { children: ReactNode }) {
         addText,
         commitTextProps,
         addImage,
-        catalog,
+        graphicsCatalog,
+        imageCatalog,
         insertArtwork,
         arrangeSelection,
         alignSelection,

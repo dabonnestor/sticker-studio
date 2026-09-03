@@ -18,7 +18,10 @@
  * for Insert (#42).
  */
 
-/** One catalog item — illustrated sticker art cleared for commercial sale. */
+/**
+ * One catalog item — illustrated sticker art (Pixabay) or a photograph
+ * (Unsplash), cleared for commercial sale.
+ */
 export interface Artwork {
   /** The artwork's title — becomes the inserted Image's name (#40). */
   title: string
