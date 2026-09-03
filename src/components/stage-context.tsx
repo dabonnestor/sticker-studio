@@ -363,8 +363,9 @@ interface StageContextValue {
    * top-bar File area. Clears the stored working draft (so a refresh boots
    * blank, not the resumed design), resets the canvas to a fresh factory-
    * default sheet (default size, no objects, border off, rotation 0, white
-   * background), and clears the undo stack. Scoped to the draft and the
-   * canvas — manual Save/Import/Export are unaffected.
+   * background), resets the design-file name to untitled, and clears the
+   * undo stack. Scoped to the draft and the canvas — manual Save/Import/
+   * Export are unaffected.
    */
   startNewDesign: () => void
 }
@@ -646,9 +647,12 @@ export function StageProvider({ children }: { children: ReactNode }) {
     // The undo stack clears with the design — a fresh sheet has no history,
     // so undo stays dead until the first new edit (ticket #33).
     canvas.history.reset()
+    // A fresh design is untitled — the imported name must not round-trip
+    // through Save (§10).
+    setDesignFileName("untitled")
     refreshDocumentMirrors(canvas)
     reportStatus("Started a new design")
-  }, [canvas, refreshDocumentMirrors, reportStatus])
+  }, [canvas, refreshDocumentMirrors, reportStatus, setDesignFileName])
 
   const addImage = useCallback(
     async (dataURL: string) => {
