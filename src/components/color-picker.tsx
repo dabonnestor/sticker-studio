@@ -172,7 +172,7 @@ function ColorPicker({
           size="icon-sm"
           disabled={disabled}
           aria-label={ariaLabel}
-          className={cn("cursor-pointer rounded-md p-0.5 shadow-none", className)}
+          className={cn("h-7 w-7 cursor-pointer rounded-md p-0.5 shadow-none", className)}
           style={{ backgroundColor: hexInputValue }}
         />
       </PopoverTrigger>

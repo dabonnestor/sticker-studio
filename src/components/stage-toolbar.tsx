@@ -213,28 +213,30 @@ function RotateControl() {
 function UnitSwitcher() {
   const { unit, setUnit } = useStage()
   return (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <Button
-          variant="ghost"
-          size="sm"
-          className="w-14 gap-1 font-medium"
-          aria-label="Units"
-        >
-          {unit}
-          <ChevronDown aria-hidden />
-        </Button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="start">
-        <DropdownMenuLabel>Units</DropdownMenuLabel>
-        <DropdownMenuSeparator />
-        {UNITS.map(({ value, label }) => (
-          <DropdownMenuItem key={value} onClick={() => setUnit(value)}>
-            {label}
-          </DropdownMenuItem>
-        ))}
-      </DropdownMenuContent>
-    </DropdownMenu>
+    <TooltipLabel label="Units">
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="w-14 gap-1 font-medium"
+            aria-label="Units"
+          >
+            {unit}
+            <ChevronDown aria-hidden />
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="start">
+          <DropdownMenuLabel>Units</DropdownMenuLabel>
+          <DropdownMenuSeparator />
+          {UNITS.map(({ value, label }) => (
+            <DropdownMenuItem key={value} onClick={() => setUnit(value)}>
+              {label}
+            </DropdownMenuItem>
+          ))}
+        </DropdownMenuContent>
+      </DropdownMenu>
+    </TooltipLabel>
   )
 }
 
@@ -294,17 +296,14 @@ function CanvasProps() {
 
   return (
     <div className="flex items-center gap-3">
-      <label className="flex items-center gap-1.5">
-        <span className="text-[10px] leading-none text-muted-foreground">Background</span>
-        <TooltipLabel label="Canvas background color">
-          <ColorPicker
-            value={backgroundColor}
-            ariaLabel="Canvas background color"
-            onApply={(backgroundColor) => commitCanvasProps({ backgroundColor }, false)}
-            onChange={(backgroundColor) => commitCanvasProps({ backgroundColor })}
-          />
-        </TooltipLabel>
-      </label>
+      <TooltipLabel label="Background color">
+        <ColorPicker
+          value={backgroundColor}
+          ariaLabel="Background color"
+          onApply={(backgroundColor) => commitCanvasProps({ backgroundColor }, false)}
+          onChange={(backgroundColor) => commitCanvasProps({ backgroundColor })}
+        />
+      </TooltipLabel>
       <label className="flex items-center gap-2">
         <span className="text-[10px] leading-none text-muted-foreground">Border</span>
         <Slider
@@ -322,9 +321,7 @@ function CanvasProps() {
         <span className="w-8 text-right text-[10px] leading-none text-muted-foreground tabular-nums">
           {borderWidth}px
         </span>
-        <TooltipLabel
-          label={borderWidth === 0 ? "Border is off — set a width first" : "Border color"}
-        >
+        <TooltipLabel label="Border color">
           <ColorPicker
             value={borderColor}
             disabled={borderWidth === 0}
@@ -355,18 +352,15 @@ function ShapeProps() {
 
   return (
     <div className="flex items-center gap-3">
-      <label className="flex items-center gap-1.5">
-        <span className="text-[10px] leading-none text-muted-foreground">Fill</span>
-        <TooltipLabel label="Shape background color">
-          <ColorPicker
-            value={typeof shape.fill === "string" ? shape.fill : DEFAULT_FILL}
-            disabled={locked}
-            ariaLabel="Shape background color"
-            onApply={(fillColor) => commitShapeProps({ fillColor }, false)}
-            onChange={(fillColor) => commitShapeProps({ fillColor })}
-          />
-        </TooltipLabel>
-      </label>
+      <TooltipLabel label="Background color">
+        <ColorPicker
+          value={typeof shape.fill === "string" ? shape.fill : DEFAULT_FILL}
+          disabled={locked}
+          ariaLabel="Background color"
+          onApply={(fillColor) => commitShapeProps({ fillColor }, false)}
+          onChange={(fillColor) => commitShapeProps({ fillColor })}
+        />
+      </TooltipLabel>
       <label className="flex items-center gap-2">
         <span className="text-[10px] leading-none text-muted-foreground">Border</span>
         <Slider
@@ -385,9 +379,7 @@ function ShapeProps() {
         <span className="w-8 text-right text-[10px] leading-none text-muted-foreground tabular-nums">
           {borderWidth}px
         </span>
-        <TooltipLabel
-          label={borderWidth === 0 ? "Border is off — set a width first" : "Border color"}
-        >
+        <TooltipLabel label="Border color">
           <ColorPicker
             value={typeof shape.stroke === "string" ? shape.stroke : DEFAULT_BORDER_COLOR}
             disabled={locked || borderWidth === 0}
@@ -649,10 +641,8 @@ function FontSizeField({
   }
 
   return (
-    <label className="flex items-center gap-1.5">
-      <span className="text-[10px] leading-none text-muted-foreground">Size</span>
-      <Combobox
-        items={FONT_SIZES}
+    <Combobox
+      items={FONT_SIZES}
         value={value}
         onValueChange={(size) => {
           if (size !== null) commit(size)
@@ -685,7 +675,6 @@ function FontSizeField({
           <ComboboxEmpty>No matching size</ComboboxEmpty>
         </ComboboxContent>
       </Combobox>
-    </label>
   )
 }
 
@@ -760,24 +749,24 @@ function TextProps() {
 
   return (
     <div className="flex items-center gap-3">
-      <label className="flex items-center gap-1.5">
-        <span className="text-[10px] leading-none text-muted-foreground">Font</span>
+      <TooltipLabel label="Font family">
         <FontFamilyField
           family={text.fontFamily}
           disabled={locked}
           onApply={(fontFamily) => commitTextProps({ fontFamily }, false)}
           onCommit={(fontFamily) => commitTextProps({ fontFamily })}
         />
-      </label>
+      </TooltipLabel>
 
-      <FontSizeField
-        value={text.fontSize}
-        disabled={locked}
-        onCommit={(fontSize) => commitTextProps({ fontSize })}
-      />
+      <TooltipLabel label="Font size">
+        <FontSizeField
+          value={text.fontSize}
+          disabled={locked}
+          onCommit={(fontSize) => commitTextProps({ fontSize })}
+        />
+      </TooltipLabel>
 
-      <label className="flex items-center gap-1.5">
-        <span className="text-[10px] leading-none text-muted-foreground">Weight</span>
+      <TooltipLabel label="Font weight">
         <WeightField
           weight={weight}
           weights={familySpec.weights}
@@ -786,20 +775,17 @@ function TextProps() {
           onApply={(fontWeight) => commitTextProps({ fontWeight }, false)}
           onCommit={(fontWeight) => commitTextProps({ fontWeight })}
         />
-      </label>
+      </TooltipLabel>
 
-      <label className="flex items-center gap-1.5">
-        <span className="text-[10px] leading-none text-muted-foreground">Fill</span>
-        <TooltipLabel label="Text color">
-          <ColorPicker
-            value={typeof text.fill === "string" ? text.fill : TEXT_FILL}
-            disabled={locked}
-            ariaLabel="Text color"
-            onApply={(fillColor) => commitTextProps({ fillColor }, false)}
-            onChange={(fillColor) => commitTextProps({ fillColor })}
-          />
-        </TooltipLabel>
-      </label>
+      <TooltipLabel label="Text color">
+        <ColorPicker
+          value={typeof text.fill === "string" ? text.fill : TEXT_FILL}
+          disabled={locked}
+          ariaLabel="Text color"
+          onApply={(fillColor) => commitTextProps({ fillColor }, false)}
+          onChange={(fillColor) => commitTextProps({ fillColor })}
+        />
+      </TooltipLabel>
 
       <div className="flex items-center gap-0.5">
         <ToggleButton
@@ -871,9 +857,6 @@ function TextProps() {
         </TooltipLabel>
         <PopoverContent align="start" className="w-64">
           <div className="flex flex-col gap-3">
-            <span className="text-[10px] leading-none text-muted-foreground">
-              Spacing
-            </span>
             <TooltipLabel label="Line height">
               <label className="flex items-center gap-2">
                 <span className="w-16 text-[10px] leading-none text-muted-foreground">
@@ -1022,7 +1005,7 @@ function GroupToggleButton() {
       ? "Ungroup first — grouped objects can't be grouped"
       : enabled
         ? "Group"
-        : "Select two or more objects to group"
+        : undefined
   return (
     <ToggleButton
       active={ungroupMode}
