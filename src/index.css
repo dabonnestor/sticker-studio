@@ -128,3 +128,38 @@
     @apply font-sans;
     }
 }
+
+/* react-colorful overrides for the color picker popover — ported from the
+   shadcn-input-color component (vatsalpipalava/shadcn-input-color). */
+.color-picker .react-colorful {
+  align-items: flex-end;
+}
+
+.color-picker .react-colorful__hue {
+  order: -1;
+}
+
+.color-picker .react-colorful__saturation {
+  margin: 12px 0 0;
+  border-radius: 8px;
+  border-bottom: none;
+  width: 100%;
+}
+
+.color-picker .react-colorful__saturation-pointer {
+  width: 20px;
+  height: 20px;
+  border-radius: 4px;
+}
+
+.color-picker .react-colorful__hue {
+  height: 16px;
+  width: 210px;
+  border-radius: 4px;
+}
+
+.color-picker .react-colorful__hue-pointer {
+  width: 16px;
+  height: 20px;
+  border-radius: 4px;
+}

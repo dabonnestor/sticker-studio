@@ -30,6 +30,7 @@ import {
   Ungroup as UngroupIcon,
 } from "lucide-react"
 
+import { ColorPicker } from "@/components/color-picker"
 import { useStage } from "@/components/stage-context"
 import { Button } from "@/components/ui/button"
 import {
@@ -156,88 +157,6 @@ function UnitField({
         }}
       />
     </label>
-  )
-}
-
-/**
- * A color swatch input — shared by the text, shape and canvas property
- * sections. Skimming the dialog previews live through onApply — applied
- * without recording, so dragging never pollutes the undo stack (§8). The
- * session commits exactly one undoable step when the dialog closes, by any
- * gesture: the native `change` event covers a committed close (OK/Enter);
- * a click outside the dialog is a dismissal that fires no change, but the
- * click itself lands on the page and commits the session there; and a
- * cancelled close that touches no page (Escape on a separate-window
- * dialog) is caught by the page window refocusing when the dialog closes
- * either way. All three fallbacks commit through the dirty flag — set by
- * the drag `input` events — so unrelated clicks or refocuses (alt-tab)
- * never record, and the history commit's dedup makes a double-commit on a
- * committed close a no-op. React's onChange maps to the native `input`
- * event (every drag step), so the native change listener is attached
- * directly.
- */
-function ColorInput({
-  value,
-  onApply,
-  onChange,
-  disabled,
-  ariaLabel,
-  tooltip,
-}: {
-  value: string
-  onApply: (color: string) => void
-  onChange: (color: string) => void
-  disabled?: boolean
-  ariaLabel: string
-  tooltip: string
-}) {
-  const onApplyRef = useRef(onApply)
-  onApplyRef.current = onApply
-  const onChangeRef = useRef(onChange)
-  onChangeRef.current = onChange
-  const inputRef = useRef<HTMLInputElement>(null)
-  const dirtyRef = useRef(false)
-  useEffect(() => {
-    const input = inputRef.current
-    if (!input) return
-    const commitIfTouched = () => {
-      if (dirtyRef.current) {
-        onChangeRef.current(input.value)
-        dirtyRef.current = false
-      }
-    }
-    const onNativeChange = () => {
-      onChangeRef.current(input.value)
-      dirtyRef.current = false
-    }
-    input.addEventListener("change", onNativeChange)
-    // The three dismissal gestures, all committing the session once: the
-    // change event (OK/Enter), a click outside the dialog (the click lands
-    // on the page), and the page window refocusing after a close that
-    // touched no page (Escape on a separate-window dialog).
-    document.addEventListener("pointerdown", commitIfTouched)
-    window.addEventListener("focus", commitIfTouched)
-    return () => {
-      input.removeEventListener("change", onNativeChange)
-      document.removeEventListener("pointerdown", commitIfTouched)
-      window.removeEventListener("focus", commitIfTouched)
-    }
-  }, [])
-  return (
-    <TooltipLabel label={tooltip}>
-      <input
-        ref={inputRef}
-        type="color"
-        className="h-7 w-9 cursor-pointer rounded-md bg-transparent p-0.5"
-        value={value}
-        disabled={disabled}
-        aria-label={ariaLabel}
-        onInput={(event) => {
-          dirtyRef.current = true
-          onApplyRef.current(event.currentTarget.value)
-        }}
-      />
-    </TooltipLabel>
   )
 }
 
@@ -377,13 +296,14 @@ function CanvasProps() {
     <div className="flex items-center gap-3">
       <label className="flex items-center gap-1.5">
         <span className="text-[10px] leading-none text-muted-foreground">Background</span>
-        <ColorInput
-          value={backgroundColor}
-          ariaLabel="Canvas background color"
-          tooltip="Canvas background color"
-          onApply={(backgroundColor) => commitCanvasProps({ backgroundColor }, false)}
-          onChange={(backgroundColor) => commitCanvasProps({ backgroundColor })}
-        />
+        <TooltipLabel label="Canvas background color">
+          <ColorPicker
+            value={backgroundColor}
+            ariaLabel="Canvas background color"
+            onApply={(backgroundColor) => commitCanvasProps({ backgroundColor }, false)}
+            onChange={(backgroundColor) => commitCanvasProps({ backgroundColor })}
+          />
+        </TooltipLabel>
       </label>
       <label className="flex items-center gap-2">
         <span className="text-[10px] leading-none text-muted-foreground">Border</span>
@@ -402,14 +322,17 @@ function CanvasProps() {
         <span className="w-8 text-right text-[10px] leading-none text-muted-foreground tabular-nums">
           {borderWidth}px
         </span>
-        <ColorInput
-          value={borderColor}
-          disabled={borderWidth === 0}
-          ariaLabel="Border color"
-          tooltip={borderWidth === 0 ? "Border is off — set a width first" : "Border color"}
-          onApply={(borderColor) => commitCanvasProps({ borderColor }, false)}
-          onChange={(borderColor) => commitCanvasProps({ borderColor })}
-        />
+        <TooltipLabel
+          label={borderWidth === 0 ? "Border is off — set a width first" : "Border color"}
+        >
+          <ColorPicker
+            value={borderColor}
+            disabled={borderWidth === 0}
+            ariaLabel="Border color"
+            onApply={(borderColor) => commitCanvasProps({ borderColor }, false)}
+            onChange={(borderColor) => commitCanvasProps({ borderColor })}
+          />
+        </TooltipLabel>
       </label>
     </div>
   )
@@ -434,14 +357,15 @@ function ShapeProps() {
     <div className="flex items-center gap-3">
       <label className="flex items-center gap-1.5">
         <span className="text-[10px] leading-none text-muted-foreground">Fill</span>
-        <ColorInput
-          value={typeof shape.fill === "string" ? shape.fill : DEFAULT_FILL}
-          disabled={locked}
-          ariaLabel="Shape background color"
-          tooltip="Shape background color"
-          onApply={(fillColor) => commitShapeProps({ fillColor }, false)}
-          onChange={(fillColor) => commitShapeProps({ fillColor })}
-        />
+        <TooltipLabel label="Shape background color">
+          <ColorPicker
+            value={typeof shape.fill === "string" ? shape.fill : DEFAULT_FILL}
+            disabled={locked}
+            ariaLabel="Shape background color"
+            onApply={(fillColor) => commitShapeProps({ fillColor }, false)}
+            onChange={(fillColor) => commitShapeProps({ fillColor })}
+          />
+        </TooltipLabel>
       </label>
       <label className="flex items-center gap-2">
         <span className="text-[10px] leading-none text-muted-foreground">Border</span>
@@ -461,14 +385,17 @@ function ShapeProps() {
         <span className="w-8 text-right text-[10px] leading-none text-muted-foreground tabular-nums">
           {borderWidth}px
         </span>
-        <ColorInput
-          value={typeof shape.stroke === "string" ? shape.stroke : DEFAULT_BORDER_COLOR}
-          disabled={locked || borderWidth === 0}
-          ariaLabel="Border color"
-          tooltip={borderWidth === 0 ? "Border is off — set a width first" : "Border color"}
-          onApply={(borderColor) => commitShapeProps({ borderColor }, false)}
-          onChange={(borderColor) => commitShapeProps({ borderColor })}
-        />
+        <TooltipLabel
+          label={borderWidth === 0 ? "Border is off — set a width first" : "Border color"}
+        >
+          <ColorPicker
+            value={typeof shape.stroke === "string" ? shape.stroke : DEFAULT_BORDER_COLOR}
+            disabled={locked || borderWidth === 0}
+            ariaLabel="Border color"
+            onApply={(borderColor) => commitShapeProps({ borderColor }, false)}
+            onChange={(borderColor) => commitShapeProps({ borderColor })}
+          />
+        </TooltipLabel>
       </label>
     </div>
   )
@@ -863,14 +790,15 @@ function TextProps() {
 
       <label className="flex items-center gap-1.5">
         <span className="text-[10px] leading-none text-muted-foreground">Fill</span>
-        <ColorInput
-          value={typeof text.fill === "string" ? text.fill : TEXT_FILL}
-          disabled={locked}
-          ariaLabel="Text color"
-          tooltip="Text color"
-          onApply={(fillColor) => commitTextProps({ fillColor }, false)}
-          onChange={(fillColor) => commitTextProps({ fillColor })}
-        />
+        <TooltipLabel label="Text color">
+          <ColorPicker
+            value={typeof text.fill === "string" ? text.fill : TEXT_FILL}
+            disabled={locked}
+            ariaLabel="Text color"
+            onApply={(fillColor) => commitTextProps({ fillColor }, false)}
+            onChange={(fillColor) => commitTextProps({ fillColor })}
+          />
+        </TooltipLabel>
       </label>
 
       <div className="flex items-center gap-0.5">
