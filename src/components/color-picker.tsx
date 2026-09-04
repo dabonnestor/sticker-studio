@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from "react"
 import { HexColorPicker } from "react-colorful"
-import { Ban, PipetteIcon } from "lucide-react"
+import { PipetteIcon, Slash } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -39,7 +39,7 @@ interface ColorValues {
  * picker, HEX/RGB/HSL format select, hex input, eyedropper) — shared by the
  * text, shape and canvas property sections. Two extension points serve the
  * border picker: `swatch` replaces the plain color background (the border
- * swatch's no-parking sign while the border is off), and `children` renders
+ * swatch's red slash while the border is off), and `children` renders
  * inside the popover below the color controls (the border width slider).
  * Skimming the popover previews live through onApply — applied without
  * recording, so dragging never pollutes the undo stack (§8). The session
@@ -309,13 +309,12 @@ function ColorPicker({
  * border property: the popover card adds the border width slider below the
  * color controls, so the toolbar shows one swatch instead of a slider +
  * color pair. The swatch reads the border state — the color while a border
- * is on (width > 0), a no-parking sign (circle + slash) while off, the
- * default state: shapes and documents start borderless (§4). The card's
- * slider is the only way to turn the border on, so it stays enabled at
- * width 0 — the color controls too, so a color can be set before the border
- * exists. The slider previews live without recording and commits the whole
- * drag as ONE undoable step on release; the color commits on popover close
- * (ADR 0001, §8).
+ * is on (width > 0), a red slash while off, the default state: shapes and
+ * documents start borderless (§4). The card's slider is the only way to
+ * turn the border on, so it stays enabled at width 0 — the color controls
+ * too, so a color can be set before the border exists. The slider previews
+ * live without recording and commits the whole drag as ONE undoable step on
+ * release; the color commits on popover close (ADR 0001, §8).
  */
 function BorderPicker({
   value,
@@ -348,7 +347,7 @@ function BorderPicker({
       className={className}
       swatch={
         width === 0 ? (
-          <Ban aria-hidden className="size-4 text-muted-foreground" />
+          <Slash aria-hidden className="size-4 text-destructive" />
         ) : undefined
       }
     >
