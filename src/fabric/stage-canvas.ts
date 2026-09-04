@@ -775,10 +775,13 @@ export class StageCanvas extends Canvas {
   /**
    * Fit (§9): always-fit — the whole Document (rotated bounds) scales up or
    * down into the workspace minus the fixed margin — the default zoom on
-   * load, and Ctrl+0. Re-centers after the zoom lands.
+   * load, and Ctrl+0. Measures the workspace at rest (scrollbar included):
+   * the fit zoom leaves no scrollbar, so the client size — which the current
+   * state's scrollbar shrinks — would land the fit a scrollbar-width low.
+   * Re-centers after the zoom lands.
    */
   fitToWorkspace(): void {
-    const workspace = this.getWorkspaceSize()
+    const workspace = this.getWorkspaceSize(true)
     const percent = computeFitZoom(
       this.width,
       this.height,
@@ -858,14 +861,26 @@ export class StageCanvas extends Canvas {
     return object
   }
 
-  /** The workspace's size — the scroll container's client size, 0 without one. */
-  private getWorkspaceSize(): { width: number; height: number } {
-    return this.workspaceEl
-      ? {
-          width: this.workspaceEl.clientWidth,
-          height: this.workspaceEl.clientHeight,
-        }
-      : { width: 0, height: 0 }
+  /**
+   * The workspace's size — the scroll container's client size, 0 without one.
+   * With `includeScrollbar`, the offset size — the size the workspace has at
+   * rest, scrollbar included: Fit's measure, since the fit zoom leaves no
+   * scrollbar (the Document fits with the margin). The client size is the
+   * visible area, which the scrollbar shrinks while the current state
+   * overflows — measuring it for Fit would land the fit a scrollbar-width
+   * low, and the readout would jump up when the scrollbar disappears.
+   */
+  private getWorkspaceSize(includeScrollbar = false): { width: number; height: number } {
+    if (!this.workspaceEl) return { width: 0, height: 0 }
+    const el = this.workspaceEl
+    if (!includeScrollbar) {
+      return { width: el.clientWidth, height: el.clientHeight }
+    }
+    // jsdom reports 0 for the offset size — the client size is the fallback.
+    return {
+      width: el.clientWidth + Math.max(0, el.offsetWidth - el.clientWidth),
+      height: el.clientHeight + Math.max(0, el.offsetHeight - el.clientHeight),
+    }
   }
 
   /**

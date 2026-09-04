@@ -476,6 +476,26 @@ describe("StageCanvas zoom", () => {
     expect(canvas.getZoomPercent()).toBeCloseTo(250.6667, 4)
   })
 
+  it("fit measures the workspace at rest — a scrollbar-shrunken client size would land the fit low", () => {
+    // A zoomed-out state overflows the workspace, so a scrollbar eats into
+    // the client size (jsdom reports 0 for the offset size, so the test
+    // defines it). Fit is the zoom at which the Document fits with the
+    // margin — at that zoom no scrollbar exists, so the workspace is its
+    // full offset size, not the shrunken client size.
+    resizeWorkspace(627, 627) // client size — 642 minus a 15px scrollbar
+    Object.defineProperty(workspace, "offsetWidth", {
+      get: () => 642,
+      configurable: true,
+    })
+    Object.defineProperty(workspace, "offsetHeight", {
+      get: () => 642,
+      configurable: true,
+    })
+    canvas.fitToWorkspace()
+    // (642 − 96) / 600 = 91% — the client-size measure (627) would give 88.5%.
+    expect(canvas.getZoomPercent()).toBeCloseTo(91, 4)
+  })
+
   it("resize re-centers at the current zoom, clamps the scroll, never re-fits", () => {
     canvas.setZoomPercent(200, true)
     // The 1200-wide zoom doc overflows the 1000 workspace; the scroll centers

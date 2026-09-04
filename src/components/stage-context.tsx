@@ -687,6 +687,11 @@ export function StageProvider({ children }: { children: ReactNode }) {
     canvas.borderColor = DOCUMENT_BORDER_COLOR
     canvas.backgroundColor = DOCUMENT_BACKGROUND_COLOR
     canvas.requestRenderAll()
+    // Fit is the default zoom on load (§9) — a fresh design shows the whole
+    // default sheet, whatever zoom the previous design left behind (a fit
+    // zoom for a smaller sheet would otherwise carry over). View state: never
+    // an undoable step, like every zoom.
+    canvas.fitToWorkspace()
     // The undo stack clears with the design — a fresh sheet has no history,
     // so undo stays dead until the first new edit (ticket #33).
     canvas.history.reset()
