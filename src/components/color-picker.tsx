@@ -351,10 +351,10 @@ function BorderPicker({
         ) : undefined
       }
     >
-      <label className="flex items-center gap-2">
+      <label className="flex w-full items-center gap-2">
         <span className="text-[10px] leading-none text-muted-foreground">Border</span>
         <Slider
-          className="w-28"
+          className="flex-1"
           min={BORDER_RANGE.min}
           max={BORDER_RANGE.max}
           step={BORDER_RANGE.step}
