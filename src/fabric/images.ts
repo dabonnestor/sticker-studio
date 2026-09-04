@@ -1,6 +1,7 @@
 import { FabricImage, type Object as FabricObject } from "fabric"
 
 import { stampDocumentProps } from "@/fabric/document-props"
+import { isSvgDataUrl, rasterizeSvgToPng } from "@/fabric/svg-import"
 
 /**
  * The provenance of an Inserted artwork (CONTEXT "Inserted", ticket #40) —
@@ -71,14 +72,19 @@ export function imageFitScale(
  * the element decodes the URL), fit it to the Document (imageFitScale), and
  * stamp the document identity (id, locked=false, ADR 0002). The load is the
  * caller's await, so a corrupt or undecodable image surfaces there — nothing
- * is placed.
+ * is placed. An SVG data URL never reaches the load: the vector is rasterized
+ * into the Document's pixel idiom first (svg-import.ts), because placement
+ * sizing depends on the browser's SVG natural-size report, which the engines
+ * disagree on and can report as 0×0 — the rasterized PNG places like any
+ * image, on every entry path (upload, paste, Insert, gallery re-placement).
  */
 export async function createImageFromDataURL(
   dataURL: string,
   documentWidth: number,
   documentHeight: number,
 ): Promise<FabricImage> {
-  const img = await FabricImage.fromURL(dataURL)
+  const src = isSvgDataUrl(dataURL) ? await rasterizeSvgToPng(dataURL) : dataURL
+  const img = await FabricImage.fromURL(src)
   const scale = imageFitScale(img.width, img.height, documentWidth, documentHeight)
   img.set({ scaleX: scale, scaleY: scale })
   return stampDocumentProps(img)

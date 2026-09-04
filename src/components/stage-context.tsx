@@ -62,6 +62,11 @@ import {
   type RecentUpload,
 } from "@/fabric/recent-uploads"
 import { setOpacity } from "@/fabric/document-props"
+import {
+  SvgRasterizeError,
+  isSvgFile,
+  svgTypedFile,
+} from "@/fabric/svg-import"
 import type { ShapeKind } from "@/fabric/shapes"
 import {
   applyTextProps,
@@ -707,7 +712,9 @@ export function StageProvider({ children }: { children: ReactNode }) {
       if (!canvas?.history) return
       try {
         // The load decodes the data URL asynchronously — the add lands when
-        // the pixels exist, so the placement is one atomic undoable step.
+        // the pixels exist, so the placement is one atomic undoable step. An
+        // SVG data URL is rasterized here (svg-import.ts), so the vector's
+        // own placement failure carries its specific, actionable message.
         const obj = await createImageFromDataURL(dataURL, canvas.width, canvas.height)
         canvas.add(obj)
         canvas.centerObject(obj)
@@ -715,10 +722,16 @@ export function StageProvider({ children }: { children: ReactNode }) {
         canvas.requestRenderAll()
         // The add is one undoable step (ADR 0001), like a shape add (§5).
         canvas.history.commit()
-      } catch {
+      } catch (error) {
         // Validates loudly (ADR 0002) — a corrupt or undecodable image
-        // changes nothing and explains itself in the status area.
-        reportStatus("That image couldn't be loaded")
+        // changes nothing and explains itself in the status area. An SVG
+        // failure (decode, blank raster) says what went wrong instead of the
+        // generic refusal.
+        reportStatus(
+          error instanceof SvgRasterizeError
+            ? error.message
+            : "That image couldn't be loaded",
+        )
       }
     },
     [canvas, reportStatus],
@@ -766,16 +779,19 @@ export function StageProvider({ children }: { children: ReactNode }) {
   // the Uploads panel later.
   const pasteImageFile = useCallback(
     (file: File | null) => {
-      if (!file || !file.type.startsWith("image/")) return
+      if (!file || (!file.type.startsWith("image/") && !isSvgFile(file))) return
+      const imgFile = svgTypedFile(file)
       const reader = new FileReader()
       reader.onerror = () => reportStatus("Couldn't read that pasted image")
       reader.onload = () => {
         const dataURL = reader.result
         if (typeof dataURL !== "string") return
         void addImage(dataURL)
-        void addRecentUpload(dataURL, file.name || "Pasted image")
+        void addRecentUpload(dataURL, imgFile.name || "Pasted image")
       }
-      reader.readAsDataURL(file)
+      // An SVG pasted with an empty MIME re-types first, so its data URL
+      // carries the recognizable `image/svg+xml` prefix (svg-import.ts).
+      reader.readAsDataURL(imgFile)
     },
     [addImage, addRecentUpload, reportStatus],
   )

@@ -2,6 +2,7 @@ import { useRef, type ChangeEvent } from "react"
 import { ArrowLeft, ImagePlus, X } from "lucide-react"
 
 import { useStage } from "@/components/stage-context"
+import { isSvgFile, svgTypedFile } from "@/fabric/svg-import"
 import { Button } from "@/components/ui/button"
 
 /**
@@ -24,10 +25,11 @@ export function UploadsPanel({ onBack, active }: { onBack: () => void; active: b
     // Reset the input so picking the same file again re-triggers change.
     event.target.value = ""
     if (!file) return
-    if (!file.type.startsWith("image/")) {
+    if (!file.type.startsWith("image/") && !isSvgFile(file)) {
       reportStatus("Please choose an image file")
       return
     }
+    const imgFile = svgTypedFile(file)
     const reader = new FileReader()
     reader.onerror = () => reportStatus("Couldn't read that file")
     reader.onload = () => {
@@ -37,9 +39,12 @@ export function UploadsPanel({ onBack, active }: { onBack: () => void; active: b
       // downscaled copy, the merge, the over-cap refusal — is the shared
       // addRecentUpload, so an upload and a paste land in the same list.
       void addImage(dataURL)
-      void addRecentUpload(dataURL, file.name)
+      void addRecentUpload(dataURL, imgFile.name)
     }
-    reader.readAsDataURL(file)
+    // An SVG read through a re-typed file encodes into a recognizable
+    // `data:image/svg+xml` URL — a Windows `.svg` with an empty MIME would
+    // otherwise come through as an unrecognizable application/octet-stream.
+    reader.readAsDataURL(imgFile)
   }
 
   return (

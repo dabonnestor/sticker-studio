@@ -9,6 +9,14 @@ import {
   imageFitScale,
   stampArtworkProvenance,
 } from "@/fabric/images"
+// The rasterizer is browser-only (module header) — the suite substitutes a
+// stand-in that records the call and answers a PNG; the recognition and
+// parsing halves run for real, so the seam's routing is what the tests pin.
+vi.mock("@/fabric/svg-import", async (importOriginal) => ({
+  ...(await importOriginal()),
+  rasterizeSvgToPng: vi.fn(),
+}))
+import { rasterizeSvgToPng } from "@/fabric/svg-import"
 
 /**
  * Image placement (build spec §1 — the sidebar's Image section): an uploaded
@@ -53,7 +61,12 @@ describe("image placement", () => {
   })
 
   describe("createImageFromDataURL", () => {
-    afterEach(() => vi.restoreAllMocks())
+    afterEach(() => {
+      vi.restoreAllMocks()
+      // The module mock's call history is not restored by the spies' restore
+      // — clear it so expectation across tests starts clean.
+      vi.mocked(rasterizeSvgToPng).mockClear()
+    })
 
     /** A stand-in FabricImage: records set() and carries width/height. */
     function fakeImage(width: number, height: number) {
@@ -104,6 +117,54 @@ describe("image placement", () => {
       await expect(
         createImageFromDataURL("data:image/png;base64,AAAA", 600, 600),
       ).rejects.toThrow("bogus")
+    })
+
+    it("rasterizes an SVG data URL before the load — the vector becomes pixels", async () => {
+      const fake = fakeImage(200, 200)
+      const svgUrl = "data:image/svg+xml;base64,PHN2Zy8+"
+      vi.spyOn(FabricImage, "fromURL").mockResolvedValue(
+        fake as unknown as FabricImage,
+      )
+      vi.mocked(rasterizeSvgToPng).mockResolvedValue(
+        "data:image/png;base64,UFJBU1RFUg==",
+      )
+
+      await createImageFromDataURL(svgUrl, 600, 600)
+
+      // The rasterized PNG is what reaches Fabric — the SVG bytes never enter
+      // the image load, on any placement path (svg-import.ts module header).
+      expect(rasterizeSvgToPng).toHaveBeenCalledWith(svgUrl)
+      expect(FabricImage.fromURL).toHaveBeenCalledWith(
+        "data:image/png;base64,UFJBU1RFUg==",
+      )
+    })
+
+    it("a raster data URL bypasses the rasterizer unchanged", async () => {
+      const fake = fakeImage(200, 200)
+      vi.spyOn(FabricImage, "fromURL").mockResolvedValue(
+        fake as unknown as FabricImage,
+      )
+
+      await createImageFromDataURL("data:image/png;base64,AAAA", 600, 600)
+
+      expect(rasterizeSvgToPng).not.toHaveBeenCalled()
+      expect(FabricImage.fromURL).toHaveBeenCalledWith(
+        "data:image/png;base64,AAAA",
+      )
+    })
+
+    it("propagates an SVG rasterization failure — nothing is placed", async () => {
+      vi.spyOn(FabricImage, "fromURL").mockResolvedValue(
+        fakeImage(200, 200) as unknown as FabricImage,
+      )
+      vi.mocked(rasterizeSvgToPng).mockRejectedValue(
+        new Error("That SVG couldn't be decoded"),
+      )
+
+      await expect(
+        createImageFromDataURL("data:image/svg+xml;base64,PHN2Zy8+", 600, 600),
+      ).rejects.toThrow("That SVG couldn't be decoded")
+      expect(FabricImage.fromURL).not.toHaveBeenCalled()
     })
   })
 })
