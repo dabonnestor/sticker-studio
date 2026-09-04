@@ -1,6 +1,6 @@
-import { useEffect, useRef, useState } from "react"
+import { useEffect, useRef, useState, type ReactNode } from "react"
 import { HexColorPicker } from "react-colorful"
-import { PipetteIcon } from "lucide-react"
+import { Ban, PipetteIcon } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -16,11 +16,15 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
+import { Slider } from "@/components/ui/slider"
 import { cn } from "@/lib/utils"
 import { hexToRgb, hslToRgb, rgbToHex, rgbToHsl } from "@/lib/color-converter"
 
 /** A full 6-digit hex color — the only shape the session commits. */
 const HEX_PATTERN = /^#[0-9A-Fa-f]{6}$/
+
+/** Border slider range and step — 0 (off) to 1 inch at the 96 DPI basis. */
+const BORDER_RANGE = { min: 0, max: 96, step: 1 } as const
 
 type ColorFormat = "HEX" | "RGB" | "HSL"
 
@@ -33,14 +37,18 @@ interface ColorValues {
 /**
  * A color swatch opening the shadcn-input-color popover (react-colorful
  * picker, HEX/RGB/HSL format select, hex input, eyedropper) — shared by the
- * text, shape and canvas property sections. Skimming the popover previews
- * live through onApply — applied without recording, so dragging never
- * pollutes the undo stack (§8). The session commits exactly one undoable
- * step when the popover closes, by any gesture (click outside, Escape,
- * selecting a format): the close always fires onOpenChange(false), which
- * commits the last valid color through onChange. An untouched close commits
- * the same value, which history.commit() dedups to a no-op; a partial or
- * invalid typed hex never commits, so it can't leak into the document.
+ * text, shape and canvas property sections. Two extension points serve the
+ * border picker: `swatch` replaces the plain color background (the border
+ * swatch's no-parking sign while the border is off), and `children` renders
+ * inside the popover below the color controls (the border width slider).
+ * Skimming the popover previews live through onApply — applied without
+ * recording, so dragging never pollutes the undo stack (§8). The session
+ * commits exactly one undoable step when the popover closes, by any gesture
+ * (click outside, Escape, selecting a format): the close always fires
+ * onOpenChange(false), which commits the last valid color through onChange.
+ * An untouched close commits the same value, which history.commit() dedups
+ * to a no-op; a partial or invalid typed hex never commits, so it can't leak
+ * into the document.
  */
 function ColorPicker({
   value,
@@ -49,6 +57,8 @@ function ColorPicker({
   disabled,
   ariaLabel,
   className,
+  swatch,
+  children,
 }: {
   value: string
   onApply: (color: string) => void
@@ -56,6 +66,10 @@ function ColorPicker({
   disabled?: boolean
   ariaLabel: string
   className?: string
+  /** Custom swatch content — replaces the plain color background. */
+  swatch?: ReactNode
+  /** Extra content rendered inside the popover, below the color controls. */
+  children?: ReactNode
 }) {
   const [colorFormat, setColorFormat] = useState<ColorFormat>("HEX")
   const [colorValues, setColorValues] = useState<ColorValues>(() => {
@@ -178,8 +192,10 @@ function ColorPicker({
           disabled={disabled}
           aria-label={ariaLabel}
           className={cn("h-7 w-7 cursor-pointer rounded-md p-0.5 shadow-none", className)}
-          style={{ backgroundColor: hexInputValue }}
-        />
+          style={swatch ? undefined : { backgroundColor: hexInputValue }}
+        >
+          {swatch}
+        </Button>
       </PopoverTrigger>
       <PopoverContent className="w-auto p-3" align="start">
         <div className="color-picker space-y-3">
@@ -278,6 +294,7 @@ function ColorPicker({
               </div>
             )}
           </div>
+          {children}
         </div>
         {hexInputError && (
           <p className="text-destructive mt-1.5 text-sm">{hexInputError}</p>
@@ -287,4 +304,75 @@ function ColorPicker({
   )
 }
 
-export { ColorPicker }
+/**
+ * Border picker — the ColorPicker's swatch and popover, extended for the
+ * border property: the popover card adds the border width slider below the
+ * color controls, so the toolbar shows one swatch instead of a slider +
+ * color pair. The swatch reads the border state — the color while a border
+ * is on (width > 0), a no-parking sign (circle + slash) while off, the
+ * default state: shapes and documents start borderless (§4). The card's
+ * slider is the only way to turn the border on, so it stays enabled at
+ * width 0 — the color controls too, so a color can be set before the border
+ * exists. The slider previews live without recording and commits the whole
+ * drag as ONE undoable step on release; the color commits on popover close
+ * (ADR 0001, §8).
+ */
+function BorderPicker({
+  value,
+  width,
+  onApply,
+  onChange,
+  onWidthChange,
+  onWidthCommit,
+  disabled,
+  ariaLabel,
+  className,
+}: {
+  value: string
+  width: number
+  onApply: (color: string) => void
+  onChange: (color: string) => void
+  onWidthChange: (width: number) => void
+  onWidthCommit: (width: number) => void
+  disabled?: boolean
+  ariaLabel: string
+  className?: string
+}) {
+  return (
+    <ColorPicker
+      value={value}
+      onApply={onApply}
+      onChange={onChange}
+      disabled={disabled}
+      ariaLabel={ariaLabel}
+      className={className}
+      swatch={
+        width === 0 ? (
+          <Ban aria-hidden className="size-4 text-muted-foreground" />
+        ) : undefined
+      }
+    >
+      <label className="flex items-center gap-2">
+        <span className="text-[10px] leading-none text-muted-foreground">Border</span>
+        <Slider
+          className="w-28"
+          min={BORDER_RANGE.min}
+          max={BORDER_RANGE.max}
+          step={BORDER_RANGE.step}
+          value={[width]}
+          disabled={disabled}
+          // Dragging previews live without recording; releasing the thumb
+          // commits the whole drag as ONE undoable step (ADR 0001, §8).
+          onValueChange={([value]) => onWidthChange(value)}
+          onValueCommit={([value]) => onWidthCommit(value)}
+          aria-label="Border width"
+        />
+        <span className="w-8 text-right text-[10px] leading-none text-muted-foreground tabular-nums">
+          {width}px
+        </span>
+      </label>
+    </ColorPicker>
+  )
+}
+
+export { BorderPicker, ColorPicker }

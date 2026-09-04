@@ -30,7 +30,7 @@ import {
   Ungroup as UngroupIcon,
 } from "lucide-react"
 
-import { ColorPicker } from "@/components/color-picker"
+import { BorderPicker, ColorPicker } from "@/components/color-picker"
 import { useStage } from "@/components/stage-context"
 import { Button } from "@/components/ui/button"
 import {
@@ -88,9 +88,6 @@ const UNITS: { value: Unit; label: string }[] = [
   { value: "mm", label: "mm" },
   { value: "px", label: "px" },
 ]
-
-/** Border slider range and step — 0 (off) to 1 inch at the 96 DPI basis. */
-const BORDER_RANGE = { min: 0, max: 96, step: 1 } as const
 
 /** Opacity slider range and step — 0 (transparent) to 100% (opaque). */
 const OPACITY_RANGE = { min: 0, max: 100, step: 1 } as const
@@ -285,10 +282,11 @@ function DocumentSize() {
 
 /**
  * Document look section (build spec §5) — always visible: the canvas
- * background color and the document border (width slider + color). Both are
- * document properties (the border is envelope-owned, ADR 0002) and use the
- * same control styling as the shape-property section (the document border
- * is inset, where the shape border is centered on the cut edge — §4).
+ * background color and the document border (a single swatch opening the
+ * border card — color + width slider). Both are document properties (the
+ * border is envelope-owned, ADR 0002) and use the same control styling as
+ * the shape-property section (the document border is inset, where the shape
+ * border is centered on the cut edge — §4).
  */
 function CanvasProps() {
   const { canvasProps, commitCanvasProps } = useStage()
@@ -304,33 +302,17 @@ function CanvasProps() {
           onChange={(backgroundColor) => commitCanvasProps({ backgroundColor })}
         />
       </TooltipLabel>
-      <label className="flex items-center gap-2">
-        <span className="text-[10px] leading-none text-muted-foreground">Border</span>
-        <Slider
-          className="w-28"
-          min={BORDER_RANGE.min}
-          max={BORDER_RANGE.max}
-          step={BORDER_RANGE.step}
-          value={[borderWidth]}
-          // Dragging previews live without recording; releasing the thumb
-          // commits the whole drag as ONE undoable step (ADR 0001, §8).
-          onValueChange={([value]) => commitCanvasProps({ borderWidth: value }, false)}
-          onValueCommit={([value]) => commitCanvasProps({ borderWidth: value })}
-          aria-label="Border width"
+      <TooltipLabel label="Border color">
+        <BorderPicker
+          value={borderColor}
+          width={borderWidth}
+          ariaLabel="Border color"
+          onApply={(borderColor) => commitCanvasProps({ borderColor }, false)}
+          onChange={(borderColor) => commitCanvasProps({ borderColor })}
+          onWidthChange={(borderWidth) => commitCanvasProps({ borderWidth }, false)}
+          onWidthCommit={(borderWidth) => commitCanvasProps({ borderWidth })}
         />
-        <span className="w-8 text-right text-[10px] leading-none text-muted-foreground tabular-nums">
-          {borderWidth}px
-        </span>
-        <TooltipLabel label="Border color">
-          <ColorPicker
-            value={borderColor}
-            disabled={borderWidth === 0}
-            ariaLabel="Border color"
-            onApply={(borderColor) => commitCanvasProps({ borderColor }, false)}
-            onChange={(borderColor) => commitCanvasProps({ borderColor })}
-          />
-        </TooltipLabel>
-      </label>
+      </TooltipLabel>
     </div>
   )
 }
@@ -338,7 +320,8 @@ function CanvasProps() {
 /**
  * Contextual shape-property section (build spec §5), visible only while a
  * single shape is selected: the background (fill) color and the inset border
- * (width slider + color). All values display in px and commit immediately.
+ * (a single swatch opening the border card — color + width slider). All
+ * values display in px and commit immediately.
  */
 function ShapeProps() {
   const { selection, commitShapeProps } = useStage()
@@ -361,34 +344,18 @@ function ShapeProps() {
           onChange={(fillColor) => commitShapeProps({ fillColor })}
         />
       </TooltipLabel>
-      <label className="flex items-center gap-2">
-        <span className="text-[10px] leading-none text-muted-foreground">Border</span>
-        <Slider
-          className="w-28"
-          min={BORDER_RANGE.min}
-          max={BORDER_RANGE.max}
-          step={BORDER_RANGE.step}
-          value={[borderWidth]}
+      <TooltipLabel label="Border color">
+        <BorderPicker
+          value={typeof shape.stroke === "string" ? shape.stroke : DEFAULT_BORDER_COLOR}
+          width={borderWidth}
           disabled={locked}
-          // Dragging previews live without recording; releasing the thumb
-          // commits the whole drag as ONE undoable step (ADR 0001, §8).
-          onValueChange={([value]) => commitShapeProps({ borderWidth: value }, false)}
-          onValueCommit={([value]) => commitShapeProps({ borderWidth: value })}
-          aria-label="Border width"
+          ariaLabel="Border color"
+          onApply={(borderColor) => commitShapeProps({ borderColor }, false)}
+          onChange={(borderColor) => commitShapeProps({ borderColor })}
+          onWidthChange={(borderWidth) => commitShapeProps({ borderWidth }, false)}
+          onWidthCommit={(borderWidth) => commitShapeProps({ borderWidth })}
         />
-        <span className="w-8 text-right text-[10px] leading-none text-muted-foreground tabular-nums">
-          {borderWidth}px
-        </span>
-        <TooltipLabel label="Border color">
-          <ColorPicker
-            value={typeof shape.stroke === "string" ? shape.stroke : DEFAULT_BORDER_COLOR}
-            disabled={locked || borderWidth === 0}
-            ariaLabel="Border color"
-            onApply={(borderColor) => commitShapeProps({ borderColor }, false)}
-            onChange={(borderColor) => commitShapeProps({ borderColor })}
-          />
-        </TooltipLabel>
-      </label>
+      </TooltipLabel>
     </div>
   )
 }
