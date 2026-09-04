@@ -158,7 +158,12 @@ function ColorPicker({
   }
 
   // Sync when the committed value changes from outside (undo/redo, commit).
+  // During a drag the handler already applied the same color — the value
+  // prop round-trips it, so the sync bails and skips a redundant re-render
+  // per tick (the drag's rapid-fire onChange would otherwise double every
+  // tick's render count and let fast pointer events nest into the commit).
   useEffect(() => {
+    if (value.toUpperCase() === colorValues.hex) return
     updateColorValues(value)
     setHexInputValue(value.toUpperCase())
     lastValidRef.current = value.toUpperCase()
