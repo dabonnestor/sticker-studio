@@ -2,6 +2,7 @@ import {
   ActiveSelection,
   Circle,
   Ellipse,
+  FabricImage,
   Group,
   Point,
   Rect,
@@ -287,6 +288,28 @@ describe("uniform scaling", () => {
     expect(text._controlsVisibility.tr).toBeUndefined() // corners scale uniformly
     expect(text._controlsVisibility.ml).toBeUndefined() // wrap width (§6)
     expect(text._controlsVisibility.mr).toBeUndefined()
+  })
+
+  it("an image hides the side handles — corner-handles-only, like a circle", () => {
+    const img = new FabricImage({ width: 100, height: 100 } as HTMLImageElement)
+    canvas.add(img)
+    // A side-handle drag would stretch the pixels non-uniformly — the same
+    // corner-handles-only surface as circle/oval/triangle.
+    for (const handle of ["ml", "mt", "mr", "mb"] as const) {
+      expect(img._controlsVisibility[handle]).toBe(false)
+    }
+    expect(img._controlsVisibility.tr).toBeUndefined() // corners scale
+  })
+
+  it("scales an image uniformly like a circle — the aspect ratio is frozen at the gesture start", () => {
+    const img = new FabricImage({ width: 100, height: 100 } as HTMLImageElement)
+    canvas.add(img)
+    img.set({ scaleX: 2, scaleY: 1 }) // gesture tick 1 — the start ratio
+    scale(img)
+    img.set({ scaleX: 3 }) // later ticks derive scaleY from the frozen ratio
+    scale(img)
+    expect(img.scaleX / img.scaleY).toBeCloseTo(2, 10)
+    expect(img.scaleY).toBeCloseTo(1.5, 10)
   })
 })
 

@@ -1,4 +1,4 @@
-import { FabricImage } from "fabric"
+import { FabricImage, type Object as FabricObject } from "fabric"
 
 import { stampDocumentProps } from "@/fabric/document-props"
 
@@ -29,6 +29,11 @@ export interface ArtworkProvenance {
  * through undo/redo and export (the object-type whitelist already knows
  * `Image`, ADR 0002).
  */
+
+/** Image objects are FabricImages; nothing else (shapes, text, groups) is an image. */
+export function isImageObject(obj: FabricObject | null | undefined): obj is FabricImage {
+  return obj instanceof FabricImage
+}
 
 /**
  * The fraction of the Document an imported image may span per side at

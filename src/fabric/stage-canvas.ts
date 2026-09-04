@@ -46,6 +46,7 @@ import {
 import { getTextMeasurer } from "@/fabric/fonts"
 import { History } from "@/fabric/history"
 import { HoverBorder } from "@/fabric/hover-border"
+import { isImageObject } from "@/fabric/images"
 import { DEFAULT_BORDER_COLOR, getShapeKind, restampBorderClip } from "@/fabric/shapes"
 import { SNAP_TOLERANCE_PX, SmartGuides } from "@/fabric/smart-guides"
 import { wireTextInteractions } from "@/fabric/text-interactions"
@@ -1596,7 +1597,9 @@ export function createStageCanvas(
   // mt/mb the height, freely, §5), while circle/oval/triangle stay
   // corner-handles-only (uniform scaling) — and text hides the top/bottom
   // handles — a Y-only drag would distort the glyphs, and the uniform-scaling
-  // lock pins it dead anyway. Text keeps the ml/mr wrap handles (§6).
+  // lock pins it dead anyway. Text keeps the ml/mr wrap handles (§6). Images
+  // keep the aspect ratio too — corner-handles-only, like a circle (a
+  // side-handle drag would stretch the pixels non-uniformly).
   canvas.on("object:added", (event) => {
     const obj = event.target
     if (!obj) return
@@ -1619,6 +1622,10 @@ export function createStageCanvas(
       }
     } else if (isTextObject(obj)) {
       obj.setControlsVisibility({ mt: false, mb: false })
+    } else if (isImageObject(obj)) {
+      // An image keeps its aspect ratio — corner handles only, like a
+      // circle (a side-handle drag would stretch the pixels non-uniformly).
+      obj.setControlsVisibility({ ml: false, mt: false, mr: false, mb: false })
     } else if (obj instanceof Group) {
       // A group scales as one unit — corner handles only, like a
       // multi-selection (a side-handle drag would stretch the children
@@ -1732,12 +1739,14 @@ export function createStageCanvas(
     canvas.clearOverlay()
   })
 
-  // Shapes and text scale uniformly from a corner — the aspect ratio is
-  // frozen at the gesture start, so a corner drag never distorts the object
-  // (§5 shapes, §6 text: text scales like a shape, scale stays on the object
-  // and folds into the size at the gesture end — a corner scale is a size
-  // change, so auto-fit survives it; only the wrap-width drag hands the
-  // width over). Square/rectangle also expose the side handles: a drag on
+  // Shapes, text, and images scale uniformly from a corner — the aspect
+  // ratio is frozen at the gesture start, so a corner drag never distorts
+  // the object (§5 shapes, §6 text: text scales like a shape, scale stays
+  // on the object and folds into the size at the gesture end — a corner
+  // scale is a size change, so auto-fit survives it; only the wrap-width
+  // drag hands the width over). Images keep the ratio like a circle — the
+  // side handles are hidden at add time, so a corner drag is the only
+  // scale gesture. Square/rectangle also expose the side handles: a drag on
   // one (mt/mb scale the height, ml/mr the width) scales that axis freely,
   // outside the ratio lock — so a square can grow into a taller or wider
   // rectangle. The first `object:scaling` tick records the ratio; later
@@ -1747,7 +1756,7 @@ export function createStageCanvas(
   canvas.on("object:scaling", (event) => {
     const obj = event.target
     const kind = getShapeKind(obj)
-    if (!kind && !isTextObject(obj)) return
+    if (!kind && !isTextObject(obj) && !isImageObject(obj)) return
     const corner = event.transform?.corner
     const axisHandle = corner === "mt" || corner === "mb" || corner === "ml" || corner === "mr"
     if (axisHandle && (kind === "square" || kind === "rectangle")) {
