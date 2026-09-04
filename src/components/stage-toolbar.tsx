@@ -80,7 +80,7 @@ import {
   getFontFamilySpec,
   isTextObject,
 } from "@/fabric/text"
-import { commitPx, formatPx, type Unit } from "@/lib/units"
+import { commitPx, formatPx, unitToPx, type Unit } from "@/lib/units"
 import { cn } from "@/lib/utils"
 
 const UNITS: { value: Unit; label: string }[] = [
@@ -88,6 +88,13 @@ const UNITS: { value: Unit; label: string }[] = [
   { value: "mm", label: "mm" },
   { value: "px", label: "px" },
 ]
+
+/**
+ * The document size floor (§5) — a canvas dimension can't commit below this,
+ * in px. The toolbar's error tooltip shows the floor converted to the active
+ * unit, so the message reads in the unit the user is typing.
+ */
+const MIN_DOCUMENT_SIZE_PX = 60
 
 /** Opacity slider range and step — 0 (transparent) to 100% (opaque). */
 const OPACITY_RANGE = { min: 0, max: 100, step: 1 } as const
@@ -108,51 +115,98 @@ const FONT_SIZES = [
  * A labeled numeric field over stored px, displayed in the active unit
  * (build spec §5): switching units re-labels without rescaling; the value
  * converts to integer px at commit (Enter/blur); invalid input reverts. The
- * label sits beside the input, like the shape-property controls.
+ * label sits beside the input, like the shape-property controls. An optional
+ * minPx floor rejects below-minimum commits — the value reverts and the
+ * error tooltip explains the floor in the active unit.
  */
 function UnitField({
   label,
   valuePx,
   unit,
   onCommit,
+  minPx,
   className,
 }: {
   label: string
   valuePx: number
   unit: Unit
   onCommit: (px: number) => void
+  /** The floor in px — a below-minimum commit reverts with an error tooltip. */
+  minPx?: number
   className?: string
 }) {
   const [text, setText] = useState(() => formatPx(valuePx, unit))
+  // The error tooltip's open state — live while the typed value sits below
+  // the floor, and held open after a rejected commit so the message lands.
+  const [invalid, setInvalid] = useState(false)
 
   useEffect(() => {
     setText(formatPx(valuePx, unit))
   }, [valuePx, unit])
 
+  // The error tooltip auto-closes after a moment — a rejected commit must
+  // not leave it floating over the toolbar; typing re-opens it live.
+  useEffect(() => {
+    if (!invalid) return
+    const timer = setTimeout(() => setInvalid(false), 2500)
+    return () => clearTimeout(timer)
+  }, [invalid, text])
+
   const commit = () => {
-    // Negative values are incoherent input, not a clamp — §5 sets no
-    // min/max size limits (the export ceiling governs, §11).
+    // Negative values are incoherent input, not a clamp — §5 sets no max
+    // size limit (the export ceiling governs, §11). The document size
+    // enforces a 60 px floor: a below-minimum commit reverts, and the error
+    // tooltip explains the floor in the active unit.
     const value = Number(text)
     if (!Number.isFinite(value) || value < 0) {
       setText(formatPx(valuePx, unit))
       return
     }
+    if (minPx !== undefined && unitToPx(value, unit) < minPx) {
+      setText(formatPx(valuePx, unit))
+      setInvalid(true)
+      return
+    }
+    setInvalid(false)
     onCommit(commitPx(value, unit))
   }
 
   return (
     <label className={cn("flex items-center gap-1.5", className)}>
       <span className="w-3 text-[10px] leading-none text-muted-foreground">{label}</span>
-      <Input
-        className="h-7 w-16"
-        inputMode="decimal"
-        value={text}
-        onChange={(event) => setText(event.target.value)}
-        onBlur={commit}
-        onKeyDown={(event) => {
-          if (event.key === "Enter") event.currentTarget.blur()
-        }}
-      />
+      <Tooltip open={invalid}>
+        <TooltipTrigger asChild>
+          <Input
+            className="h-7 w-16"
+            inputMode="decimal"
+            value={text}
+            aria-invalid={invalid}
+            onChange={(event) => {
+              setText(event.target.value)
+              const value = Number(event.target.value)
+              setInvalid(
+                minPx !== undefined &&
+                  Number.isFinite(value) &&
+                  value >= 0 &&
+                  unitToPx(value, unit) < minPx,
+              )
+            }}
+            onBlur={commit}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") event.currentTarget.blur()
+            }}
+          />
+        </TooltipTrigger>
+        <TooltipContent
+          side="bottom"
+          // The error tooltip reads in the destructive red, matching the
+          // field's aria-invalid border.
+          className="bg-destructive"
+          arrowClassName="bg-destructive fill-destructive"
+        >
+          Minimum {formatPx(minPx ?? 0, unit)} {unit}
+        </TooltipContent>
+      </Tooltip>
     </label>
   )
 }
@@ -242,11 +296,13 @@ function SizeFieldPair({
   widthPx,
   heightPx,
   unit,
+  minPx,
   onCommit,
 }: {
   widthPx: number
   heightPx: number
   unit: Unit
+  minPx?: number
   onCommit: (width: number, height: number) => void
 }) {
   return (
@@ -255,12 +311,14 @@ function SizeFieldPair({
         label="W"
         valuePx={widthPx}
         unit={unit}
+        minPx={minPx}
         onCommit={(width) => onCommit(width, heightPx)}
       />
       <UnitField
         label="H"
         valuePx={heightPx}
         unit={unit}
+        minPx={minPx}
         onCommit={(height) => onCommit(widthPx, height)}
       />
     </div>
@@ -275,6 +333,7 @@ function DocumentSize() {
       widthPx={documentSize.width}
       heightPx={documentSize.height}
       unit={unit}
+      minPx={MIN_DOCUMENT_SIZE_PX}
       onCommit={setDocumentSize}
     />
   )
