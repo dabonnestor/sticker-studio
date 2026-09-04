@@ -622,7 +622,7 @@ function FontSizeField({
         }
       >
         <ComboboxInput
-          className="h-7 w-16"
+          className="h-7 w-20"
           inputMode="decimal"
           disabled={disabled}
           aria-label="Font size (px)"
