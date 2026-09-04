@@ -1687,7 +1687,7 @@ export function createStageCanvas(
   // keeps the toolbar's size field the source of truth on every path.
   const bakeActiveTextScale = () => {
     const active = canvas.getActiveObject()
-    if (isTextObject(active)) bakeTextScale(active, getTextMeasurer())
+    if (isTextObject(active)) bakeTextScale(active)
   }
   canvas.on("selection:created", bakeActiveTextScale)
   canvas.on("selection:updated", bakeActiveTextScale)
@@ -1798,7 +1798,7 @@ export function createStageCanvas(
     // History (constructed last), so its snapshot sees the baked state and
     // undo/redo restore the size, not the transform. Plain moves,
     // rotations, and session exits pass through (scale 1).
-    if (isTextObject(event.target)) bakeTextScale(event.target, getTextMeasurer())
+    if (isTextObject(event.target)) bakeTextScale(event.target)
   })
 
   // Text (§6): text scales uniformly with the shapes above, and the text

@@ -9,7 +9,7 @@ import {
 import { stampDocumentProps } from "@/fabric/document-props"
 import { isGrouped } from "@/fabric/groups"
 import type { StageCanvas } from "@/fabric/stage-canvas"
-import { bakeTextScale, isTextObject, type TextMeasurer } from "@/fabric/text"
+import { bakeTextScale, isTextObject } from "@/fabric/text"
 
 /**
  * Copy/paste (§13) — the app's internal clipboard, holding serialized objects
@@ -107,10 +107,7 @@ export function copyObjects(canvas: Canvas): boolean {
  * paste is one undoable step — the caller (StageProvider) commits the
  * history. No-op with an empty clipboard.
  */
-export async function pasteObjects(
-  canvas: StageCanvas,
-  measure?: TextMeasurer,
-): Promise<void> {
+export async function pasteObjects(canvas: StageCanvas): Promise<void> {
   if (!clipboard) return
   pasteCount++
   const enlivened = (await util.enlivenObjects(clipboard.objects)) as FabricObject[]
@@ -147,7 +144,7 @@ export async function pasteObjects(
     // The world bake can leave a text carrying a scale (a child of a scaled
     // group) — fold it into the font size so the toolbar's readout is right,
     // the same fold the ungroup command performs (extractGroup).
-    if (isTextObject(clone)) bakeTextScale(clone, measure)
+    if (isTextObject(clone)) bakeTextScale(clone)
   }
   // The z-slot of the topmost copied object — clones land directly above the
   // copied region, keeping the Document's order around it. A source that no

@@ -223,15 +223,14 @@ describe("grouping — group / ungroup", () => {
     canvas.add(text) // the text precedes the shape on the stack
     const group = groupObjects(canvas, [text, shape])!
     group.set({ scaleX: 2, scaleY: 2 }) // the group scaled as one unit (§7 Q8)
-    // The measurer (the stub: 10 px per char) lets the bake re-hug the
-    // content at the folded size — "Text" fits to 4 × 10 + 2 = 42.
-    const children = ungroupObjects(canvas, [group], (textStr) => textStr.length * 10)
+    const children = ungroupObjects(canvas, [group])
     const out = children.find(isTextObject)!
     // The exit folded the group's scale into the child — the bake folds it
     // onward into the size field, so the toolbar reads the effective size,
-    // and the box hugs its content at that size.
+    // and the box keeps the drawn width (2.4 × 2 = 4.8 — the unmeasured
+    // box's creation width), landing exactly where the gesture drew it.
     expect(out.fontSize).toBe(TEXT_DEFAULT_FONT_SIZE * 2)
-    expect(out.width).toBe(42)
+    expect(out.width).toBe(4.8)
     expect(out.scaleX).toBe(1)
     expect(out.scaleY).toBe(1)
   })

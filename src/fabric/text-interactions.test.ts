@@ -261,7 +261,7 @@ describe("wireTextInteractions — grouped text never clips", () => {
     textbox = createText(measure)
     textbox.set({ left: 250, top: 0 })
     canvas.add(shape, textbox)
-    const group = groupObjects(canvas, [shape, textbox], measure)!
+    const group = groupObjects(canvas, [shape, textbox])!
     return { textbox, group }
   }
 

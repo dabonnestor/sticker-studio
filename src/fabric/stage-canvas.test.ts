@@ -205,11 +205,11 @@ describe("uniform scaling", () => {
     text.set({ scaleX: 2, scaleY: 2 }) // the corner drag's committed scale
     canvas.fire("object:modified", { target: text } as never)
     // The size field is the text's source of truth (§6): the gesture folds
-    // into fontSize, the box re-hugs its content at the new size (the stub
-    // measurer: 4 chars × 10 + 2 = 42 — not the proportional 2 × width),
-    // and the transform resets — no stale scale is left on the object.
+    // into fontSize, the box keeps the drawn width (2.4 × 2 = 4.8 — the
+    // unmeasured box's creation width), landing exactly where the drag left
+    // it, and the transform resets — no stale scale is left on the object.
     expect(text.fontSize).toBe(TEXT_DEFAULT_FONT_SIZE * 2)
-    expect(text.width).toBe(42)
+    expect(text.width).toBe(4.8)
     expect(text.scaleX).toBe(1)
     expect(text.scaleY).toBe(1)
   })

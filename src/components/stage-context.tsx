@@ -957,7 +957,7 @@ export function StageProvider({ children }: { children: ReactNode }) {
     // The enliven is async — the paste commits when the clones land. A
     // no-op paste (empty clipboard) commits nothing: the History's dedup
     // skips the unchanged snapshot.
-    await pasteObjects(canvas, getTextMeasurer())
+    await pasteObjects(canvas)
     canvas.history.commit()
   }, [canvas])
 
@@ -984,7 +984,7 @@ export function StageProvider({ children }: { children: ReactNode }) {
     if (canvas.enteredGroup && objects.includes(canvas.enteredGroup)) {
       canvas.exitEnteredGroup()
     }
-    const group = groupObjects(canvas, objects, getTextMeasurer())
+    const group = groupObjects(canvas, objects)
     if (!group) return
     canvas.setActiveObject(group)
     canvas.requestRenderAll()
@@ -993,7 +993,7 @@ export function StageProvider({ children }: { children: ReactNode }) {
 
   const ungroupSelection = useCallback(() => {
     if (!canvas?.history) return
-    const children = ungroupObjects(canvas, canvas.getActiveObjects(), getTextMeasurer())
+    const children = ungroupObjects(canvas, canvas.getActiveObjects())
     if (children.length === 0) return
     // Ungrouping the entered group exits it — the group reference dies with
     // the command, and the fixed child state must not linger (§7 Q5). Runs

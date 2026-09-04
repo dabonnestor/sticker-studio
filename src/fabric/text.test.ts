@@ -392,17 +392,19 @@ describe("bakeTextScale — a corner drag folds into the font size (§6)", () =>
     expect(t.scaleY).toBe(1)
   })
 
-  it("re-hugs the content at the folded size while auto-fit is set", () => {
-    // A corner scale is a size change — scaling "hello" (width 52) down to
-    // half would leave the proportional width (26) short of the text at the
-    // folded size; the box re-measures and hugs the content instead.
+  it("keeps the proportional width — the box lands exactly where the drag left it", () => {
+    // A corner scale is a size change — the fold keeps the drawn width (52 ×
+    // 0.5 = 26) instead of re-hugging the content: the re-hug would pop the
+    // box on release, the awkward adjust-to-fit a corner drag shouldn't have
+    // (in the app the measurement scales linearly, so the text at the folded
+    // size fits the drawn width exactly — no wrap, no settle).
     const t = createText(measure)
     t.set("text", "hello")
     fitToContent(t, measure) // width 52
     t.set({ scaleX: 0.5, scaleY: 0.5 })
-    bakeTextScale(t, measure)
+    bakeTextScale(t)
     expect(t.fontSize).toBe(12)
-    expect(t.width).toBe(52)
+    expect(t.width).toBe(26)
     expect(t.scaleX).toBe(1)
     expect(t.scaleY).toBe(1)
   })
@@ -414,19 +416,47 @@ describe("bakeTextScale — a corner drag folds into the font size (§6)", () =>
     t.autoFit = false
     t.set("width", 200)
     t.set({ scaleX: 0.5, scaleY: 0.5 })
-    bakeTextScale(t, measure)
+    bakeTextScale(t)
     expect(t.fontSize).toBe(12)
     expect(t.width).toBe(100)
     expect(t.autoFit).toBe(false)
   })
 
-  it("rounds the baked size to integer px — the toolbar's readout stays clean", () => {
+  it("keeps the folded size fractional — the readout shows the honest size", () => {
+    // The size stays fractional (two decimals — the readout's precision), so
+    // the box lands exactly where the gesture drew it: an integer round
+    // would overshoot the fit and pop the box wider on release.
     const t = createText(measure)
     t.set("text", "hello")
     t.set({ scaleX: 1.37, scaleY: 1.37 })
     bakeTextScale(t)
-    expect(t.fontSize).toBe(Math.round(24 * 1.37))
+    expect(t.fontSize).toBe(32.88) // 24 × 1.37 — not snapped to 33
     expect(t.scaleX).toBe(1)
+  })
+
+  it("preserves the selection box exactly — the released box equals the drawn box", () => {
+    // Fabric adds strokeWidth × |scale| to the object dims for the selection
+    // box (the handles, the border, the smart guides), so at scale s the
+    // drawn box is (W + sw) × s. The fold scales the stroke margin with the
+    // size — the released box reads W × s + sw × s, the same box — no
+    // inward snap of (s − 1) px on release, which would grow with the scale
+    // (a 2× corner drag would pop the handles by 1 px, 4× by 3 px).
+    const t = createText(measure)
+    t.set("text", "hello")
+    fitToContent(t, measure) // width 52
+    t.setCoords()
+    const s = 1.37
+    t.set({ scaleX: s, scaleY: s })
+    t.setCoords()
+    const drawn = t.getBoundingRect()
+    expect(drawn.width).toBeCloseTo((52 + t.strokeWidth) * s, 6)
+    bakeTextScale(t)
+    t.setCoords()
+    expect(t.getBoundingRect().left).toBeCloseTo(drawn.left, 6)
+    expect(t.getBoundingRect().top).toBeCloseTo(drawn.top, 6)
+    expect(t.getBoundingRect().width).toBeCloseTo(drawn.width, 6)
+    expect(t.getBoundingRect().height).toBeCloseTo(drawn.height, 6)
+    expect(t.strokeWidth).toBeCloseTo(1 * s, 6)
   })
 
   it("is a no-op at scale 1 — moves, rotations, and session exits pass through", () => {

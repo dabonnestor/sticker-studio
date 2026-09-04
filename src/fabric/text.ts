@@ -316,64 +316,56 @@ export function applyTextProps(
  * lines it wrapped scaled), and the height re-measures from the new width
  * and size (Fabric's `set` re-inits dimensions for layout properties). The
  * textAlign-anchored corner is pinned across the re-measure, like
- * `applyTextProps` — the drawn box is identical after the fold, and the
- * corner held is the edge the box grows from when the folded content
- * outgrows the drawn width (the floor below). No-op at scale 1 — moves,
- * rotations, and plain session commits pass through.
+ * `applyTextProps` — the drawn box is identical after the fold. No-op at
+ * scale 1 — moves, rotations, and plain session commits pass through.
  *
- * While the box is auto-fitted, the fold keeps the proportional width —
- * exactly where the gesture drew it — instead of re-measuring: the re-fit
- * would pop the box a few px on release as the width re-hugged at the rounded
- * size, the awkward settle a corner drag shouldn't have (the drag itself
- * scaled the glyphs smoothly; only the release should not jump). The
- * proportional width only approximates the fit — the size rounds to an
- * integer, and a round-up can overshoot by a whisker, which would wrap the
- * longest line — so the box is floored against the measured fit: it grows
- * only when the content at the folded size outgrows the drawn width, never
- * wrapping. Auto-fit survives for the next keystroke — the flag stays set
- * and the width still hugs the content (it IS that measured fit in the
- * common case). A wrap box (autoFit off — the wrap-width drag handed the
- * width over) keeps its manual width, scaled. Without a measurer (model
- * callers, tests) the proportional width stays.
+ * The fold keeps the size fractional — rounded to two decimals, the
+ * readout's precision, not to an integer — so the box lands exactly where
+ * the gesture drew it: the proportional width is the fit at the folded size
+ * (canvas measurement scales linearly with the size, so the text at the
+ * folded size fits the drawn width exactly — no wrap, no re-measure settle
+ * on release, like a shape). An integer round would overshoot the fit by a
+ * whisker and pop the box wider on release — the awkward adjust-to-fit a
+ * corner drag shouldn't have (the drag itself scaled the glyphs smoothly;
+ * only the release should not jump). Auto-fit survives for the next
+ * keystroke — the flag stays set and the width still hugs the content (it
+ * IS that measured fit in the common case). A wrap box (autoFit off — the
+ * wrap-width drag handed the width over) keeps its manual width, scaled.
+ *
+ * The stroke margin folds with the size: Fabric adds `strokeWidth × scale`
+ * to the object's dims for the selection box (the handles, the border, the
+ * smart guides), so at scale s the box is `(W + sw) × s` — the fold scales
+ * `strokeWidth` by s too, and the released box is the same `(W + sw) × s`
+ * the gesture drew. Without the fold, the released box would read
+ * `W × s + sw` and snap inward by `(s − 1)` pixels on release — growing
+ * with the scale, the awkward jump a large corner drag shows. The painted
+ * stroke (when a text has one — imported designs can carry it) stays at the
+ * same visual width it showed during the drag.
  *
  * The factor is the geometric mean of the two axes (absolute — a flip
  * mirrors one): uniform corner gestures keep them equal, while a text folded
  * out of a scaled group can carry a matrix whose per-axis decomposition
  * differs, and the mean is the size that preserves the glyph area.
  */
-export function bakeTextScale(obj: Textbox, measure?: TextMeasurer): void {
+export function bakeTextScale(obj: Textbox): void {
   if (obj.scaleX === 1 && obj.scaleY === 1) return
   const s = Math.sqrt(Math.abs(obj.scaleX * obj.scaleY))
   const originX = getTextAnchorOrigin(obj)
   const anchor = obj.getPositionByOrigin(originX, "top")
   obj.set({
-    fontSize: Math.round(obj.fontSize * s),
+    // Fractional, rounded to two decimals — the readout's precision. The
+    // box lands exactly where the gesture drew it: the proportional width
+    // is the fit at the folded size (measurement scales linearly), so the
+    // text fits the drawn width — no wrap, no re-measure settle on release.
+    fontSize: Math.round(obj.fontSize * s * 100) / 100,
     width: obj.width * s,
+    // The selection box adds strokeWidth × scale to the dims — fold the
+    // margin with the size, or the released box (W × s + sw) snaps inward
+    // from the drawn box ((W + sw) × s) by (s − 1) px.
+    strokeWidth: obj.strokeWidth * s,
     scaleX: 1,
     scaleY: 1,
   })
-  if (measure && obj.autoFit) {
-    // A corner scale is a size change (§6), but the re-hug must not pop the
-    // box: the gesture already drew the box at width × s, so the fold keeps
-    // that proportional width — the box lands exactly where the drag left
-    // it, no settle on release, like a shape. The proportional width only
-    // approximates the fit — the size rounds to an integer, and a round-up
-    // can overshoot by a whisker, which would wrap the longest line — so the
-    // box is floored against the measured fit, growing only when the content
-    // at the folded size would outgrow the drawn width.
-    const fitted = fitTextWidth(
-      obj.text,
-      {
-        fontSize: obj.fontSize,
-        fontFamily: obj.fontFamily,
-        fontWeight: obj.fontWeight,
-        fontStyle: obj.fontStyle,
-      },
-      obj.charSpacing,
-      measure,
-    )
-    obj.set("width", Math.max(obj.width, fitted))
-  }
   obj.setPositionByOrigin(anchor, originX, "top")
   obj.setCoords()
 }
