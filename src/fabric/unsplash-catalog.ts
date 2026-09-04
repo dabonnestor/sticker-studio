@@ -72,6 +72,11 @@ function resultsToArtworks(data: any): Artwork[] {
       sourceUrl: result.urls?.regular,
       license: "Unsplash License",
       source: UNSPLASH_SOURCE,
+      // The photographer's display name — the gallery's attribution (#41).
+      author: typeof result.user?.name === "string" ? result.user.name : "Unknown author",
+      // The photographer's profile — the attribution chip links there.
+      authorUrl:
+        typeof result.user?.links?.html === "string" ? result.user.links.html : undefined,
     })
   }
   return out

@@ -18,10 +18,11 @@ import {
  * embeds from. Given a term the provider returns illustration Artwork —
  * filtered heuristically (safesearch + a franchise/character/brand denylist,
  * per the 2026-08-24 research addendum) — each carrying a title, preview,
- * source URL, and an informational license; embedding an Artwork returns its
- * bytes as a self-contained data URL. The provider seam means the caller
- * never knows the provider's shape, and a provider outage is a distinct,
- * catchable `CatalogError` — never conflated with an empty result set.
+ * source URL, an informational license, and the author's name and profile
+ * link; embedding an Artwork returns its bytes as a self-contained data URL.
+ * The provider seam means the caller never knows the provider's shape, and a
+ * provider outage is a distinct, catchable `CatalogError` — never conflated
+ * with an empty result set.
  */
 
 /** A Pixabay search response body built from raw hits (bypasses the filter). */
@@ -37,6 +38,8 @@ function cleanHit() {
     pageURL: "https://pixabay.com/illustrations/emoticon-sticker-1/",
     previewURL: "https://cdn.pixabay.com/photo/emoticon_150.jpg",
     webformatURL: "https://cdn.pixabay.com/photo/emoticon_640.jpg",
+    user: "janedoe",
+    user_id: 12345,
   }
 }
 
@@ -55,7 +58,7 @@ describe("Catalog — the content shield (2026 addendum)", () => {
 })
 
 describe("Pixabay catalog — search", () => {
-  it("returns Artwork for unblocked hits, each with title/preview/source/license", async () => {
+  it("returns Artwork for unblocked hits, each with title/preview/source/license/author", async () => {
     const fetchFn = vi.fn().mockResolvedValue({
       ok: true,
       status: 200,
@@ -72,6 +75,8 @@ describe("Pixabay catalog — search", () => {
       sourceUrl: "https://cdn.pixabay.com/photo/emoticon_640.jpg",
       license: "Pixabay Content License",
       source: PIXABAY_SOURCE,
+      author: "janedoe",
+      authorUrl: "https://pixabay.com/users/janedoe-12345/",
     })
     // One hit on the first page and the search is exhausted — no next page.
     expect(page.nextCursor).toBeNull()
@@ -191,6 +196,7 @@ describe("Pixabay catalog — embed", () => {
       sourceUrl: "https://cdn.pixabay.com/photo/emoticon_640.jpg",
       license: "Pixabay Content License",
       source: PIXABAY_SOURCE,
+      author: "janedoe",
     }
     const bytes = new Uint8Array([0x89, 0x50, 0x4e, 0x47])
     const fetchFn = vi.fn().mockResolvedValue({
@@ -206,7 +212,7 @@ describe("Pixabay catalog — embed", () => {
   })
 
   it("reports a fetch failure as a distinct CatalogError", async () => {
-    const artwork = { title: "a", previewUrl: "p", sourceUrl: "s", license: "Pixabay Content License", source: PIXABAY_SOURCE }
+    const artwork = { title: "a", previewUrl: "p", sourceUrl: "s", license: "Pixabay Content License", source: PIXABAY_SOURCE, author: "janedoe" }
     const fetchFn = vi.fn().mockResolvedValue({ ok: false, status: 404 })
 
     await expect(
@@ -222,6 +228,7 @@ describe("Catalog facade — the caller never knows the provider", () => {
     sourceUrl: "s",
     license: "Pixabay Content License",
     source: PIXABAY_SOURCE,
+    author: "janedoe",
   }
 
   it("wraps raw provider failures in a CatalogError", async () => {

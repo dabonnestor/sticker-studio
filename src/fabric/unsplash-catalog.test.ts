@@ -11,11 +11,11 @@ import {
  * third-party photograph source the app searches and embeds from. Given a
  * term the provider returns photograph Artwork — filtered heuristically
  * (`content_filter=high` + the shared franchise/character/brand denylist) —
- * each carrying a title, preview, source URL, and an informational license;
- * embedding an Artwork returns its bytes as a self-contained data URL. The
- * provider seam means the caller never knows the provider's shape, and a
- * provider outage is a distinct, catchable `CatalogError` — never conflated
- * with an empty result set.
+ * each carrying a title, preview, source URL, an informational license, and
+ * the author's name and profile link; embedding an Artwork returns its bytes
+ * as a self-contained data URL. The provider seam means the caller never
+ * knows the provider's shape, and a provider outage is a distinct, catchable
+ * `CatalogError` — never conflated with an empty result set.
  */
 
 /** An Unsplash search response body built from raw results (bypasses the filter). */
@@ -35,11 +35,12 @@ function cleanResult() {
     },
     tags: [{ title: "balloon" }, { title: "sky" }],
     links: { html: "https://unsplash.com/photos/abc123" },
+    user: { name: "Jane Doe", links: { html: "https://unsplash.com/@janedoe" } },
   }
 }
 
 describe("Unsplash catalog — search", () => {
-  it("returns Artwork for unblocked results, each with title/preview/source/license", async () => {
+  it("returns Artwork for unblocked results, each with title/preview/source/license/author", async () => {
     const fetchFn = vi.fn().mockResolvedValue({
       ok: true,
       status: 200,
@@ -56,6 +57,8 @@ describe("Unsplash catalog — search", () => {
       sourceUrl: "https://images.unsplash.com/photo-1?w=1080",
       license: "Unsplash License",
       source: UNSPLASH_SOURCE,
+      author: "Jane Doe",
+      authorUrl: "https://unsplash.com/@janedoe",
     })
     // One result on the first page and the search is exhausted — no next page.
     expect(page.nextCursor).toBeNull()
@@ -201,6 +204,7 @@ describe("Unsplash catalog — embed", () => {
       sourceUrl: "https://images.unsplash.com/photo-1?w=1080",
       license: "Unsplash License",
       source: UNSPLASH_SOURCE,
+      author: "Jane Doe",
     }
     const bytes = new Uint8Array([0x89, 0x50, 0x4e, 0x47])
     const fetchFn = vi.fn().mockResolvedValue({
@@ -222,6 +226,7 @@ describe("Unsplash catalog — embed", () => {
       sourceUrl: "s",
       license: "Unsplash License",
       source: UNSPLASH_SOURCE,
+      author: "Jane Doe",
     }
     const fetchFn = vi.fn().mockResolvedValue({ ok: false, status: 404 })
 

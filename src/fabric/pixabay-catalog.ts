@@ -61,6 +61,14 @@ function hitsToArtworks(data: any): Artwork[] {
       sourceUrl: hit.webformatURL,
       license: "Pixabay Content License",
       source: PIXABAY_SOURCE,
+      // The illustrator's username — the gallery's attribution (#41).
+      author: typeof hit.user === "string" ? hit.user : "Unknown author",
+      // The illustrator's profile — the attribution chip links there. Pixabay
+      // user pages follow the /users/{user}-{user_id}/ pattern.
+      authorUrl:
+        typeof hit.user === "string" && typeof hit.user_id === "number"
+          ? `https://pixabay.com/users/${hit.user}-${hit.user_id}/`
+          : undefined,
     })
   }
   return out

@@ -36,6 +36,13 @@ export interface Artwork {
   license: string
   /** The catalog source this artwork came from (provenance, #40). */
   source: string
+  /** The original author's display name — the gallery's attribution (#41). */
+  author: string
+  /**
+   * The author's profile page — the attribution chip links there (new tab).
+   * Absent when the provider couldn't determine a profile URL.
+   */
+  authorUrl?: string
 }
 
 /**

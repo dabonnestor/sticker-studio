@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react"
-import { ArrowLeft, Loader2, Search } from "lucide-react"
+import { ArrowLeft, Info, Loader2, Search } from "lucide-react"
 
 import { useStage } from "@/components/stage-context"
 import { Button } from "@/components/ui/button"
@@ -49,7 +49,8 @@ export interface CatalogPanelProps {
 }
 
 /**
- * One result in the grid: the preview thumbnail with a small license badge.
+ * One result in the grid: the preview thumbnail with a small
+ * author-attribution chip.
  */
 function ArtworkCard({
   artwork,
@@ -65,36 +66,64 @@ function ArtworkCard({
   imageFit: "contain" | "cover"
 }) {
   return (
-    <button
-      type="button"
-      title={`${artwork.title} (${artwork.license})`}
-      onClick={() => onInsert(artwork)}
-      disabled={loading}
-      aria-busy={loading}
-      className="group relative flex aspect-square items-center justify-center overflow-hidden rounded-md border bg-muted/50"
-    >
-      {/* The preview is a separate fetch; a broken thumbnail keeps the card. */}
-      <img
-        src={artwork.previewUrl}
-        alt={artwork.title}
-        className={cn(
-          "h-full w-full transition-transform group-hover:scale-105",
-          imageFit === "cover" ? "object-cover" : "object-contain",
+    // The card is a button (insert) with the attribution chip beside it, not
+    // inside it — a link nested in a button would be invalid HTML.
+    <div className="group relative aspect-square overflow-hidden rounded-md border bg-muted/50">
+      <button
+        type="button"
+        title={`${artwork.title} (${artwork.license})`}
+        onClick={() => onInsert(artwork)}
+        disabled={loading}
+        aria-busy={loading}
+        className="absolute inset-0 flex items-center justify-center"
+      >
+        {/* The preview is a separate fetch; a broken thumbnail keeps the card. */}
+        <img
+          src={artwork.previewUrl}
+          alt={artwork.title}
+          className={cn(
+            "h-full w-full transition-transform group-hover:scale-105",
+            imageFit === "cover" ? "object-cover" : "object-contain",
+          )}
+          loading="lazy"
+        />
+        {loading && (
+          // The embed (a network fetch + decode) lags the click — a spinner on
+          // this card shows the insert is in progress and blocks re-invoking it.
+          // z-10 keeps it above the attribution chip while the embed flies.
+          <span
+            role="status"
+            aria-label={`Inserting ${artwork.title}`}
+            className="absolute inset-0 z-10 flex items-center justify-center bg-muted/80"
+          >
+            <Loader2 aria-hidden className="size-4 animate-spin text-foreground" />
+          </span>
         )}
-        loading="lazy"
-      />
-      {loading && (
-        // The embed (a network fetch + decode) lags the click — a spinner on
-        // this card shows the insert is in progress and blocks re-invoking it.
-        <span
-          role="status"
-          aria-label={`Inserting ${artwork.title}`}
-          className="absolute inset-0 flex items-center justify-center bg-muted/80"
+      </button>
+      {/* The author attribution — a small info chip, bottom-left. A real link
+          to the author's profile (new tab) when the provider gave us one; a
+          plain chip with a tooltip otherwise. */}
+      {artwork.authorUrl ? (
+        <a
+          href={artwork.authorUrl}
+          target="_blank"
+          rel="noreferrer noopener"
+          title={`By ${artwork.author}`}
+          aria-label={`By ${artwork.author}`}
+          className="absolute bottom-1 left-1 rounded-sm bg-background/80 p-0.5 text-muted-foreground hover:text-foreground"
         >
-          <Loader2 aria-hidden className="size-4 animate-spin text-foreground" />
+          <Info aria-hidden className="size-3" />
+        </a>
+      ) : (
+        <span
+          title={`By ${artwork.author}`}
+          aria-label={`By ${artwork.author}`}
+          className="absolute bottom-1 left-1 rounded-sm bg-background/80 p-0.5 text-muted-foreground"
+        >
+          <Info aria-hidden className="size-3" />
         </span>
       )}
-    </button>
+    </div>
   )
 }
 
