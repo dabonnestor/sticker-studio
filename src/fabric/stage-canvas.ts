@@ -1402,6 +1402,13 @@ export class StageCanvas extends Canvas {
       overlay.height = bitmapHeight
     }
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
+    // Reset the line dash — the smart-guides painter leaves the near-guide
+    // dash on the shared context, and Fabric's border renderer only sets a
+    // dash when the object carries one (a null borderDashArray leaves the
+    // context's current pattern), so a selection border painted after a
+    // guides frame would come out dashed. Every painter starts solid; the
+    // marquee and the guides set their own dashes.
+    ctx.setLineDash([])
     if (!skipClear) ctx.clearRect(0, 0, width, height)
     return {
       ctx,

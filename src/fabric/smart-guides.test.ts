@@ -526,8 +526,10 @@ describe("guide painting", () => {
     canvas.renderAll()
     const styles = style.mock.calls.map((call) => call[0])
     expect(styles).toEqual([SNAP_GUIDE_SOLID_COLOR, SNAP_GUIDE_NEAR_COLOR])
-    expect(overlayCtx.setLineDash).toHaveBeenNthCalledWith(1, [])
-    expect(overlayCtx.setLineDash).toHaveBeenNthCalledWith(2, SNAP_GUIDE_DASH)
+    // The chrome's and the painter's prepareOverlay resets precede the
+    // painter's own calls: solid first, then the dashed companions.
+    expect(overlayCtx.setLineDash).toHaveBeenCalledWith([])
+    expect(overlayCtx.setLineDash).toHaveBeenLastCalledWith(SNAP_GUIDE_DASH)
     expect(overlayCtx.moveTo).toHaveBeenCalledWith(112, 0)
     expect(overlayCtx.moveTo).toHaveBeenCalledWith(304, 0)
   })
@@ -581,6 +583,35 @@ describe("guide painting", () => {
     canvas.renderAll()
     expect(vi.mocked(overlayCtx.stroke).mock.calls.length).toBe(strokesAfterDrag)
     expect(overlayCtx.clearRect).toHaveBeenCalledTimes(2) // chrome clear + sweep
+  })
+
+  it("the near-guide dash does not leak into the selection border after a drag", () => {
+    // A selected object's chrome paints on the same overlay context as the
+    // guides. Fabric's border renderer only sets a dash when the object
+    // carries one (a null borderDashArray leaves the context's current
+    // pattern), so the guides' near-guide dash would render the selection
+    // border dashed on every later frame — the duplicate's clone stays
+    // selected, so the dashed border persists after the gesture.
+    const moved = squareAt(204, 250)
+    const a = squareAt(208, 600)
+    const b = squareAt(400, 600)
+    canvas.add(moved, a, b)
+    canvas.setActiveObject(moved)
+    moveTo(canvas, moved, 204, 250) // tie: solid line at x=112, dashed at x=304
+    canvas.renderAll() // the guides paint — the context now carries the dash
+    expect(overlayCtx.setLineDash).toHaveBeenCalledWith(SNAP_GUIDE_DASH)
+    // mouse:up clears the line caches; the commit render repaints the chrome.
+    // (The gesture's queued renders land later, during dispose — clear the
+    // spies so the ordering assertions below see only the commit frame.)
+    endGesture(canvas)
+    vi.mocked(overlayCtx.setLineDash).mockClear()
+    vi.mocked(overlayCtx.strokeRect).mockClear()
+    canvas.renderAll()
+    // The border must paint solid: the dash reset precedes the border stroke.
+    expect(overlayCtx.setLineDash).toHaveBeenLastCalledWith([])
+    const dashTimes = vi.mocked(overlayCtx.setLineDash).mock.invocationCallOrder
+    const strokeTimes = vi.mocked(overlayCtx.strokeRect).mock.invocationCallOrder
+    expect(Math.max(...dashTimes)).toBeLessThan(Math.min(...strokeTimes))
   })
 
   it("a render during an active marquee does not clear the marquee's paint", () => {
