@@ -6,7 +6,11 @@ import {
   serializeDesignFile,
 } from "@/fabric/design-file"
 import {
+  DOCUMENT_BACKGROUND_COLOR,
+  DOCUMENT_BORDER_COLOR,
+  DOCUMENT_BORDER_WIDTH,
   DOCUMENT_HEIGHT,
+  DOCUMENT_ROTATION,
   DOCUMENT_WIDTH,
   type StageCanvas,
 } from "@/fabric/stage-canvas"
@@ -97,14 +101,20 @@ export function clearWorkingDraft(): void {
 
 /**
  * The blank-guard predicate (ticket #31): a document is "factory-fresh" when
- * it is the default-size sheet with zero objects — the state a brand-new
- * session starts from, and the only state that must never claim an existing
- * draft. A resized or styled empty document is not blank and writes normally.
+ * it is the default-size, white sheet with the border off, rotation 0, and
+ * zero objects — the state a brand-new session starts from, and the only
+ * state that must never claim an existing draft. A resized or styled empty
+ * document (background, border, or rotation changed) is not blank and writes
+ * normally.
  */
 export function isFactoryBlank(canvas: Canvas): boolean {
   return (
     canvas.width === DOCUMENT_WIDTH &&
     canvas.height === DOCUMENT_HEIGHT &&
+    canvas.rotation === DOCUMENT_ROTATION &&
+    canvas.backgroundColor === DOCUMENT_BACKGROUND_COLOR &&
+    canvas.borderWidth === DOCUMENT_BORDER_WIDTH &&
+    canvas.borderColor === DOCUMENT_BORDER_COLOR &&
     canvas.getObjects().length === 0
   )
 }

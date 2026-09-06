@@ -6,8 +6,11 @@ import { serializeDesignFile } from "@/fabric/design-file"
 import { createShape } from "@/fabric/shapes"
 import {
   createStageCanvas,
+  DOCUMENT_BACKGROUND_COLOR,
   DOCUMENT_BORDER_COLOR,
+  DOCUMENT_BORDER_WIDTH,
   DOCUMENT_HEIGHT,
+  DOCUMENT_ROTATION,
   DOCUMENT_WIDTH,
 } from "@/fabric/stage-canvas"
 import {
@@ -105,6 +108,25 @@ describe("auto-persist — working draft", () => {
     expect(stored.size).toEqual({ width: 800, height: 400 })
   })
 
+  it("a styled-but-empty document (background/border/rotation) is not blank and writes normally", () => {
+    const canvas = createStageCanvas(
+      document.createElement("canvas"),
+      document.createElement("canvas"),
+    )
+    // Only document styling changed — no objects — yet the sheet is a real
+    // design and must persist across refresh (ticket #31's "styled" case).
+    canvas.backgroundColor = "#fef2f2"
+    canvas.borderWidth = 4
+    canvas.borderColor = "#ff0000"
+    canvas.rotation = 90
+    expect(isFactoryBlank(canvas)).toBe(false)
+    persistWorkingDraft(canvas)
+    const stored = JSON.parse(window.localStorage.getItem(WORKING_DRAFT_KEY)!)
+    expect(stored.canvas.background).toBe("#fef2f2")
+    expect(stored.border).toEqual({ width: 4, color: "#ff0000" })
+    expect(stored.rotation).toBe(90)
+  })
+
   /**
    * A canvas stub whose serialized draft crosses the ~3.5M-char ceiling — the
    * size guard's target. Not a real canvas: only the fields serializeDesignFile
@@ -115,8 +137,9 @@ describe("auto-persist — working draft", () => {
     return {
       width: DOCUMENT_WIDTH,
       height: DOCUMENT_HEIGHT,
-      rotation: 0,
-      borderWidth: 0,
+      rotation: DOCUMENT_ROTATION,
+      backgroundColor: DOCUMENT_BACKGROUND_COLOR,
+      borderWidth: DOCUMENT_BORDER_WIDTH,
       borderColor: DOCUMENT_BORDER_COLOR,
       getObjects: () => [{}],
       toJSON: () => ({
