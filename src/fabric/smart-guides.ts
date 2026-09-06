@@ -253,7 +253,9 @@ function paintGuideSegment(
  *   unused top context.
  * - `moving` — Alt/Option suppression via revert-after-snap, the per-axis
  *   snapped flags the overlay painter reads, and the drag's first-tick
- *   reference snapshot the tautological skip measures.
+ *   reference snapshot the tautological skip measures. The suppression is
+ *   skipped while an Alt-drag duplication is in progress
+ *   (`stage.altDragDuplicating`) — the duplicate snaps like any other drag.
  *
  * `dispose()` releases the wrapper's own listeners — the overlay painter
  * (`after:render`) and the drag-snapshot resets (`mouse:down` / `mouse:up`) —
@@ -412,8 +414,15 @@ export class SmartGuides extends AligningGuidelines {
     // extension's `setXY` routes through `setPositionByOrigin`, which
     // repositions the object against the passed origin (ADR 0004 pins the
     // origin reset regardless, keeping the restore order-insensitive to
-    // future engine changes).
-    if (e.e && (e.e as MouseEvent).altKey) {
+    // future engine changes). A duplicate drag skips the suppression: Alt
+    // held at press duplicates, and the duplicate snaps like any other drag
+    // (ADR 0004 §duplicate — the suppression is a mid-drag plain-move
+    // affordance, not an attribute of the duplicate gesture).
+    if (
+      e.e &&
+      (e.e as MouseEvent).altKey &&
+      !(this.canvas as StageCanvas).altDragDuplicating
+    ) {
       target.set({
         left: origin.left,
         top: origin.top,

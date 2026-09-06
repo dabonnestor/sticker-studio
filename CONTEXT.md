@@ -80,8 +80,12 @@ Anything a moved object can align to: every other object — Locked, Text, and G
 _Avoid_: anchor, alignment source
 
 **Snap suppression**:
-The state of a drag in which Snap is suspended but the Smart guides stay visible — entered by holding Alt/Option mid-drag, letting the object sit freely within an alignment's tolerance while the guide still marks it.
+The state of a drag in which Snap is suspended but the Smart guides stay visible — entered by holding Alt/Option mid-drag on a plain move (a drag begun with Alt held is a Duplicate instead), letting the object sit freely within an alignment's tolerance while the guide still marks it.
 _Avoid_: snap toggle, snap override
+
+**Duplicate**:
+The copy produced by an Alt-drag: a drag begun with Alt held clones the pressed selection — an object, a Group, or a multi-selection — exactly where it stood and drags the copy, the sources staying put. The copy snaps like any drag (no Snap suppression); the whole gesture commits as one undoable step, and an Alt-click without a drag rolls back to a plain selection.
+_Avoid_: clone, copy, copy in place
 
 ## Graphics source
 

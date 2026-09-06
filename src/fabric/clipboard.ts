@@ -19,13 +19,14 @@ import { bakeTextScale, isTextObject } from "@/fabric/text"
  * offsets them down-right from the source (repeat pastes cascade), and the
  * StageProvider commits the paste as one undoable step (ADR 0001).
  *
- * A clone is a fresh creation, not a duplicate: every id is regenerated
- * (group children too — ADR 0002's stable identity) and the locked flag is
- * cleared at every level — the lock protected the original from accidental
- * edits; the object the user just created must be movable. A multi-selection
- * pastes back as the same set of separate objects (the ActiveSelection
- * serializes as one group-shaped entry and dissolves on paste), and a child
- * copied inside an entered group pastes at top level with its world
+ * A clone is a fresh creation: every id is regenerated (group children too —
+ * ADR 0002's stable identity) and the locked flag is cleared at every level —
+ * the lock protected the original from accidental edits; the object the user
+ * just created must be movable. The same stamp serves the Alt-drag duplicate's
+ * clones (duplicate.ts). A multi-selection pastes back as the same set of
+ * separate objects (the ActiveSelection serializes as one group-shaped entry
+ * and dissolves on paste), and a child copied inside an entered group pastes
+ * at top level with its world
  * transform baked in — the child's coordinates live in the group's plane.
  */
 
@@ -166,10 +167,11 @@ export async function pasteObjects(canvas: StageCanvas): Promise<void> {
 /**
  * Stamp the fresh document identity (ADR 0002) onto a clone and every nested
  * child — the serialized snapshot carries the source ids, which must not be
- * duplicated on the canvas; the stamp also clears the locked flag (a paste is
- * a fresh creation, editable like any new object).
+ * duplicated on the canvas; the stamp also clears the locked flag (a clone is
+ * a fresh creation, editable like any new object). Shared by the paste path
+ * and the Alt-drag duplicate (duplicate.ts).
  */
-function stampCloneTree(obj: FabricObject): void {
+export function stampCloneTree(obj: FabricObject): void {
   stampDocumentProps(obj)
   if (obj instanceof Group) {
     for (const child of obj.getObjects()) stampCloneTree(child)

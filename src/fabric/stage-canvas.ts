@@ -43,6 +43,7 @@ import {
   setLocked as setLockedProps,
   stampDocumentProps,
 } from "@/fabric/document-props"
+import { AltDragDuplicate } from "@/fabric/duplicate"
 import { getTextMeasurer } from "@/fabric/fonts"
 import { History } from "@/fabric/history"
 import { HoverBorder } from "@/fabric/hover-border"
@@ -632,6 +633,24 @@ export class StageCanvas extends Canvas {
    * with the canvas (the canvas-rebuild lifecycle disposes and re-creates).
    */
   smartGuides?: SmartGuides
+
+  /**
+   * True while an Alt-drag duplication gesture is in progress — the press
+   * armed the duplicate and the clone (or the pending source) is the drag's
+   * subject. The smart guides read it: the Alt snap suppression (ADR 0004 —
+   * Alt pressed mid-drag on a plain move) must not engage for a duplicate
+   * drag, where the duplicate snaps like any other drag. Set on `mouse:down`,
+   * cleared on `mouse:up` by the duplicate controller.
+   */
+  altDragDuplicating = false
+
+  /**
+   * The Alt-drag duplication controller — created by the stage factory,
+   * disposed with the canvas (the canvas-rebuild lifecycle disposes and
+   * re-creates, cancelling a still-pending clone). `declare`: set after the
+   * constructor — the factory wires it with the other interactions.
+   */
+  declare altDragDuplicate: AltDragDuplicate
 
   /**
    * The hover-border wrapper — the object under the pointer paints its
@@ -1404,6 +1423,7 @@ export class StageCanvas extends Canvas {
   override dispose(): Promise<boolean> {
     this.smartGuides?.dispose()
     this.hoverBorder?.dispose()
+    this.altDragDuplicate.dispose()
     this.history.dispose()
     return super.dispose()
   }
@@ -1812,6 +1832,14 @@ export function createStageCanvas(
   // the StageProvider commits its structural commands (add, delete, arrange,
   // lock, property commits) through it.
   canvas.history = new History(canvas)
+
+  // Alt-drag duplication: pressing an object with Alt held
+  // and dragging duplicates it — the clone takes over the drag where the
+  // source stood, and the source stays put. Wired here, after the History,
+  // so the gesture's end (object:modified on the clone) is already recorded
+  // as one undoable step (ADR 0001). Disposed with the canvas — a rebuild
+  // must not land a still-pending clone.
+  canvas.altDragDuplicate = new AltDragDuplicate(canvas)
 
   // Group entry (§7 Q5): double-click an unlocked group enters it — children
   // become individually selectable and fixed. The double-click's target is

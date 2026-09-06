@@ -199,6 +199,22 @@ describe("smart-guides snapping", () => {
     expect(canvas.smartGuides!.snappedX).toBe(true)
   })
 
+  it("a duplicate drag keeps snapping — Alt held at press does not suppress", () => {
+    const moved = squareAt(210, 250)
+    const target = squareAt(400, 400)
+    canvas.add(moved, target)
+    // The duplicate gesture (Alt held at press, duplicate.ts): the tick
+    // reads altKey, but the suppression is a mid-drag plain-move affordance
+    // — the duplicate snaps like any move.
+    canvas.altDragDuplicating = true
+    moveTo(canvas, moved, 210, 250)
+    dragTick(canvas, moved, { altKey: true })
+    expect(moved.left).toBe(208) // still snapped — right edge on 304
+    // The guide line for the engaged alignment is recorded.
+    expect(verticalCoords(canvas.smartGuides!)).toContain(304)
+    canvas.altDragDuplicating = false
+  })
+
   it("the drag snapshot resets on mouse:up", () => {
     const moved = squareAt(210, 250)
     const target = squareAt(400, 400)
