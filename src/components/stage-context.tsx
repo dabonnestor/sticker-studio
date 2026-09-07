@@ -81,6 +81,10 @@ import {
   serializeDesignFile,
 } from "@/fabric/design-file"
 import {
+  loadPredesign,
+  type Predesign,
+} from "@/fabric/designs"
+import {
   exportDocument,
   getExportHost,
   type ExportFormat,
@@ -374,6 +378,15 @@ interface StageContextValue {
    * design-file basename from the imported file's name (round-trips Save).
    */
   importDesignFile: (file: { name: string; text: () => Promise<string> }) => Promise<void>
+  /**
+   * Apply a predesign (the sidebar's Designs panel) — the import path with
+   * the file picker replaced by a fetch: the design is fetched and validated
+   * loudly (ADR 0002), then loaded as ONE undoable step, exactly like an
+   * import. The working file's basename follows the design, so Save
+   * round-trips to the same name. A fetch or validation failure reports
+   * clearly and changes nothing.
+   */
+  insertPredesign: (predesign: Predesign) => Promise<void>
   /** The current working file's basename — Save round-trips it (untitled default). */
   designFileName: string
   /**
@@ -1114,33 +1127,25 @@ export function StageProvider({ children }: { children: ReactNode }) {
     [canvas, designFileName, flushPendingTextEdit, reportStatus],
   )
 
-  const importDesignFile = useCallback(
-    async (file: { name: string; text: () => Promise<string> }) => {
+  /**
+   * Load a parsed Design file onto the canvas as ONE undoable step — the
+   * shared tail of an import and a predesign apply (ADR 0002 §6): suspend
+   * recording, flush any pending text edit, `loadEnvelope`, resume, and
+   * commit. Also sets the working file's basename and refreshes the document
+   * mirrors. The caller reports its own status line.
+   */
+  const applyDesignFile = useCallback(
+    async (design: ReturnType<typeof parseDesignFile>, name: string) => {
       if (!canvas?.history) return
-      let text: string
-      try {
-        text = await file.text()
-      } catch {
-        reportStatus("Couldn't read that file")
-        return
-      }
-      let design: ReturnType<typeof parseDesignFile>
-      try {
-        design = parseDesignFile(text)
-      } catch (error) {
-        // Validates loudly (ADR 0002) — unknown types, bad envelope, any
-        // structural break surface here; nothing in the Document changed.
-        reportStatus(error instanceof Error ? error.message : "Invalid design file")
-        return
-      }
-      // Import is ONE undoable step (§8, §10) — undo restores the pre-import
-      // Document. The flush of a pending text edit fires `object:modified`
-      // (a commit boundary), so recording is suspended across the flush and
-      // the load, then the whole import commits as the single step below.
+      // The apply is ONE undoable step (§8, §10) — undo restores the
+      // pre-apply Document. The flush of a pending text edit fires
+      // `object:modified` (a commit boundary), so recording is suspended
+      // across the flush and the load, then the whole apply commits as the
+      // single step below.
       canvas.history.suspendRecording()
       try {
-        // Flush any pending text edit so the pre-import state captures a
-        // committed Document — import replaces the whole Document, and the
+        // Flush any pending text edit so the pre-apply state captures a
+        // committed Document — the apply replaces the whole Document, and the
         // session's hidden textarea would otherwise leak into it.
         flushPendingTextEdit(canvas)
         // loadEnvelope applies the envelope fields and `loadFromJSON` — the
@@ -1160,10 +1165,9 @@ export function StageProvider({ children }: { children: ReactNode }) {
       } finally {
         canvas.history.resumeRecording()
       }
-      // The import as ONE undoable step (ADR 0001) — undo restores the
-      // pre-import Document. The commit dedup skips a no-op.
+      // The apply as ONE undoable step (ADR 0001) — undo restores the
+      // pre-apply Document. The commit dedup skips a no-op.
       canvas.history.commit()
-      const name = designFileBasename(file.name)
       setDesignFileName(name)
       setDocumentSizeState({ width: canvas.width, height: canvas.height })
       setCanvasPropsState({
@@ -1172,16 +1176,59 @@ export function StageProvider({ children }: { children: ReactNode }) {
         borderColor: canvas.borderColor,
       })
       setRotationState(canvas.rotation)
-      reportStatus(`Imported ${name}.json`)
     },
     [
       canvas,
       flushPendingTextEdit,
-      reportStatus,
       setDesignFileName,
       setDocumentSizeState,
       setCanvasPropsState,
     ],
+  )
+
+  const importDesignFile = useCallback(
+    async (file: { name: string; text: () => Promise<string> }) => {
+      if (!canvas?.history) return
+      let text: string
+      try {
+        text = await file.text()
+      } catch {
+        reportStatus("Couldn't read that file")
+        return
+      }
+      let design: ReturnType<typeof parseDesignFile>
+      try {
+        design = parseDesignFile(text)
+      } catch (error) {
+        // Validates loudly (ADR 0002) — unknown types, bad envelope, any
+        // structural break surface here; nothing in the Document changed.
+        reportStatus(error instanceof Error ? error.message : "Invalid design file")
+        return
+      }
+      const name = designFileBasename(file.name)
+      await applyDesignFile(design, name)
+      reportStatus(`Imported ${name}.json`)
+    },
+    [canvas, applyDesignFile, reportStatus],
+  )
+
+  const insertPredesign = useCallback(
+    async (predesign: Predesign) => {
+      if (!canvas?.history) return
+      let design: ReturnType<typeof parseDesignFile>
+      try {
+        // The fetch + loud validation (ADR 0002) — a network failure or a
+        // malformed file explains itself and nothing is applied.
+        design = await loadPredesign(predesign)
+      } catch (error) {
+        reportStatus(error instanceof Error ? error.message : "That design couldn't be loaded")
+        return
+      }
+      const name = designFileBasename(predesign.id)
+      await applyDesignFile(design, name)
+      reportStatus(`Applied ${name}`)
+    },
+    [canvas, applyDesignFile, reportStatus],
   )
 
   // Undo/redo hotkeys (§13): Ctrl+Z / Ctrl+Y walk the document-state stack.
@@ -1436,6 +1483,7 @@ export function StageProvider({ children }: { children: ReactNode }) {
         exitGroup,
         saveDesignFile,
         importDesignFile,
+        insertPredesign,
         exportCurrent,
         designFileName,
         status,
