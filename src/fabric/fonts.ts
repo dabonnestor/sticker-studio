@@ -1,4 +1,4 @@
-import { type Canvas, Group, config } from "fabric"
+import { type Canvas, Group, Textbox, cache, config } from "fabric"
 
 import { FONT_FAMILIES, type FontFamilySpec, type TextMeasureStyle } from "@/fabric/text"
 
@@ -251,12 +251,31 @@ function makeTextMeasurer(): (text: string, style: TextMeasureStyle) => number {
  */
 export function rerenderOnFontsLoaded(canvas: Canvas): void {
   void preloadFonts().then(() => {
+    // Fabric's measuring cache holds per-family char widths measured with
+    // whatever face was loaded at measure time — a Textbox restored before
+    // the webfonts resolved cached fallback-face widths under the real
+    // family's key. Clear it, or the re-measure below would re-read the
+    // fallback widths and keep the wrong wrapping.
+    cache.clearFontCache()
     canvas.forEachObject((obj) => {
+      // A Textbox restored or imported before the webfonts resolve was
+      // measured with the fallback face — its wrapping (and thus its height;
+      // Textbox keeps the box width) is wrong and would stick, since a canvas
+      // never re-measures when a late font lands. Re-measure with the real
+      // face now, so the box matches the face the design was saved with.
+      if (obj instanceof Textbox) {
+        obj.initDimensions()
+        obj.setCoords()
+      }
       obj.dirty = true
       // A group caches its own bitmap on top of the children's — children must
       // be marked too, or the group's cache rows re-blit the stale child caches.
       if (obj instanceof Group) {
         obj.getObjects().forEach((child) => {
+          if (child instanceof Textbox) {
+            child.initDimensions()
+            child.setCoords()
+          }
           child.dirty = true
         })
       }
