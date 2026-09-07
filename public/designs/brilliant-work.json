@@ -17,7 +17,7 @@
         "subTargetCheck": false,
         "interactive": false,
         "id": "fed1ec0d-1894-4e50-a9da-a50ac892d07a",
-        "locked": false,
+        "locked": true,
         "type": "Group",
         "version": "7.4.0",
         "originX": "center",
