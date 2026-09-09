@@ -8,12 +8,12 @@ import { PREDESIGNS, renderPredesignPreview } from "@/fabric/designs"
  * The landing page — the product page for B2B print shops, rendered at `/`
  * (the editor lives at `/editor`, see src/lib/routing.ts). Copy and layout
  * settled in the copy & layout draft (issue #45): Variant A "Classic SaaS" —
- * centered text hero, 4-card feature grid, real-thumbnail predesign gallery,
- * 3-step how-it-works, CTA band. Vocabulary per CONTEXT.md (Export, Cut
- * line, Predesign, Document); branding reuses the app's look (Geist, neutral
- * palette, shadcn components). No screenshots: the hero is text-first and
- * the gallery renders the shipped Predesigns offscreen, exactly as the
- * Designs panel does.
+ * centered text hero, 4-card feature grid, demo video section, real-thumbnail
+ * predesign gallery, 3-step how-it-works, CTA band. Vocabulary per CONTEXT.md
+ * (Export, Cut line, Predesign, Document); branding reuses the app's look
+ * (Geist, neutral palette, shadcn components). No screenshots: the hero is
+ * text-first and the gallery renders the shipped Predesigns offscreen,
+ * exactly as the Designs panel does.
  */
 
 const FEATURES = [
@@ -167,6 +167,36 @@ export function LandingPage() {
                 <p className="mt-1.5 text-sm text-muted-foreground">{f.body}</p>
               </div>
             ))}
+          </div>
+        </section>
+
+        <section className="mx-auto max-w-5xl px-6 py-14">
+          <h2 className="text-center text-2xl font-semibold tracking-tight">
+            See it in action
+          </h2>
+          <p className="mx-auto mt-2 max-w-md text-center text-muted-foreground">
+            A quick walkthrough of the editor — from blank canvas to
+            print-ready Export.
+          </p>
+          <div className="mt-8 overflow-hidden rounded-lg border bg-card shadow-sm">
+            <video
+              src="/sticker-studio-demo.mp4"
+              controls
+              playsInline
+              preload="metadata"
+              className="aspect-video w-full"
+            >
+              <p className="p-4 text-sm text-muted-foreground">
+                Your browser can't play this video.{" "}
+                <a
+                  href="/sticker-studio-demo.mp4"
+                  className="underline underline-offset-4"
+                >
+                  Download the demo video
+                </a>{" "}
+                instead.
+              </p>
+            </video>
           </div>
         </section>
 
