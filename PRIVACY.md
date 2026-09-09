@@ -1,21 +1,29 @@
 # Sticker Studio — Privacy Policy
 
-*Last updated: September 4, 2026*
+*Last updated: September 10, 2026*
 
 Sticker Studio ("we", "us") is a sticker design tool that runs entirely in
-your browser. This policy explains what information we do — and more
-importantly, don't — collect.
+your browser, with a landing page where print shops can get in touch. This
+policy explains what information we do — and more importantly, don't —
+collect.
 
 ## The short version
 
 **We do not collect or store your designs. We have no accounts, no servers
 of our own, no analytics, and no tracking cookies. Everything you create in
-Sticker Studio stays on your device.**
+Sticker Studio stays on your device. The only personal information we
+collect is what you choose to send us through the contact form on the
+landing page.**
 
 ## What we collect
 
-Nothing that identifies you. The App does not require an account, does not
-ask for your name or email, and does not send your designs or uploads to us.
+The App itself collects nothing that identifies you: it does not require an
+account, does not ask for your name or email, and does not send your designs
+or uploads to us.
+
+The landing page's contact form asks for your name, email address, shop
+name, and a message. We only receive this information when you choose to
+submit the form, and we use it solely to reply to your inquiry.
 
 ## Where your data lives
 
@@ -32,6 +40,10 @@ your work survives page refreshes. This data:
 
 ## Third-party services
 
+The landing page's contact form is processed by **Formspree** — your name,
+email address, shop name, and message are sent to Formspree's service, and
+their handling of your data is governed by their own privacy policy.
+
 The App's image search panels are powered by two third-party services:
 
 - **Pixabay** — your search queries and the images you browse are sent to
@@ -44,8 +56,7 @@ services' own client-side examples work. We do not see or log those requests.
 
 ## What we don't do
 
-- We do not sell, rent, or share your personal information — we don't have
-  any to share.
+- We do not sell, rent, or share your personal information.
 - We do not use advertising trackers or analytics.
 - We do not place cookies.
 
@@ -57,7 +68,7 @@ information from children.
 ## Changes to this policy
 
 If this policy changes, the "Last updated" date above will be revised, and
-material changes will be noted on the App's privacy page.
+material changes will be noted on the privacy page at `/privacy`.
 
 ## Contact
 

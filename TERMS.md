@@ -1,6 +1,6 @@
 # Sticker Studio — Terms of Service
 
-*Last updated: September 4, 2026*
+*Last updated: September 10, 2026*
 
 These Terms of Service ("Terms") govern your use of the Sticker Studio web
 application (the "App"). By using the App, you agree to these Terms. If you do
@@ -84,7 +84,9 @@ You agree not to:
 The App does not require an account and does not store your designs on our
 servers. Your working draft and recent uploads are stored locally in your
 own browser's storage and never leave your device unless you choose to export
-them. See our [Privacy Policy](PRIVACY.md) for details.
+them. If you submit the contact form on the landing page, we use the
+information you provide (name, email address, shop name, and message) only
+to reply to your inquiry. See our [Privacy Policy](PRIVACY.md) for details.
 
 ## 7. Disclaimers
 
@@ -122,10 +124,10 @@ termination — including Sections 3, 7, 8, 11, and 12 — will survive.
 ## 10. Changes to These Terms
 
 We may update these Terms from time to time. The current version will always
-be available at the App's terms page, with the "Last updated" date shown
-above. Material changes will be highlighted on that page. Your continued use
-of the App after changes take effect constitutes your acceptance of the
-revised Terms.
+be available at the terms page at `/terms`, with the "Last updated" date
+shown above. Material changes will be highlighted on that page. Your
+continued use of the App after changes take effect constitutes your
+acceptance of the revised Terms.
 
 ## 11. Copyright Infringement
 

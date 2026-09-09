@@ -4,8 +4,9 @@ import { resolveRoute } from "@/lib/routing"
 
 /**
  * The hand-rolled path switch: `/` is the landing page, `/editor` is the
- * editor, anything else redirects to `/`. Trailing slashes normalize so a
- * static host's SPA fallback can serve `/editor/` and `/` alike.
+ * editor, `/privacy` and `/terms` are the legal pages, anything else
+ * redirects to `/`. Trailing slashes normalize so a static host's SPA
+ * fallback can serve `/editor/` and `/` alike.
  */
 describe("resolveRoute", () => {
   it("maps / to the landing page", () => {
@@ -16,8 +17,14 @@ describe("resolveRoute", () => {
     expect(resolveRoute("/editor")).toBe("editor")
   })
 
+  it("maps /privacy and /terms to the legal pages", () => {
+    expect(resolveRoute("/privacy")).toBe("privacy")
+    expect(resolveRoute("/terms")).toBe("terms")
+  })
+
   it("normalizes a trailing slash", () => {
     expect(resolveRoute("/editor/")).toBe("editor")
+    expect(resolveRoute("/privacy/")).toBe("privacy")
   })
 
   it("redirects anything else to /", () => {

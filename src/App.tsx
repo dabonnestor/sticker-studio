@@ -2,13 +2,15 @@ import { useEffect } from "react"
 
 import { AppShell } from "@/components/app-shell"
 import { LandingPage } from "@/components/landing-page"
+import { PrivacyPage, TermsPage } from "@/components/legal-page"
 import { resolveRoute } from "@/lib/routing"
 
 /**
  * The app's entry — a hand-rolled path switch (no router dependency):
- * `/` renders the landing page, `/editor` renders the editor, anything
- * else redirects to `/` (see src/lib/routing.ts). Links between the two
- * are plain anchors — a full page load, so no popstate handling is needed.
+ * `/` renders the landing page, `/editor` renders the editor, `/privacy`
+ * and `/terms` render the legal pages, anything else redirects to `/`
+ * (see src/lib/routing.ts). Links between pages are plain anchors — a
+ * full page load, so no popstate handling is needed.
  */
 function App() {
   const route = resolveRoute(window.location.pathname)
@@ -19,6 +21,8 @@ function App() {
 
   if (route === "editor") return <AppShell />
   if (route === "landing") return <LandingPage />
+  if (route === "privacy") return <PrivacyPage />
+  if (route === "terms") return <TermsPage />
   return null
 }
 

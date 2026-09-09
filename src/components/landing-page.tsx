@@ -1,20 +1,28 @@
-import { useEffect, useState } from "react"
+import { useEffect, useState, type FormEvent } from "react"
 import { Sticker } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
+import { Textarea } from "@/components/ui/textarea"
 import { PREDESIGNS, renderPredesignPreview } from "@/fabric/designs"
 
 /**
- * The landing page — the product page for B2B print shops, rendered at `/`
- * (the editor lives at `/editor`, see src/lib/routing.ts). Copy and layout
- * settled in the copy & layout draft (issue #45): Variant A "Classic SaaS" —
- * centered text hero, 4-card feature grid, demo video section, real-thumbnail
- * predesign gallery, 3-step how-it-works, CTA band. Vocabulary per CONTEXT.md
- * (Export, Cut line, Predesign, Document); branding reuses the app's look
- * (Geist, neutral palette, shadcn components). No screenshots: the hero is
- * text-first and the gallery renders the shipped Predesigns offscreen,
- * exactly as the Designs panel does.
+ * The landing page — the lead page for B2B print shops, rendered at `/`
+ * (the editor lives at `/editor`, see src/lib/routing.ts). The editor is a
+ * free demo of a licensed product; the offer is embedding it in a print
+ * shop's site ("we build a design tool for your sticker shop"). Copy and
+ * layout settled in the lead-gen grilling session: the hero leads with the
+ * offer, every CTA points at the contact form (#contact), and the product
+ * sections (features, demo video, predesign gallery) stay as proof of
+ * capability. Vocabulary per CONTEXT.md (Export, Cut line, Predesign,
+ * Document); branding reuses the app's look (Geist, neutral palette, shadcn
+ * components). No screenshots: the hero is text-first and the gallery
+ * renders the shipped Predesigns offscreen, exactly as the Designs panel
+ * does.
  */
+
+/** Formspree endpoint — create a form at formspree.io and paste its ID here. */
+const FORM_ENDPOINT = "https://formspree.io/f/YOUR_FORM_ID"
 
 const FEATURES = [
   {
@@ -37,16 +45,16 @@ const FEATURES = [
 
 const STEPS = [
   {
-    title: "Pick a Predesign or start blank",
-    body: "Customers open the editor and choose where to start.",
+    title: "Tell us about your shop",
+    body: "You tell us what you sell and how orders flow today.",
   },
   {
-    title: "Design in the browser",
-    body: "Shapes, text, and artwork from the catalog. The Cut line is drawn for you.",
+    title: "We embed the design tool in your site",
+    body: "Your customers design print-ready files in the browser, on your website.",
   },
   {
-    title: "Export print-ready files",
-    body: "300 DPI PNG, JPEG, PDF, or SVG, sized to the Document.",
+    title: "Your customers design, you print",
+    body: "Orders keep flowing through your existing workflow.",
   },
 ]
 
@@ -70,8 +78,12 @@ function usePredesignThumbnails() {
   return thumbs
 }
 
-/** The site header — logo left, CTA right. */
-function SiteNav() {
+/**
+ * The site header — logo left, lead CTA right. Shared with the legal
+ * pages, which point the CTA back at the landing page's contact section
+ * via `/#contact`.
+ */
+export function SiteNav({ ctaHref = "#contact" }: { ctaHref?: string }) {
   return (
     <header className="flex h-14 items-center gap-2 border-b bg-background px-6">
       <div className="flex items-center gap-2">
@@ -80,7 +92,7 @@ function SiteNav() {
       </div>
       <div className="flex-1" />
       <Button asChild size="sm">
-        <a href="/editor">Open the editor</a>
+        <a href={ctaHref}>Get it in your shop</a>
       </Button>
     </header>
   )
@@ -114,20 +126,113 @@ function GalleryTile({
   )
 }
 
-function SiteFooter() {
+/**
+ * The lead form — posts to Formspree (see FORM_ENDPOINT) and swaps to a
+ * success state on submit. Four fields: name, email, shop, and the ask.
+ */
+function ContactForm() {
+  const [status, setStatus] = useState<"idle" | "submitting" | "success" | "error">(
+    "idle",
+  )
+
+  const onSubmit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    const form = event.currentTarget
+    setStatus("submitting")
+    try {
+      const response = await fetch(FORM_ENDPOINT, {
+        method: "POST",
+        body: new FormData(form),
+        headers: { Accept: "application/json" },
+      })
+      if (!response.ok) throw new Error(`Form submission failed: ${response.status}`)
+      form.reset()
+      setStatus("success")
+    } catch {
+      setStatus("error")
+    }
+  }
+
+  if (status === "success") {
+    return (
+      <p className="mx-auto mt-8 max-w-md rounded-lg border bg-card p-6 text-sm text-muted-foreground">
+        Thanks — we'll be in touch.
+      </p>
+    )
+  }
+
+  return (
+    <form
+      onSubmit={onSubmit}
+      className="mx-auto mt-8 max-w-xl rounded-lg border bg-card p-6 text-left"
+    >
+      <input type="hidden" name="_subject" value="Sticker Studio — integration inquiry" />
+      <div className="grid gap-4 sm:grid-cols-2">
+        <label className="grid gap-1.5 text-sm font-medium">
+          Name
+          <Input name="name" required autoComplete="name" className="h-10 text-sm" />
+        </label>
+        <label className="grid gap-1.5 text-sm font-medium">
+          Email
+          <Input
+            type="email"
+            name="email"
+            required
+            autoComplete="email"
+            className="h-10 text-sm"
+          />
+        </label>
+        <label className="grid gap-1.5 text-sm font-medium">
+          Shop
+          <Input
+            name="shop"
+            required
+            autoComplete="organization"
+            className="h-10 text-sm"
+          />
+        </label>
+        <label className="grid gap-1.5 text-sm font-medium sm:col-span-2">
+          What do you need?
+          <Textarea name="message" required rows={4} className="text-sm" />
+        </label>
+      </div>
+      <div className="mt-6 flex items-center gap-4">
+        <Button type="submit" size="lg" disabled={status === "submitting"}>
+          {status === "submitting" ? "Sending…" : "Get in touch"}
+        </Button>
+        {status === "error" && (
+          <p className="text-sm text-destructive">
+            Something went wrong — please try again.
+          </p>
+        )}
+      </div>
+    </form>
+  )
+}
+
+/** The site footer — copyright, legal links, and the lead CTA. */
+export function SiteFooter() {
   return (
     <footer className="border-t bg-background">
-      <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-6 text-sm text-muted-foreground">
+      <div className="mx-auto flex max-w-6xl flex-col items-center justify-between gap-3 px-6 py-6 text-sm text-muted-foreground sm:flex-row">
         <span>© {new Date().getFullYear()} Sticker Studio</span>
-        <a href="mailto:hello@stickerstudio.app" className="underline-offset-4 hover:underline">
-          Get in touch
-        </a>
+        <nav className="flex items-center gap-4">
+          <a href="/privacy" className="underline-offset-4 hover:underline">
+            Privacy
+          </a>
+          <a href="/terms" className="underline-offset-4 hover:underline">
+            Terms
+          </a>
+          <a href="#contact" className="underline-offset-4 hover:underline">
+            Get in touch
+          </a>
+        </nav>
       </div>
     </footer>
   )
 }
 
-/** The landing page — Variant A "Classic SaaS" (settled in issue #45). */
+/** The landing page — lead-gen for print shops (settled in the grilling session). */
 export function LandingPage() {
   const thumbs = usePredesignThumbnails()
 
@@ -143,22 +248,22 @@ export function LandingPage() {
             Let your customers design their own stickers.
           </h1>
           <p className="mx-auto mt-5 max-w-xl text-lg text-muted-foreground">
-            Sticker Studio is a design tool you put in front of your customers.
-            They design print-ready files in the browser — you print them.
+            We build a design tool for your sticker shop. Your customers
+            design print-ready files in the browser — you print them.
           </p>
           <div className="mt-8 flex items-center justify-center gap-3">
             <Button asChild size="lg">
-              <a href="/editor">Open the editor</a>
+              <a href="#contact">Get it in your shop</a>
             </Button>
             <Button asChild variant="outline" size="lg">
-              <a href="#designs">See the designs</a>
+              <a href="/editor">Try the demo</a>
             </Button>
           </div>
         </section>
 
         <section className="mx-auto max-w-5xl px-6 py-14">
           <h2 className="text-center text-2xl font-semibold tracking-tight">
-            Print-ready, from the first click
+            What your customers get
           </h2>
           <div className="mt-8 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
             {FEATURES.map((f) => (
@@ -175,8 +280,8 @@ export function LandingPage() {
             See it in action
           </h2>
           <p className="mx-auto mt-2 max-w-md text-center text-muted-foreground">
-            A quick walkthrough of the editor — from blank canvas to
-            print-ready Export.
+            What your customers will use — from blank canvas to print-ready
+            Export.
           </p>
           <div className="mt-8 overflow-hidden rounded-lg border bg-card shadow-sm">
             <video
@@ -234,15 +339,15 @@ export function LandingPage() {
           </div>
         </section>
 
-        <section className="mx-auto max-w-3xl px-6 py-16 text-center">
+        <section id="contact" className="mx-auto max-w-3xl px-6 py-16 text-center">
           <h2 className="text-3xl font-semibold tracking-tight">
-            Ready to put a design tool in front of your customers?
+            Get it in your shop
           </h2>
-          <div className="mt-6">
-            <Button asChild size="lg">
-              <a href="/editor">Open the editor</a>
-            </Button>
-          </div>
+          <p className="mx-auto mt-3 max-w-xl text-muted-foreground">
+            Tell us about your shop and what you'd like to build — we'll reply
+            with how it would work and what it costs.
+          </p>
+          <ContactForm />
         </section>
       </main>
       <SiteFooter />
