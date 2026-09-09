@@ -79,17 +79,17 @@ function usePredesignThumbnails() {
 }
 
 /**
- * The site header — logo left, lead CTA right. Shared with the legal
- * pages, which point the CTA back at the landing page's contact section
- * via `/#contact`.
+ * The site header — logo left (linking to `/`), lead CTA right. Shared
+ * with the About and legal pages, which point the CTA back at the landing
+ * page's contact section via `/#contact`.
  */
 export function SiteNav({ ctaHref = "#contact" }: { ctaHref?: string }) {
   return (
     <header className="flex h-14 items-center gap-2 border-b bg-background px-6">
-      <div className="flex items-center gap-2">
+      <a href="/" className="flex items-center gap-2">
         <Sticker className="size-5 text-primary" aria-hidden />
         <span className="text-sm font-semibold tracking-tight">Sticker Studio</span>
-      </div>
+      </a>
       <div className="flex-1" />
       <Button asChild size="sm">
         <a href={ctaHref}>Get it in your shop</a>
@@ -210,20 +210,23 @@ function ContactForm() {
   )
 }
 
-/** The site footer — copyright, legal links, and the lead CTA. */
+/** The site footer — copyright, page links, and the lead CTA. */
 export function SiteFooter() {
   return (
     <footer className="border-t bg-background">
       <div className="mx-auto flex max-w-6xl flex-col items-center justify-between gap-3 px-6 py-6 text-sm text-muted-foreground sm:flex-row">
         <span>© {new Date().getFullYear()} Sticker Studio</span>
         <nav className="flex items-center gap-4">
+          <a href="/about" className="underline-offset-4 hover:underline">
+            About
+          </a>
           <a href="/privacy" className="underline-offset-4 hover:underline">
             Privacy
           </a>
           <a href="/terms" className="underline-offset-4 hover:underline">
             Terms
           </a>
-          <a href="#contact" className="underline-offset-4 hover:underline">
+          <a href="/#contact" className="underline-offset-4 hover:underline">
             Get in touch
           </a>
         </nav>
