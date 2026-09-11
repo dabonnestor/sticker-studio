@@ -43,12 +43,19 @@ interface ColorValues {
  * inside the popover below the color controls (the border width slider).
  * Skimming the popover previews live through onApply — applied without
  * recording, so dragging never pollutes the undo stack (§8). The session
- * commits exactly one undoable step when the popover closes, by any gesture
- * (click outside, Escape, selecting a format): the close always fires
- * onOpenChange(false), which commits the last valid color through onChange.
- * An untouched close commits the same value, which history.commit() dedups
- * to a no-op; a partial or invalid typed hex never commits, so it can't leak
- * into the document.
+ * commits one undoable step when the popover closes, by any gesture (click
+ * outside, Escape, selecting a format): the close fires onOpenChange(false),
+ * which commits the session's color through onChange.
+ *
+ * Only a real change commits. A session that left the color as it found it —
+ * a skim, or a color re-entered unchanged — is not an interaction boundary
+ * (ADR 0001), and recording it stacks a step that undoes to an identical
+ * document: the next undo would look dead (setting the document border to
+ * 16px then undoing needed two presses). Hex case is a spelling, not a color,
+ * so every comparison here ignores it — the picker's own fields respell
+ * uppercase, and the document keeps its own spelling until the user picks a
+ * different color. A partial or invalid typed hex never commits, so it can't
+ * leak into the document.
  */
 function ColorPicker({
   value,
@@ -78,12 +85,20 @@ function ColorPicker({
   })
   const [hexInputValue, setHexInputValue] = useState(value)
   const [hexInputError, setHexInputError] = useState<string | null>(null)
-  // The last valid full hex — what the session commits on popover close.
+  // The last valid full hex — what the session commits on popover close. It
+  // holds the document's own spelling until the user picks a color, so a
+  // commit of an unpicked color is the value the document already has.
   const lastValidRef = useRef(value)
+  // The color the document held when the card opened — the session's
+  // baseline. The close commits only a change against it.
+  const sessionStartRef = useRef(value)
   const onApplyRef = useRef(onApply)
   onApplyRef.current = onApply
   const onChangeRef = useRef(onChange)
   onChangeRef.current = onChange
+
+  /** True when two hex colors are the same color, spelling aside. */
+  const sameColor = (a: string, b: string) => a.toUpperCase() === b.toUpperCase()
 
   const updateColorValues = (newColor: string) => {
     const rgb = hexToRgb(newColor)
@@ -97,8 +112,14 @@ function ColorPicker({
 
   /** Apply a valid color live (no history) and remember it for the commit. */
   const apply = (newColor: string) => {
+    const previous = lastValidRef.current
     updateColorValues(newColor)
     lastValidRef.current = newColor.toUpperCase()
+    // Re-entering the color already in the document writes nothing: the
+    // preview would only respell it, leaving the document differing from the
+    // top of the undo stack by hex case — a difference the next commit would
+    // then record as a step of its own.
+    if (sameColor(newColor, previous)) return
     onApplyRef.current(newColor)
   }
 
@@ -143,12 +164,18 @@ function ColorPicker({
   }
 
   // The popover close is the commit boundary — one undoable step, by any
-  // gesture (ADR 0001 §8).
+  // gesture (ADR 0001 §8) — but only for a session that changed the color.
+  // Opening anchors the baseline; a close that finds the color where it
+  // started records nothing (see the class doc).
   const handlePopoverChange = (open: boolean) => {
-    if (!open) {
-      setColorFormat("HEX")
-      onChangeRef.current(lastValidRef.current)
+    if (open) {
+      sessionStartRef.current = lastValidRef.current
+      return
     }
+    setColorFormat("HEX")
+    const color = lastValidRef.current
+    if (sameColor(color, sessionStartRef.current)) return
+    onChangeRef.current(color)
   }
 
   type EyeDropperApi = { open: () => Promise<{ sRGBHex: string }> }
@@ -180,7 +207,11 @@ function ColorPicker({
     if (value.toUpperCase() === colorValues.hex) return
     updateColorValues(value)
     setHexInputValue(value.toUpperCase())
-    lastValidRef.current = value.toUpperCase()
+    // Verbatim, not uppercased: the picker's display normalizes, but what it
+    // holds for the commit stays the document's own spelling — a value
+    // restored from outside mid-session (an undo with the card open) then
+    // commits back as the value the document already has.
+    lastValidRef.current = value
   }, [value])
 
   return (

@@ -57,3 +57,16 @@ if (typeof HTMLCanvasElement !== "undefined") {
     return null
   }
 }
+
+// jsdom ships no ResizeObserver either; Radix's popper content (the color
+// card) measures its anchor with one on mount. The component tests that drive
+// the real toolbar pickers need the constructor to exist — nothing in those
+// tests asserts on measured geometry, so a no-op observer is enough.
+if (typeof globalThis.ResizeObserver === "undefined") {
+  class ResizeObserverStub {
+    observe() {}
+    unobserve() {}
+    disconnect() {}
+  }
+  globalThis.ResizeObserver = ResizeObserverStub as unknown as typeof ResizeObserver
+}
