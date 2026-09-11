@@ -10,6 +10,7 @@ import {
   applyTextProps,
   createText,
   TEXT_DEFAULT_FAMILY,
+  TEXT_FILL,
   type TextMeasurer,
 } from "@/fabric/text"
 
@@ -190,6 +191,34 @@ describe("history — snapshot stack", () => {
     // And the redo still walks forward to the pre-undo state.
     await canvas.history.redo()
     expect(canvas.getObjects().length).toBe(1)
+  })
+
+  it("a deselect flushes a pending preview — and a plain deselect is no step", async () => {
+    // The color pickers apply live without recording and commit on their
+    // popover's close; the click-away that closes them is a deselect, which
+    // unmounts the picker before its popover's deferred dismissal can commit.
+    // The deselect is where the orphaned preview lands.
+    const obj = addSquare(100, 100)
+    const id = obj.id
+    obj.set({ fill: "#ff0000" }) // the picker's live preview
+    canvas.discardActiveObject()
+    canvas.fire("selection:cleared", { deselected: [obj] })
+
+    await canvas.history.undo()
+    expect(canvas.getObjects().find((o) => o.id === id)?.get("fill")).toBe(
+      DEFAULT_FILL,
+    )
+
+    // Selection is view state: a deselect with nothing pending pushes nothing
+    // (the commit's dedup), so it never becomes a step of its own.
+    const square = canvas.getObjects()[0]
+    canvas.setActiveObject(square)
+    canvas.history.commit()
+    canvas.discardActiveObject()
+    canvas.fire("selection:cleared", { deselected: [square] })
+    await canvas.history.undo()
+    expect(canvas.getObjects().length).toBe(0)
+    expect(canvas.history.canUndo).toBe(false)
   })
 
   it("a delete boundary is one undoable step", async () => {
@@ -392,6 +421,64 @@ describe("history — text sessions", () => {
       .getObjects()
       .find((o) => o.id === id) as ReturnType<typeof createText>
     expect(redone.text).toBe("longer content")
+  })
+
+  it("a toolbar press ends the session first — the typing keeps its own step", async () => {
+    const id = textbox.id
+    textbox.enterEditing()
+    textbox.selectAll()
+    type("hello")
+
+    // The user clicks the toolbar's color swatch — a press on the app chrome,
+    // outside the canvas. Fabric ends a session only for presses on its own
+    // canvas, so the click-away rule (wireTextInteractions) must end it here,
+    // committing the typing as its own step before the color commit lands.
+    document.body.dispatchEvent(new MouseEvent("mousedown", { bubbles: true }))
+    expect(textbox.isEditing).toBe(false)
+
+    // The picker's close — the toolbar's own commit (§8).
+    applyTextProps(textbox, { fillColor: "#ff0000" }, measure)
+    canvas.history.commit()
+
+    // Undo undoes the color, not the typing.
+    await canvas.history.undo()
+    const restored = canvas
+      .getObjects()
+      .find((o) => o.id === id) as ReturnType<typeof createText>
+    expect(restored.text).toBe("hello")
+    expect(restored.fill).toBe(TEXT_FILL)
+    // The typing is still one step below — undo walks back to the placeholder.
+    expect(canvas.history.canUndo).toBe(true)
+    await canvas.history.undo()
+    expect(
+      (canvas.getObjects().find((o) => o.id === id) as ReturnType<typeof createText>)
+        .text,
+    ).toBe("Text")
+  })
+
+  it("a color preview orphaned by the closing deselect is its own step", async () => {
+    const id = textbox.id
+    textbox.enterEditing()
+    textbox.selectAll()
+    type("hello")
+    // The toolbar press ends the session — the typing becomes its own step.
+    document.body.dispatchEvent(new MouseEvent("mousedown", { bubbles: true }))
+
+    // The picker applies live without recording (ADR 0001, §8)…
+    applyTextProps(textbox, { fillColor: "#ff0000" }, measure)
+    // …and the click-away that closes it is a deselect — the picker is
+    // unmounted with the toolbar's section before its popover's deferred
+    // dismissal can commit, so the deselect is where the preview lands.
+    canvas.discardActiveObject()
+    canvas.fire("selection:cleared", { deselected: [textbox] })
+
+    // Undo undoes the color — the typing survives below it.
+    await canvas.history.undo()
+    const restored = canvas
+      .getObjects()
+      .find((o) => o.id === id) as ReturnType<typeof createText>
+    expect(restored.text).toBe("hello")
+    expect(restored.fill).toBe(TEXT_FILL)
   })
 
   it("a session exit mid-skim records nothing — only the click does", async () => {

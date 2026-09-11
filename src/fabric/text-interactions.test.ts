@@ -1,5 +1,5 @@
 import { Canvas, Textbox, type Object as FabricObject } from "fabric"
-import { afterEach, beforeEach, describe, expect, it } from "vitest"
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
 import { groupObjects } from "@/fabric/groups"
 import { createShape } from "@/fabric/shapes"
@@ -146,6 +146,47 @@ describe("wireTextInteractions — session lifecycle", () => {
     edit()
     type("hello world")
     expect(textbox.width).toBe(42) // still the creation width
+  })
+
+  it("a press on the app chrome is a click-away — the session exits", () => {
+    // The app chrome (the toolbar's property controls) never reaches Fabric:
+    // without the click-away rule the session would stay open and the typed
+    // text would fold into the chrome's next commit instead of being its own
+    // undoable step. The boundary event is Fabric's own — the History's
+    // listener (object:modified, fired when the session's text changed).
+    const modified = vi.fn()
+    canvas.on("object:modified", modified)
+    edit()
+    type("hello")
+    document.body.dispatchEvent(new MouseEvent("mousedown", { bubbles: true }))
+    expect(textbox.isEditing).toBe(false)
+    expect(textbox.text).toBe("hello")
+    expect(modified).toHaveBeenCalledTimes(1)
+  })
+
+  it("a press on the canvas wrapper is Fabric's own — the session stays open", () => {
+    // The click-away rule must not fire for presses inside the canvas: those
+    // run Fabric's own pipeline, whose deselect path ends the session (or
+    // keeps it — a press on the text itself moves the caret). Fabric listens
+    // on the upper canvas, and the wrapper holds it — so the containment
+    // check covers the whole press surface.
+    expect(canvas.wrapperEl.contains(canvas.upperCanvasEl)).toBe(true)
+    document.body.appendChild(canvas.wrapperEl)
+    edit()
+    canvas.lowerCanvasEl.dispatchEvent(new MouseEvent("mousedown", { bubbles: true }))
+    expect(textbox.isEditing).toBe(true)
+    document.body.removeChild(canvas.wrapperEl)
+  })
+
+  it("a press after a mid-session canvas dispose is inert", async () => {
+    // Fabric's dispose runs exitEditingImpl, which fires no editing:exited —
+    // the session's teardown never runs, so the click-away rule is still
+    // attached to the document. A press then must be a no-op: the rule
+    // detaches itself rather than reaching into the disposed canvas.
+    edit()
+    await canvas.dispose()
+    expect(textbox.isEditing).toBe(false)
+    document.body.dispatchEvent(new MouseEvent("mousedown", { bubbles: true }))
   })
 
   it("plain Enter is a newline, not a commit", () => {

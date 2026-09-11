@@ -21,10 +21,12 @@ import {
  * - **Text session**: one interaction boundary. Entering captures the
  *   pre-session text; exiting commits — everything typed is one undoable
  *   step (the undo build snapshots on `text:editing:exited`) — unless the
- *   session was reverted: Escape restores the pre-session state. Blur /
- *   click-away / Ctrl+Enter commit; Escape reverts; in-session Ctrl+Z stays
- *   field-local (Fabric never forwards it); Enter inserts a newline
- *   (native). Empty-on-exit restores "Text".
+ *   session was reverted: Escape restores the pre-session state. Click-away /
+ *   Ctrl+Enter commit; Escape reverts; in-session Ctrl+Z stays field-local
+ *   (Fabric never forwards it); Enter inserts a newline (native).
+ *   Empty-on-exit restores "Text". A click-away is any press outside the
+ *   canvas — the presses Fabric's own deselect path never sees (see
+ *   `onDocumentMouseDown`).
  * - **Auto-fit / auto width**: the box hugs its content at creation, live
  *   on every keystroke while typing — no fixed-width wrap restriction — and
  *   again at the end of every committed session, while it has never been
@@ -172,6 +174,40 @@ export function wireTextInteractions(
       ta.setSelectionRange(Math.min(start, upper.length), Math.min(end, upper.length))
     }
 
+    // Click-away ends the session (§6 "Blur / click-away / Ctrl+Enter
+    // commit"). Fabric's blur does not — the hidden textarea's blur handler
+    // only aborts the cursor animation — and Fabric ends a session itself
+    // only for a press on its own canvas (the deselect path). A press on the
+    // app chrome — the toolbar's property controls, the sidebar, the top bar
+    // — never reaches Fabric, so the session would stay open, the typed text
+    // would never become its own step, and the next chrome commit would fold
+    // it into its snapshot: undo would jump back past the typing (changing a
+    // color after typing undid the typing, not the color). A press outside
+    // the canvas wrapper is that click-away — in the capture phase, so the
+    // session commits before the pressed control's own handler runs.
+    const onDocumentMouseDown = (event: MouseEvent) => {
+      if (!obj.isEditing) {
+        // The session ended without the cleanup below running — a canvas
+        // disposed mid-session (Fabric's dispose runs exitEditingImpl, which
+        // fires no editing:exited, so the session's teardown is skipped).
+        // There is nothing left to end: detach, or a rebuild would stack one
+        // stale listener per navigation.
+        textarea.ownerDocument.removeEventListener(
+          "mousedown",
+          onDocumentMouseDown,
+          true,
+        )
+        return
+      }
+      const target = event.target as Node | null
+      // The hidden textarea is the session's own input surface, appended to
+      // the body — never a click-away. Presses on the canvas wrapper are
+      // Fabric's own (its deselect path ends the session there).
+      if (!target || target === textarea || canvas.wrapperEl.contains(target)) return
+      obj.exitEditing()
+    }
+    textarea.ownerDocument.addEventListener("mousedown", onDocumentMouseDown, true)
+
     // Auto width while typing (§6): Fabric fires `text:changed` on the canvas
     // after every keystroke syncs into the object — re-fit the box there, so
     // it grows (and shrinks) with the content instead of wrapping at the
@@ -195,6 +231,11 @@ export function wireTextInteractions(
       textarea.removeEventListener("keydown", onKeyDown, true)
       textarea.removeEventListener("input", onInput, true)
       canvas.off("text:changed", onTextChanged)
+      textarea.ownerDocument.removeEventListener(
+        "mousedown",
+        onDocumentMouseDown,
+        true,
+      )
     }
   })
 

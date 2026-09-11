@@ -29,6 +29,17 @@ import { loadEnvelope } from "@/fabric/design-file"
  * and a no-op gesture or property commit would make undo appear dead. The
  * comparison is the serializable state only — the selection is view state, so
  * a selection-only change is never a step.
+ *
+ * A deselect flushes a pending property preview (`selection:cleared`): the
+ * color pickers apply live without recording and commit on their popover's
+ * close, but the click-away that closes them is also a deselect — and the
+ * deselect unmounts the picker (the toolbar hides an object's property
+ * section once nothing is selected) before the popover's deferred dismissal
+ * can fire. The preview would be orphaned: applied to the object, never
+ * recorded, so the next undo would jump past it (changing a text's color and
+ * undoing undid the typing instead of the color). The deselect is where that
+ * preview lands — and the dedup above keeps a plain deselect a no-op, so a
+ * selection change is still never a step of its own.
  */
 
 /** Fixed history depth — the oldest snapshots are dropped (ADR 0001, §8). */
@@ -154,6 +165,11 @@ export class History {
     this.commit()
   }
 
+  /** The deselect flush listener, named so dispose can detach it. */
+  private readonly onSelectionCleared = () => {
+    this.commit()
+  }
+
   constructor(canvas: Canvas) {
     this.canvas = canvas
     // The end of a move/scale/rotate gesture — and of a committed text
@@ -161,6 +177,12 @@ export class History {
     // is one interaction boundary (ADR 0001). A reverted session leaves the
     // document back at the top of the stack, so the commit's dedup skips it.
     canvas.on("object:modified", this.onObjectModified)
+    // A deselect flushes a pending property preview (see the class doc). The
+    // event lands after Fabric's own deselect work — `onDeselect` runs the
+    // text session's exit commit first — so the flush records the settled
+    // document and dedups against that commit instead of splitting the
+    // session into two steps.
+    canvas.on("selection:cleared", this.onSelectionCleared)
     // Seed the initial state: the stack's previous entry is the pre-
     // interaction state, so the first edit's undo must have an entry to
     // restore to — the empty Document this canvas starts from.
@@ -245,6 +267,7 @@ export class History {
    */
   dispose(): void {
     this.canvas.off("object:modified", this.onObjectModified)
+    this.canvas.off("selection:cleared", this.onSelectionCleared)
     this.onChange = undefined
   }
 
