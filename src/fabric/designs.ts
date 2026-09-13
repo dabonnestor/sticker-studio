@@ -1,5 +1,5 @@
 import { getExportHost } from "@/fabric/export"
-import { parseDesignFile, type DesignFileV1 } from "@/fabric/design-file"
+import { parseDesignFile, type DesignFileV2 } from "@/fabric/design-file"
 import { preloadFonts } from "@/fabric/fonts"
 
 /**
@@ -39,7 +39,7 @@ export const PREDESIGNS: readonly Predesign[] = [
 type FetchFn = (url: string) => Promise<Response>
 
 /** The parsed designs, keyed by id — an apply never re-fetches. */
-const designCache = new Map<string, DesignFileV1>()
+const designCache = new Map<string, DesignFileV2>()
 
 /**
  * Fetch and parse a predesign — the import path's read+validate, with the
@@ -51,7 +51,7 @@ const designCache = new Map<string, DesignFileV1>()
 export async function loadPredesign(
   predesign: Predesign,
   fetchFn: FetchFn = (url) => fetch(url),
-): Promise<DesignFileV1> {
+): Promise<DesignFileV2> {
   const cached = designCache.get(predesign.id)
   if (cached) return cached
   let text: string
@@ -95,6 +95,8 @@ export async function renderPredesignPreview(predesign: Predesign): Promise<stri
       rotation: design.rotation,
       borderWidth: design.border.width,
       borderColor: design.border.color,
+      outline: design.outline.outline,
+      aspectLocked: design.outline.aspectLocked,
       payload: design.canvas,
     })
     // The multiplier scales the canvas's own size (the rotated bounds) down

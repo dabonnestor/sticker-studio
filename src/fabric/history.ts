@@ -6,6 +6,7 @@ import {
 } from "fabric"
 
 import { loadEnvelope } from "@/fabric/design-file"
+import { type OutlineKind } from "@/fabric/outline"
 
 /**
  * Snapshot-based undo/redo (ADR 0001, build spec §8). Fabric ships no
@@ -47,8 +48,9 @@ export const HISTORY_DEPTH = 100
 
 /**
  * One document-state snapshot — the canvas payload plus the envelope (§8).
- * The envelope fields — size, rotation, and the document border — are
- * document state, snapshotted alongside the canvas payload (ADR 0002).
+ * The envelope fields — size, rotation, the document border, and the document
+ * outline — are document state, snapshotted alongside the canvas payload
+ * (ADR 0002, map #48).
  */
 export interface HistoryEntry {
   /** `canvas.toJSON()` — the canvas payload, restored verbatim. */
@@ -61,6 +63,9 @@ export interface HistoryEntry {
   borderColor: string
   /** Document rotation in degrees — envelope-owned (ADR 0002). */
   rotation: number
+  /** The Document's outline (map #48) — envelope-owned (ADR 0002). */
+  outline: OutlineKind
+  aspectLocked: boolean
   /** Object ids to reselect after restore — selection is never serialized. */
   selectionIds: string[]
 }
@@ -79,6 +84,8 @@ function entriesEqual(a: HistoryEntry, b: HistoryEntry): boolean {
     a.borderWidth === b.borderWidth &&
     a.borderColor === b.borderColor &&
     a.rotation === b.rotation &&
+    a.outline === b.outline &&
+    a.aspectLocked === b.aspectLocked &&
     JSON.stringify(a.payload) === JSON.stringify(b.payload)
   )
 }
@@ -218,6 +225,8 @@ export class History {
       borderWidth: this.canvas.borderWidth,
       borderColor: this.canvas.borderColor,
       rotation: this.canvas.rotation,
+      outline: this.canvas.outline,
+      aspectLocked: this.canvas.aspectLocked,
       selectionIds: this.canvas.getActiveObjects().map((obj) => obj.id),
     }
     const top = this.undoStack[this.undoStack.length - 1]

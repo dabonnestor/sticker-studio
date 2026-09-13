@@ -18,9 +18,9 @@
  * else the viewBox aspect), never from the browser's natural-size report —
  * the engine disagreement is exactly what this path replaces. The long edge
  * is generous because the redraw is a vector upsample: a tiny icon re-renders
- * crisply at full size, and the 2048 px covers the 300-DPI export of the
- * default 600×600 Document's 80% fit (480 placed px → 1500 raster px) with
- * headroom for larger documents.
+ * crisply at full size, and the 2048 px covers the 300-DPI export of a
+ * 600×600 Document's 80% fit (480 placed px → 1500 raster px) with headroom
+ * to spare for the smaller boot Square and for larger documents.
  *
  * Browser-only: decoding and the canvas 2D context need a real DOM, which
  * jsdom does not provide, so the DOM half (`rasterizeSvgToPng`) is

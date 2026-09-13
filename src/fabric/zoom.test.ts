@@ -324,6 +324,12 @@ describe("StageCanvas zoom", () => {
       document.createElement("canvas"),
       workspace,
     )
+    // The suite's geometry is written in 600×600 coordinates, so the Document
+    // is sized to them here. It *boots* at the Square preset's 192×192
+    // (map #48) — the zoom contract is size-parametric, and asserting it at a
+    // size the tests do not have to re-derive keeps the expected numbers
+    // readable.
+    canvas.setDimensions({ width: 600, height: 600 })
   })
 
   afterEach(async () => {

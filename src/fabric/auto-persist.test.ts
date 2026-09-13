@@ -2,7 +2,8 @@ import { type Canvas } from "fabric"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
 import { registerCustomProperties } from "@/fabric/custom-properties"
-import { serializeDesignFile } from "@/fabric/design-file"
+import { DESIGN_FILE_VERSION, serializeDesignFile } from "@/fabric/design-file"
+import { STICKER_PRESETS } from "@/fabric/outline"
 import { createShape } from "@/fabric/shapes"
 import {
   createStageCanvas,
@@ -59,7 +60,7 @@ describe("auto-persist — working draft", () => {
     expect(raw).toBeTruthy()
     const stored = JSON.parse(raw!) as { format: string; version: number; canvas: { objects: unknown[] } }
     expect(stored.format).toBe("sticker-studio")
-    expect(stored.version).toBe(1)
+    expect(stored.version).toBe(DESIGN_FILE_VERSION)
     expect(stored.canvas.objects).toHaveLength(1)
   })
 
@@ -125,6 +126,136 @@ describe("auto-persist — working draft", () => {
     expect(stored.canvas.background).toBe("#fef2f2")
     expect(stored.border).toEqual({ width: 4, color: "#ff0000" })
     expect(stored.rotation).toBe(90)
+  })
+
+  /** The five presets New creates at a fixed sheet — Custom aside. */
+  const Presets = [
+    "square",
+    "rectangle",
+    "rounded-corner",
+    "oval",
+    "circle",
+  ] as const
+
+  /**
+   * A factory-fresh sheet of the given preset — exactly what New creates: the
+   * preset's outline state at its Default size, and nothing else. An explicit
+   * size overrides the Default, which is what a *Custom* New produces: rect +
+   * free at whatever the user typed (Custom is that state, so `rectangle` is
+   * the preset entry a Custom sheet is built from).
+   */
+  function freshSheet(
+    preset: (typeof Presets)[number],
+    customSize?: { width: number; height: number },
+  ) {
+    const canvas = createStageCanvas(
+      document.createElement("canvas"),
+      document.createElement("canvas"),
+    )
+    const spec = STICKER_PRESETS[preset]
+    canvas.outline = spec.outline
+    canvas.aspectLocked = spec.aspectLocked
+    canvas.setDimensions(customSize ?? spec.size ?? { width: 192, height: 192 })
+    return canvas
+  }
+
+  it("a factory-fresh sheet of every preset is blank — the boot sheet included", () => {
+    // The predicate reads the preset, not one fixed 600×600 sheet (map #48):
+    // a fresh sheet of any preset is a brand-new session, and must never
+    // claim the stored draft it replaced.
+    for (const preset of Presets) {
+      const canvas = freshSheet(preset)
+      expect(isFactoryBlank(canvas), `${preset} should be factory-blank`).toBe(
+        true,
+      )
+      void canvas.dispose()
+    }
+  })
+
+  it("a fresh boot sheet (a 192×192 Square) never overwrites a stored draft", () => {
+    // The failure the redesign exists for: the old predicate compared against
+    // the fixed 600×600 constants, so the shrunken boot sheet read as a real
+    // design and clobbered the draft on the first boundary.
+    const maker = createStageCanvas(
+      document.createElement("canvas"),
+      document.createElement("canvas"),
+    )
+    maker.add(createShape("circle"))
+    maker.history.commit()
+    const stored = JSON.stringify(serializeDesignFile(maker))
+    window.localStorage.setItem(WORKING_DRAFT_KEY, stored)
+    void maker.dispose()
+
+    const boot = createStageCanvas(
+      document.createElement("canvas"),
+      document.createElement("canvas"),
+    )
+    expect(boot.width).toBe(192)
+    expect(isFactoryBlank(boot)).toBe(true)
+    persistWorkingDraft(boot)
+    expect(window.localStorage.getItem(WORKING_DRAFT_KEY)).toBe(stored)
+    void boot.dispose()
+  })
+
+  it("a fresh sheet of another preset never overwrites a stored draft either", () => {
+    const maker = createStageCanvas(
+      document.createElement("canvas"),
+      document.createElement("canvas"),
+    )
+    maker.add(createShape("triangle"))
+    maker.history.commit()
+    const stored = JSON.stringify(serializeDesignFile(maker))
+    window.localStorage.setItem(WORKING_DRAFT_KEY, stored)
+    void maker.dispose()
+
+    for (const preset of Presets) {
+      const sheet = freshSheet(preset)
+      persistWorkingDraft(sheet)
+      expect(
+        window.localStorage.getItem(WORKING_DRAFT_KEY),
+        `${preset} clobbered the draft`,
+      ).toBe(stored)
+      void sheet.dispose()
+    }
+  })
+
+  it("a Custom sheet is blank at whatever size it was typed at", () => {
+    // Custom is rect + free — the state Rectangle is — so no size can make
+    // the state read as unfresh, and a just-replaced design survives.
+    const small = freshSheet("rectangle", { width: 300, height: 250 })
+    const large = freshSheet("rectangle", { width: 1200, height: 400 })
+    expect(small.outline).toBe("rect")
+    expect(small.aspectLocked).toBe(false)
+    expect(isFactoryBlank(small)).toBe(true)
+    expect(isFactoryBlank(large)).toBe(true)
+
+    window.localStorage.setItem(WORKING_DRAFT_KEY, "a real design")
+    persistWorkingDraft(small)
+    persistWorkingDraft(large)
+    expect(window.localStorage.getItem(WORKING_DRAFT_KEY)).toBe("a real design")
+    void small.dispose()
+    void large.dispose()
+  })
+
+  it("a resized sheet whose preset fixes the size is not blank and writes", () => {
+    // Square, Rounded corner, Circle and Oval each have exactly one size at
+    // New — so a sheet of one of those shapes at another size has been
+    // resized, and the resize is real design work.
+    for (const [preset, size] of [
+      ["square", { width: 300, height: 300 }],
+      ["rounded-corner", { width: 250, height: 300 }],
+      ["circle", { width: 240, height: 240 }],
+      ["oval", { width: 400, height: 200 }],
+    ] as const) {
+      const canvas = freshSheet(preset)
+      canvas.setDimensions(size)
+      expect(isFactoryBlank(canvas), `${preset} resize`).toBe(false)
+      persistWorkingDraft(canvas)
+      const stored = JSON.parse(window.localStorage.getItem(WORKING_DRAFT_KEY)!)
+      expect(stored.size).toEqual(size)
+      window.localStorage.clear()
+      void canvas.dispose()
+    }
   })
 
   /**

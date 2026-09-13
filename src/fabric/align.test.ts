@@ -25,6 +25,11 @@ describe("alignObjects", () => {
       document.createElement("canvas"),
       document.createElement("canvas"),
     )
+    // This suite's geometry is written against a 600×600 Document (its edges
+    // 0/600, its center 300/300). The Document boots at its Square preset's
+    // 192×192 (map #48) — where a 192-px square would already be flush to the
+    // edges — so the size the suite aligns within is set, not assumed.
+    canvas.setDimensions({ width: 600, height: 600 })
   })
 
   afterEach(async () => {

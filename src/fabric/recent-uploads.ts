@@ -10,8 +10,8 @@
  * a phone photo is megabytes as a data URL — it cannot live in localStorage
  * alongside a draft that itself may reach 3.5 M chars. `createGalleryCopy`
  * re-encodes the image at most {@link GALLERY_MAX_DIMENSION} pixels on its
- * long edge (more than an 80% fit in a 600×600 document needs), so typical
- * copies are tens of KB. The caller always places the original bytes on the
+ * long edge (comfortably more than an 80% fit in the Document needs), so
+ * typical copies are tens of KB. The caller always places the original on the
  * canvas — only the gallery entry is the copy, and clicking a tile re-inserts
  * the copy's pixels, not the original's.
  *
@@ -51,10 +51,11 @@ export const MAX_RECENT_UPLOADS = 6
 export const UPLOAD_CHAR_CAP = 1_000_000
 
 /**
- * The long-edge limit of a stored gallery copy, in pixels. 800 px is more
- * than an 80%-fit placement in the 600×600 document needs (480 px), so a
+ * The long-edge limit of a stored gallery copy, in pixels. An Inserted image
+ * is placed at 80% of the Document, so 800 px comfortably exceeds an ordinary
+ * placement (480 px on a 600×600 Document, 154 px on the boot Square): a
  * re-inserted copy reads sharp on screen and survives a typical export
- * without inventing pixels; it also keeps copies small enough for storage.
+ * without inventing pixels, and stays small enough for storage.
  */
 export const GALLERY_MAX_DIMENSION = 800
 

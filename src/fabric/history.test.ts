@@ -5,7 +5,11 @@ import { registerCustomProperties } from "@/fabric/custom-properties"
 import { HISTORY_DEPTH } from "@/fabric/history"
 import { loadEnvelope } from "@/fabric/design-file"
 import { createShape, DEFAULT_FILL } from "@/fabric/shapes"
-import { createStageCanvas } from "@/fabric/stage-canvas"
+import {
+  createStageCanvas,
+  DOCUMENT_HEIGHT,
+  DOCUMENT_WIDTH,
+} from "@/fabric/stage-canvas"
 import {
   applyTextProps,
   createText,
@@ -252,8 +256,8 @@ describe("history — snapshot stack", () => {
     canvas.history.commit()
 
     await canvas.history.undo()
-    expect(canvas.width).toBe(600)
-    expect(canvas.height).toBe(600)
+    expect(canvas.width).toBe(DOCUMENT_WIDTH)
+    expect(canvas.height).toBe(DOCUMENT_HEIGHT)
   })
 
   it("the document border is document state — undo restores it", async () => {
@@ -274,6 +278,19 @@ describe("history — snapshot stack", () => {
 
     await canvas.history.undo()
     expect(canvas.rotation).toBe(0)
+  })
+
+  it("the document outline is document state — undo restores it", async () => {
+    // The sheet boots as a Square (rect, locked — map #48); an edit that
+    // reshapes it is a document step like any other.
+    addSquare(100, 100)
+    canvas.outline = "oval"
+    canvas.aspectLocked = false
+    canvas.history.commit()
+
+    await canvas.history.undo()
+    expect(canvas.outline).toBe("rect")
+    expect(canvas.aspectLocked).toBe(true)
   })
 
   it("suspended recording + one commit is a single undoable step — the import path", async () => {
@@ -297,7 +314,15 @@ describe("history — snapshot stack", () => {
       }
       await loadEnvelope(
         canvas,
-        { width: 800, height: 400, rotation: 45, borderWidth: 2, borderColor: "#00ff00" },
+        {
+          width: 800,
+          height: 400,
+          rotation: 45,
+          borderWidth: 2,
+          borderColor: "#00ff00",
+          outline: "oval",
+          aspectLocked: true,
+        },
         payload as never,
       )
     } finally {
@@ -308,9 +333,13 @@ describe("history — snapshot stack", () => {
     expect(canvas.history.canUndo).toBe(true)
     await canvas.history.undo()
     // Back to the pre-import state in one step — the sealed snapshot.
-    expect(canvas.width).toBe(600)
+    expect(canvas.width).toBe(DOCUMENT_WIDTH)
     expect(canvas.rotation).toBe(0)
     expect(canvas.borderWidth).toBe(0)
+    // The outline is document state like size and rotation — the undo takes
+    // it back to the boot preset's Square (map #48).
+    expect(canvas.outline).toBe("rect")
+    expect(canvas.aspectLocked).toBe(true)
     expect(canvas.getObjects().length).toBe(1)
     expect(canvas.getObjects().find((o) => o.id === id)).toBeDefined()
     // And the import restored to the loaded document in its own redo.
@@ -318,6 +347,8 @@ describe("history — snapshot stack", () => {
     expect(canvas.width).toBe(800)
     expect(canvas.rotation).toBe(45)
     expect(canvas.borderWidth).toBe(2)
+    expect(canvas.outline).toBe("oval")
+    expect(canvas.aspectLocked).toBe(true)
     expect(canvas.getObjects().length).toBe(1)
     expect(canvas.getObjects()[0]).toHaveProperty("id")
   })

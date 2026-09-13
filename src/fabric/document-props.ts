@@ -1,5 +1,6 @@
 import { Textbox, type Object as FabricObject } from "fabric"
 
+import { type OutlineKind } from "@/fabric/outline"
 import { newId } from "@/lib/ids"
 
 declare module "fabric" {
@@ -45,6 +46,19 @@ declare module "fabric" {
      * unrotated.
      */
     rotation: number
+    /**
+     * The Document's outline kind (map #48) — the shape of its Cut line,
+     * envelope-owned (ADR 0002) alongside size, rotation, and border. Flattened
+     * from the file's `outline` record exactly as the border is. The clip that
+     * renders it is derived from this and the Document size, never serialized.
+     */
+    outline: OutlineKind
+    /**
+     * Whether resizing the Document holds its aspect ratio at 1:1 (map #48) —
+     * envelope-owned (ADR 0002). Square and Circle set it; Rectangle, Rounded
+     * corner, Oval and Custom clear it.
+     */
+    aspectLocked: boolean
   }
   interface Textbox {
     /**

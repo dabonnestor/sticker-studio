@@ -5,13 +5,12 @@ import {
   parseDesignFile,
   serializeDesignFile,
 } from "@/fabric/design-file"
+import { OUTLINE_KINDS, presetDefaultSize } from "@/fabric/outline"
 import {
   DOCUMENT_BACKGROUND_COLOR,
   DOCUMENT_BORDER_COLOR,
   DOCUMENT_BORDER_WIDTH,
-  DOCUMENT_HEIGHT,
   DOCUMENT_ROTATION,
-  DOCUMENT_WIDTH,
   type StageCanvas,
 } from "@/fabric/stage-canvas"
 
@@ -21,9 +20,9 @@ import {
  * the History commits on — so the work survives refresh without any explicit
  * Save. Two guards keep it honest (ticket #31):
  *
- * - **Blank-guard** — a factory-fresh canvas (default 600×600 sheet, zero
- *   objects) never overwrites an already-stored draft: a blank or new session
- *   can't clobber the last real design.
+ * - **Blank-guard** — a factory-fresh canvas (a fresh sheet of its own
+ *   sticker preset, zero objects) never overwrites an already-stored draft: a
+ *   blank or new session can't clobber the last real design.
  * - **Size guard** — a draft over the ~3.5M-char ceiling is skipped (never a
  *   partially-written value), leaving the older good copy intact, with a clear
  *   notice once per session.
@@ -100,22 +99,46 @@ export function clearWorkingDraft(): void {
 }
 
 /**
- * The blank-guard predicate (ticket #31): a document is "factory-fresh" when
- * it is the default-size, white sheet with the border off, rotation 0, and
- * zero objects — the state a brand-new session starts from, and the only
- * state that must never claim an existing draft. A resized or styled empty
- * document (background, border, or rotation changed) is not blank and writes
- * normally.
+ * The blank-guard predicate (ticket #31, map #48): a document is
+ * "factory-fresh" when it is a fresh sheet of its own sticker preset — white,
+ * unrotated, borderless, empty, and at the size its preset creates at. That
+ * is the state a brand-new session starts from, and the only state that must
+ * never claim an existing draft. A styled empty document (background, border,
+ * or rotation changed) is not blank and writes normally.
+ *
+ * The size is read against the *preset* rather than a fixed 600×600 sheet
+ * (map #48): now that a Document boots at a preset's Default size, comparing
+ * against one fixed size would misread every other preset — the boot sheet
+ * included — as a real design, and a blank session would clobber the stored
+ * draft it exists to protect.
+ *
+ * Where the preset fixes the size, a deviation means the user resized the
+ * sheet, so it is a real design and writes. Where it does not — rect + free
+ * is the state of both Rectangle and Custom — no size can make the sheet read
+ * as unfresh, because a Custom sheet that has just replaced a design must not
+ * write itself over the draft it replaced.
  */
 export function isFactoryBlank(canvas: Canvas): boolean {
+  // The decisive check, and the cheapest: a sheet with content is a design.
+  if (canvas.getObjects().length > 0) return false
+  // An outline state the app does not know cannot be a fresh sheet — and the
+  // derivation below has no answer for it.
+  if (!OUTLINE_KINDS.has(canvas.outline)) return false
+  if (
+    canvas.rotation !== DOCUMENT_ROTATION ||
+    canvas.backgroundColor !== DOCUMENT_BACKGROUND_COLOR ||
+    canvas.borderWidth !== DOCUMENT_BORDER_WIDTH ||
+    canvas.borderColor !== DOCUMENT_BORDER_COLOR
+  ) {
+    return false
+  }
+  const defaultSize = presetDefaultSize({
+    outline: canvas.outline,
+    aspectLocked: canvas.aspectLocked,
+  })
+  if (!defaultSize) return true
   return (
-    canvas.width === DOCUMENT_WIDTH &&
-    canvas.height === DOCUMENT_HEIGHT &&
-    canvas.rotation === DOCUMENT_ROTATION &&
-    canvas.backgroundColor === DOCUMENT_BACKGROUND_COLOR &&
-    canvas.borderWidth === DOCUMENT_BORDER_WIDTH &&
-    canvas.borderColor === DOCUMENT_BORDER_COLOR &&
-    canvas.getObjects().length === 0
+    canvas.width === defaultSize.width && canvas.height === defaultSize.height
   )
 }
 
@@ -194,6 +217,8 @@ export async function restoreWorkingDraft(
         rotation: design.rotation,
         borderWidth: design.border.width,
         borderColor: design.border.color,
+        outline: design.outline.outline,
+        aspectLocked: design.outline.aspectLocked,
       },
       design.canvas,
     )

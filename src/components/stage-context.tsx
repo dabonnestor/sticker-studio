@@ -38,6 +38,7 @@ import {
   refitParentGroup,
   ungroupObjects,
 } from "@/fabric/groups"
+import { BOOT_OUTLINE } from "@/fabric/outline"
 import {
   DOCUMENT_BACKGROUND_COLOR,
   DOCUMENT_BORDER_COLOR,
@@ -704,6 +705,11 @@ export function StageProvider({ children }: { children: ReactNode }) {
     canvas.borderWidth = DOCUMENT_BORDER_WIDTH
     canvas.borderColor = DOCUMENT_BORDER_COLOR
     canvas.backgroundColor = DOCUMENT_BACKGROUND_COLOR
+    // The outline resets with the other document properties (map #48) — a
+    // fresh sheet is the boot sticker preset, not whatever shape the design
+    // being cleared was.
+    canvas.outline = BOOT_OUTLINE.outline
+    canvas.aspectLocked = BOOT_OUTLINE.aspectLocked
     canvas.requestRenderAll()
     // Fit is the default zoom on load (§9) — a fresh design shows the whole
     // default sheet, whatever zoom the previous design left behind (a fit
@@ -1109,6 +1115,8 @@ export function StageProvider({ children }: { children: ReactNode }) {
             rotation: file.rotation,
             borderWidth: file.border.width,
             borderColor: file.border.color,
+            outline: file.outline.outline,
+            aspectLocked: file.outline.aspectLocked,
             payload: file.canvas,
           },
           getExportHost(),
@@ -1158,6 +1166,8 @@ export function StageProvider({ children }: { children: ReactNode }) {
             rotation: design.rotation,
             borderWidth: design.border.width,
             borderColor: design.border.color,
+            outline: design.outline.outline,
+            aspectLocked: design.outline.aspectLocked,
           },
           design.canvas,
         )

@@ -67,6 +67,8 @@ function baseInput(overrides: Partial<ExportInput> = {}): ExportInput {
     rotation: 0,
     borderWidth: 0,
     borderColor: "#18181b",
+    outline: "rect",
+    aspectLocked: false,
     payload: {
       version: "7.4.0",
       width: 600,

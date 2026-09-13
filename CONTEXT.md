@@ -24,8 +24,12 @@ A state of a shape: it cannot be moved, resized, edited, or deleted while locked
 _Avoid_: pinned, fixed
 
 **Cut line**:
-The outline of a shape that defines where it is cut — the boundary of the shape. In the Document it is the shape's clipPath at the geometry edge; the border is centered on it — the clip extends half the border beyond the cut so the border renders at full width (at a fixed pixel width: scaling never thickens it), and the cutter halves it. There is no bleed or separate dieline: the shape is the cut line.
+The outline that defines where the design is cut — the boundary of the shape. On a shape object it is the shape's clipPath at the geometry edge; on the Document it is the Document's outline, the sticker's own boundary — content outside it is not on the sticker, so it clips the stage and every Export to the sticker's shape. The border is centered on the cut: the clip extends half the border beyond it so the border renders at full width (at a fixed pixel width: scaling never thickens it), and the cutter halves it. There is no bleed or separate dieline: the shape is the cut line.
 _Avoid_: dieline, cut path, bleed
+
+**Sticker preset**:
+A shape a Document can be created as at New — Square, Rectangle, Rounded corner, Oval, Circle, or Custom — each pairing a Cut line with a Default size. It is a creation preset only: afterwards the Document is its outline, aspect lock, and size independently, and the preset it reads as is derived from those rather than stored. Square and Circle lock the aspect ratio at 1:1; Rectangle, Rounded corner, Oval, and Custom resize freely. Custom is a free width and height with sharp corners — the same outline state as Rectangle, so a custom-sized rectangle reads as Rectangle.
+_Avoid_: template, sticker type, shape option
 
 **Group**:
 A Document object that contains other Document objects and moves, scales, rotates, flips, and reorders as one. Groups are single-level — a Group contains only individual objects, never other Groups — and occupy one slot in the Document's z-order; children never appear at top level, and their order inside the Group is fixed at group time. While grouped, children are fixed in place: individually selectable only to inspect their properties or edit Text; repositioning, resizing, deleting, or reordering a child means ungrouping first. A Group has its own id, name, and locked state.
@@ -36,7 +40,7 @@ The set of objects (usually one) currently active in the editor: click selects a
 _Avoid_: active objects, highlight, focus
 
 **Default size**:
-The size a shape is created at when added from the sidebar — specified in inches (Square 2×2, Circle Ø2, Rectangle/Oval/Triangle 3×2 landscape), stored in pixels at the 96 DPI display basis. Size is then edited on the canvas with the drag handles, not in the toolbar.
+The size a shape is created at when added from the sidebar, and the size a Document is created at by its Sticker preset — specified in inches (Square 2×2, Circle Ø2, Rectangle/Oval/Triangle 3×2 landscape), stored in pixels at the 96 DPI display basis. A shape's size is then edited on the canvas with the drag handles, not in the toolbar. Custom is the one preset with no Default size: its width and height are typed at New.
 _Avoid_: preset size
 
 **Document size**:

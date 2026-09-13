@@ -30,7 +30,11 @@ describe("document background coverage at zoom", () => {
     const element = document.createElement("canvas")
     lowerCtx = createStubContext()
     vi.spyOn(element, "getContext").mockReturnValue(lowerCtx)
-    return createStageCanvas(element, document.createElement("canvas"))
+    const canvas = createStageCanvas(element, document.createElement("canvas"))
+    // A 600×600 Document — the size this suite's coverage assertions are
+    // written in. It boots at its Square preset's 192×192 (map #48).
+    canvas.setDimensions({ width: 600, height: 600 })
+    return canvas
   }
 
   beforeEach(() => {

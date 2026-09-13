@@ -95,14 +95,28 @@ function squareAt(left: number, top: number): FabricObject {
   return shape
 }
 
+/**
+ * The stage mounted on an explicit 600×600 document — the coordinates this
+ * suite's placements are written in (the edges 0/600, the center 300/300,
+ * per the header note). The Document boots at its Square preset's 192×192
+ * (map #48), so the size the suite works at is set here rather than assumed;
+ * a 192-px Document would put the suite's 192-px squares flush to its edges
+ * and turn every edge snap into an accidental one.
+ */
+function mountStage(): StageCanvas {
+  const canvas = createStageCanvas(
+    document.createElement("canvas"),
+    document.createElement("canvas"),
+  )
+  canvas.setDimensions({ width: 600, height: 600 })
+  return canvas
+}
+
 describe("smart-guides snapping", () => {
   let canvas: ReturnType<typeof createStageCanvas>
 
   beforeEach(() => {
-    canvas = createStageCanvas(
-      document.createElement("canvas"),
-      document.createElement("canvas"),
-    )
+    canvas = mountStage()
   })
 
   afterEach(async () => {
@@ -232,10 +246,7 @@ describe("snap targets", () => {
   let canvas: ReturnType<typeof createStageCanvas>
 
   beforeEach(() => {
-    canvas = createStageCanvas(
-      document.createElement("canvas"),
-      document.createElement("canvas"),
-    )
+    canvas = mountStage()
   })
 
   afterEach(async () => {
@@ -350,10 +361,7 @@ describe("tautological skip", () => {
   let canvas: ReturnType<typeof createStageCanvas>
 
   beforeEach(() => {
-    canvas = createStageCanvas(
-      document.createElement("canvas"),
-      document.createElement("canvas"),
-    )
+    canvas = mountStage()
   })
 
   afterEach(async () => {
@@ -428,6 +436,8 @@ describe("guide painting", () => {
     vi.spyOn(element, "getContext").mockReturnValue(lowerCtx)
     vi.spyOn(overlayElement, "getContext").mockReturnValue(overlayCtx)
     canvas = createStageCanvas(element, overlayElement)
+    // The same explicit 600×600 document `mountStage` sets — see its note.
+    canvas.setDimensions({ width: 600, height: 600 })
   }
 
   beforeEach(() => {
@@ -651,6 +661,8 @@ describe("dispose / rebuild", () => {
     const element = document.createElement("canvas")
     const overlayElement = document.createElement("canvas")
     const canvas = createStageCanvas(element, overlayElement)
+    // The same explicit 600×600 document `mountStage` sets — see its note.
+    canvas.setDimensions({ width: 600, height: 600 })
     const guides = canvas.smartGuides!
     const moved = squareAt(210, 250)
     const target = squareAt(400, 400)

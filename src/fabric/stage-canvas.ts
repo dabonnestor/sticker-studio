@@ -48,6 +48,7 @@ import { getTextMeasurer } from "@/fabric/fonts"
 import { History } from "@/fabric/history"
 import { HoverBorder } from "@/fabric/hover-border"
 import { isImageObject } from "@/fabric/images"
+import { BOOT_OUTLINE, BOOT_SIZE } from "@/fabric/outline"
 import { DEFAULT_BORDER_COLOR, getShapeKind, restampBorderClip } from "@/fabric/shapes"
 import { SNAP_TOLERANCE_PX, SmartGuides } from "@/fabric/smart-guides"
 import { wireTextInteractions } from "@/fabric/text-interactions"
@@ -61,12 +62,14 @@ import {
 } from "@/fabric/zoom"
 
 /**
- * Initial Document size — 600×600 px at the 96 DPI display basis. The canvas
- * dimensions are the Document size (build spec §5); the stage toolbar edits
- * them after mount, and exports will size to them.
+ * Initial Document size — the boot sticker preset's Default size (map #48):
+ * a Square, 192×192 px at the 96 DPI display basis, rather than the fixed
+ * 600×600 sheet the app used to start on. The canvas dimensions are the
+ * Document size (build spec §5); the stage toolbar edits them after mount,
+ * and exports size to them.
  */
-export const DOCUMENT_WIDTH = 600
-export const DOCUMENT_HEIGHT = 600
+export const DOCUMENT_WIDTH = BOOT_SIZE.width
+export const DOCUMENT_HEIGHT = BOOT_SIZE.height
 
 /** Default Document background — white (§3); edited in the stage toolbar. */
 export const DOCUMENT_BACKGROUND_COLOR = "#ffffff"
@@ -1629,6 +1632,14 @@ export function createStageCanvas(
   // rotations through the viewport transform (a non-cardinal value displays
   // unrotated).
   canvas.rotation = DOCUMENT_ROTATION
+
+  // The Document's outline (envelope-owned, ADR 0002, map #48) — a fresh
+  // session boots as a Square sticker, which is where DOCUMENT_WIDTH/HEIGHT
+  // above come from: the preset sets the outline and the size together. The
+  // clip that renders the outline is derived from this state and the Document
+  // size, never serialized.
+  canvas.outline = BOOT_OUTLINE.outline
+  canvas.aspectLocked = BOOT_OUTLINE.aspectLocked
 
   // Document identity (ADR 0002): stamp the id/locked defaults at the
   // document boundary so every creation path — sidebar, console-added
