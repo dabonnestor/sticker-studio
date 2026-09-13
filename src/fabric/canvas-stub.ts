@@ -82,6 +82,7 @@ export function createStubContext(): CanvasRenderingContext2D {
     "arcTo",
     "ellipse",
     "rect",
+    "roundRect",
     "fill",
     "stroke",
     "fillRect",

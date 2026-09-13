@@ -11,7 +11,15 @@ import {
   type Object as FabricObject,
   type TMat2D,
 } from "fabric"
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
+import {
+  afterEach,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+  type Mock,
+} from "vitest"
 
 import { createStubContext } from "@/fabric/canvas-stub"
 import { setLocked } from "@/fabric/document-props"
@@ -1531,5 +1539,237 @@ describe("entered group mode", () => {
       expect(child.hasControls).toBe(true)
       expect(child.lockMovementX).toBe(false)
     }
+  })
+})
+
+/**
+ * The stage's Cut line (map #48, ticket #52): the Document's outline is the
+ * sticker's boundary, so it clips what the stage paints — the background and
+ * the objects through Fabric's canvas `clipPath`, and the document border
+ * through a painter that traces the outline itself, because `after:render`
+ * runs *after* the clip has been applied.
+ *
+ * The clip is derived, never stored: it is rebuilt whenever the outline kind
+ * or the Document size moves, and it stays out of the payload entirely.
+ */
+describe("the Cut line clips the stage", () => {
+  let canvas: ReturnType<typeof createStageCanvas>
+  let lowerCtx: CanvasRenderingContext2D
+
+  /** A stage canvas whose lower context is stubbed, so the paint is observable. */
+  function mount() {
+    const element = document.createElement("canvas")
+    lowerCtx = createStubContext()
+    vi.spyOn(element, "getContext").mockReturnValue(lowerCtx)
+    canvas = createStageCanvas(element, document.createElement("canvas"))
+  }
+
+  /** The last call to a stubbed context method — the frame's final paint of that kind. */
+  function lastCallOrder(method: unknown): number {
+    return Math.max(...(method as Mock).mock.invocationCallOrder)
+  }
+
+  beforeEach(mount)
+
+  afterEach(async () => {
+    await canvas.dispose()
+  })
+
+  it("boots as a Square sticker — clipped to a 192×192 rect", () => {
+    canvas.renderAll()
+    expect([canvas.width, canvas.height]).toEqual([192, 192])
+    expect(canvas.outline).toBe("rect")
+    expect(canvas.aspectLocked).toBe(true)
+    const clip = canvas.clipPath as Rect
+    expect(clip).toBeInstanceOf(Rect)
+    expect([clip.width, clip.height]).toEqual([192, 192])
+    // Centered on the Document in scene coordinates, so Fabric's viewport
+    // transform carries it through zoom and pan.
+    expect([clip.left, clip.top]).toEqual([96, 96])
+  })
+
+  it("re-derives the clip when the Document is resized", () => {
+    canvas.renderAll()
+    canvas.setDimensions({ width: 288, height: 192 })
+    canvas.renderAll()
+    const clip = canvas.clipPath as Rect
+    expect([clip.width, clip.height]).toEqual([288, 192])
+    expect([clip.left, clip.top]).toEqual([144, 96])
+  })
+
+  it("re-derives the clip when the outline changes shape", () => {
+    canvas.renderAll()
+    canvas.outline = "oval"
+    canvas.aspectLocked = true
+    canvas.renderAll()
+    const clip = canvas.clipPath as Ellipse
+    expect(clip).toBeInstanceOf(Ellipse)
+    expect([clip.rx, clip.ry]).toEqual([96, 96])
+  })
+
+  it("keeps the derived clip while nothing moves — a render is not a rebuild", () => {
+    canvas.renderAll()
+    const derived = canvas.clipPath
+    canvas.renderAll()
+    expect(canvas.clipPath).toBe(derived)
+  })
+
+  it("derives over a clipPath a restore installed", async () => {
+    canvas.renderAll()
+    // A payload from an older build — or a hand-edited one — can carry a clip.
+    // The envelope, not the payload, is the source of truth for the outline.
+    await canvas.loadFromJSON({
+      version: "7.4.0",
+      objects: [],
+      clipPath: { type: "Rect", width: 10, height: 10, left: 0, top: 0 },
+    })
+    expect((canvas.clipPath as Rect).width).toBe(10)
+    canvas.renderAll()
+    expect((canvas.clipPath as Rect).width).toBe(192)
+  })
+
+  it("keeps the derived clip out of the payload", () => {
+    canvas.renderAll()
+    expect(canvas.clipPath).toBeDefined()
+    // The History snapshots the canvas with toJSON, and the seed entry is
+    // taken before the first render — a clip in the payload would make two
+    // otherwise identical Documents compare as changed, which stacks a
+    // phantom undo step.
+    expect("clipPath" in canvas.toJSON()).toBe(false)
+  })
+
+  it("strokes the document border along the outline, not the document rect", () => {
+    canvas.borderWidth = 4
+    canvas.borderColor = "#18181b"
+    canvas.renderAll()
+    // The path is the cut, stroked at twice the border's width so the clip
+    // can trim the outer half — the visible border is `borderWidth` wide with
+    // its outer edge on the cut, flush for every shape.
+    expect(vi.mocked(lowerCtx.rect)).toHaveBeenCalledWith(0, 0, 192, 192)
+    expect(lowerCtx.lineWidth).toBe(8)
+    expect(vi.mocked(lowerCtx.stroke)).toHaveBeenCalled()
+    // The rectangle is gone: it was the one thing that escaped the clip, and
+    // it would wrap a circle sticker in a rect.
+    expect(vi.mocked(lowerCtx.strokeRect)).not.toHaveBeenCalled()
+  })
+
+  it("clips the border to the cut, so only its inner half shows", () => {
+    canvas.borderWidth = 4
+    canvas.renderAll()
+    expect(vi.mocked(lowerCtx.clip)).toHaveBeenCalled()
+    expect(lastCallOrder(lowerCtx.clip)).toBeLessThan(
+      lastCallOrder(lowerCtx.stroke),
+    )
+  })
+
+  it("follows a circle outline — the border is a ring, not a rectangle", () => {
+    canvas.outline = "oval"
+    canvas.aspectLocked = true
+    canvas.borderWidth = 4
+    canvas.renderAll()
+    expect(vi.mocked(lowerCtx.ellipse)).toHaveBeenCalledWith(
+      96,
+      96,
+      96,
+      96,
+      0,
+      0,
+      Math.PI * 2,
+    )
+    expect(vi.mocked(lowerCtx.strokeRect)).not.toHaveBeenCalled()
+  })
+
+  it("follows a rounded-corner outline at the preset radius", () => {
+    canvas.outline = "rounded-rect"
+    canvas.borderWidth = 4
+    canvas.renderAll()
+    expect(vi.mocked(lowerCtx.roundRect)).toHaveBeenCalledWith(
+      0,
+      0,
+      192,
+      192,
+      23.04,
+    )
+  })
+
+  it("paints no border at all when the border is off", () => {
+    expect(canvas.borderWidth).toBe(0)
+    canvas.renderAll()
+    expect(vi.mocked(lowerCtx.stroke)).not.toHaveBeenCalled()
+    expect(vi.mocked(lowerCtx.clip)).not.toHaveBeenCalled()
+  })
+})
+
+/**
+ * The Document size's aspect lock (map #48, ticket #52) — what the stage
+ * toolbar's W and H fields commit through. Square and Circle lock 1:1: the
+ * axis the user typed wins and the other mirrors it, never a disabled field.
+ * Rectangle, Rounded corner, Oval and Custom resize freely.
+ */
+describe("setDocumentSize honours the aspect lock", () => {
+  let canvas: ReturnType<typeof createStageCanvas>
+
+  beforeEach(() => {
+    canvas = createStageCanvas(
+      document.createElement("canvas"),
+      document.createElement("canvas"),
+    )
+  })
+
+  afterEach(async () => {
+    await canvas.dispose()
+  })
+
+  it("boots locked — a Square sticker", () => {
+    expect(canvas.aspectLocked).toBe(true)
+    expect([canvas.width, canvas.height]).toEqual([192, 192])
+  })
+
+  it("mirrors a typed width onto the height on the boot Square", () => {
+    canvas.setDocumentSize(300, 192)
+    expect([canvas.width, canvas.height]).toEqual([300, 300])
+  })
+
+  it("mirrors a typed height onto the width", () => {
+    canvas.setDocumentSize(192, 300)
+    expect([canvas.width, canvas.height]).toEqual([300, 300])
+  })
+
+  it("mirrors on a Circle, which locks 1:1 like Square", () => {
+    canvas.outline = "oval"
+    canvas.aspectLocked = true
+    canvas.setDocumentSize(240, 192)
+    expect([canvas.width, canvas.height]).toEqual([240, 240])
+  })
+
+  it("resizes freely on the shapes that carry no lock", () => {
+    // Rounded corner: the same size pair that mirrors on a Square stays put.
+    canvas.outline = "rounded-rect"
+    canvas.aspectLocked = false
+    canvas.setDocumentSize(300, 192)
+    expect([canvas.width, canvas.height]).toEqual([300, 192])
+  })
+
+  it("resizes freely as a Rectangle and as a Custom sheet", () => {
+    canvas.aspectLocked = false
+    canvas.setDocumentSize(288, 192)
+    expect([canvas.width, canvas.height]).toEqual([288, 192])
+    canvas.setDocumentSize(400, 100)
+    expect([canvas.width, canvas.height]).toEqual([400, 100])
+  })
+
+  it("honours the 60 px floor the field already enforced", () => {
+    // The floor lives in the toolbar (MIN_DOCUMENT_SIZE_PX) — a commit that
+    // reached here is at or above it, and the mirror keeps it there.
+    canvas.setDocumentSize(60, 60)
+    expect([canvas.width, canvas.height]).toEqual([60, 60])
+  })
+
+  it("mirrors from the Document's own size, whatever the fields were showing", () => {
+    // A locked sheet resized to 300×300, then the width typed back down: the
+    // comparison is the Document, so the height follows it down.
+    canvas.setDocumentSize(300, 192)
+    canvas.setDocumentSize(150, 300)
+    expect([canvas.width, canvas.height]).toEqual([150, 150])
   })
 })

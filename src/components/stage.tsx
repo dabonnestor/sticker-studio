@@ -11,10 +11,11 @@ import { exposeStageCanvas } from "@/lib/dev"
 const pendingDispose: { current: Promise<void> | null } = { current: null }
 
 /**
- * The stage (build spec §3): a gray scrollable workspace with the white
- * Document canvas centered in it. The canvas carries a subtle shadow —
- * view-only chrome on the mount wrapper, never part of the Document, never
- * exported. Fabric is confined to this component.
+ * The stage (build spec §3): a gray scrollable workspace with the Document
+ * canvas centered in it. The canvas *is* the Document, and its Cut line is
+ * what gives the sheet its shape — the workspace shows through wherever the
+ * shape doesn't reach, so the mount carries no paint of its own (map #48).
+ * Fabric is confined to this component.
  */
 export function Stage() {
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
@@ -190,7 +191,13 @@ export function Stage() {
           position is the pan, and the scroll math centers each overflow axis
           at its scroll midpoint (§9). */}
       <div className="relative flex min-h-full min-w-full">
-        <div className="m-auto bg-white shadow-md" ref={wrapperRef}>
+        {/* No paint on the mount (map #48): the Document's Cut line clips the
+            canvas, and outside it the pixels are transparent — so whatever is
+            behind the element *is* the workspace. `bg-white` read as more
+            sheet, and `shadow-md` hugged the element's rect (`document ×
+            zoom`, not the outline), which drew a square shadow under a circle
+            sticker. */}
+        <div className="m-auto" ref={wrapperRef}>
           <canvas ref={canvasRef} aria-label="Design canvas" />
         </div>
         {/* Marquee mirror (§7 extension): spans the workspace, never

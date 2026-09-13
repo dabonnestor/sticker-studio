@@ -3,8 +3,11 @@ import { describe, expect, it } from "vitest"
 import {
   BOOT_OUTLINE,
   BOOT_SIZE,
+  cornerRadius,
   getStickerShape,
+  mirrorLockedSize,
   presetDefaultSize,
+  ROUNDED_CORNER_RADIUS_RATIO,
   STICKER_PRESETS,
 } from "@/fabric/outline"
 import { unitToPx } from "@/lib/units"
@@ -139,5 +142,73 @@ describe("the boot preset", () => {
     expect(BOOT_OUTLINE).toEqual({ outline: "rect", aspectLocked: true })
     expect(BOOT_SIZE).toEqual({ width: 192, height: 192 })
     expect(getStickerShape(BOOT_OUTLINE)).toBe("square")
+  })
+})
+
+describe("cornerRadius", () => {
+  it("is the preset ratio of the short side", () => {
+    // Rounded corner's radius is a fixed preset (map #48) — a proportion, so
+    // the corner survives the free resize the preset allows.
+    expect(cornerRadius({ width: 192, height: 192 })).toBe(
+      192 * ROUNDED_CORNER_RADIUS_RATIO,
+    )
+    expect(cornerRadius({ width: 288, height: 192 })).toBe(
+      192 * ROUNDED_CORNER_RADIUS_RATIO,
+    )
+    // The short side governs, whichever axis it is.
+    expect(cornerRadius({ width: 192, height: 288 })).toBe(
+      192 * ROUNDED_CORNER_RADIUS_RATIO,
+    )
+  })
+
+  it("tracks the Document at the square preset's own size", () => {
+    expect(cornerRadius(STICKER_PRESETS["rounded-corner"].size!)).toBeCloseTo(
+      23.04,
+      6,
+    )
+  })
+})
+
+/**
+ * The aspect lock's one rule (map #48): the axis the user typed wins, the
+ * other mirrors it. Square and Circle both lock 1:1, so there is one rule
+ * rather than two — and it is a mirror, never a disabled field, which on a
+ * locked sticker reads as broken rather than as a rule.
+ */
+describe("mirrorLockedSize", () => {
+  const square = { width: 192, height: 192 }
+
+  it("mirrors a typed width onto the height", () => {
+    expect(mirrorLockedSize(square, { width: 300, height: 192 })).toEqual({
+      width: 300,
+      height: 300,
+    })
+  })
+
+  it("mirrors a typed height onto the width", () => {
+    expect(mirrorLockedSize(square, { width: 192, height: 300 })).toEqual({
+      width: 300,
+      height: 300,
+    })
+  })
+
+  it("passes a commit that moves neither axis through untouched", () => {
+    // A re-typed value: no axis moved, so no mirror. The no-op is the
+    // History's to dedup, not this rule's to guess at.
+    expect(mirrorLockedSize(square, { width: 192, height: 192 })).toEqual(square)
+  })
+
+  it("mirrors from a Document that is not square to begin with", () => {
+    // Reachable only from a file (the fields keep a locked sheet 1:1), and
+    // the rule still reads the typed axis off the Document's own size.
+    const odd = { width: 300, height: 200 }
+    expect(mirrorLockedSize(odd, { width: 400, height: 200 })).toEqual({
+      width: 400,
+      height: 400,
+    })
+    expect(mirrorLockedSize(odd, { width: 300, height: 100 })).toEqual({
+      width: 100,
+      height: 100,
+    })
   })
 })

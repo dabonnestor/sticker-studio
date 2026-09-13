@@ -48,7 +48,8 @@ import { getTextMeasurer } from "@/fabric/fonts"
 import { History } from "@/fabric/history"
 import { HoverBorder } from "@/fabric/hover-border"
 import { isImageObject } from "@/fabric/images"
-import { BOOT_OUTLINE, BOOT_SIZE } from "@/fabric/outline"
+import { BOOT_OUTLINE, BOOT_SIZE, mirrorLockedSize } from "@/fabric/outline"
+import { buildOutlineClip, traceOutline } from "@/fabric/outline-clip"
 import { DEFAULT_BORDER_COLOR, getShapeKind, restampBorderClip } from "@/fabric/shapes"
 import { SNAP_TOLERANCE_PX, SmartGuides } from "@/fabric/smart-guides"
 import { wireTextInteractions } from "@/fabric/text-interactions"
@@ -630,6 +631,15 @@ export class StageCanvas extends Canvas {
 
   /** True while the hover border painted on the overlay this frame. */
   private hoverPaintedThisFrame = false
+
+  /**
+   * The outline state and Document size the current `clipPath` was derived
+   * from (map #48, #52) — null when there is nothing derived yet, or when
+   * something else installed a clip and the next render must re-derive over
+   * it. The clip is a pure function of the pair, so the pair *is* the cache
+   * key: unmoved, the derived clip still stands.
+   */
+  private outlineClipKey: string | null = null
 
   /**
    * Build 9's smart-guides wrapper — created by the stage factory, disposed
@@ -1251,8 +1261,37 @@ export class StageCanvas extends Canvas {
       // persisted flag (document-props §7 Q3: `locked` is the source of truth,
       // the transforms derive from it) across the restored tree.
       for (const obj of this.getObjects()) restoreLockedSurface(obj)
+      // A payload can still install a `clipPath` — a Design file written
+      // before the derived clip was excluded from serialization, or a
+      // hand-edited one — and the envelope, not the payload, is the source of
+      // truth for the Document's outline. Drop the key so the next render
+      // derives over whatever came back.
+      this.outlineClipKey = null
       return canvas
     })
+  }
+
+  /**
+   * Resize the Document, honouring the outline's aspect lock (map #48, ticket
+   * #52): on a Square or Circle the field the user typed wins and the other
+   * mirrors it, so editing width moves height to match. The toolbar's fields
+   * are never disabled — a greyed-out field on a locked sticker reads as
+   * broken rather than as a rule, and the mirror is the whole point of the
+   * lock being visible in the toolbar at all.
+   *
+   * Rectangle, Rounded corner, Oval and Custom carry no lock, so they resize
+   * freely. The floor is the toolbar's (MIN_DOCUMENT_SIZE_PX): this takes
+   * what the field committed.
+   */
+  setDocumentSize(width: number, height: number): void {
+    this.setDimensions(
+      this.aspectLocked
+        ? mirrorLockedSize(
+            { width: this.width, height: this.height },
+            { width, height },
+          )
+        : { width, height },
+    )
   }
 
   /**
@@ -1274,6 +1313,50 @@ export class StageCanvas extends Canvas {
     )
     if (!options || !options.cssOnly) this.requestRenderAll()
     this.applyZoomLayout()
+  }
+
+  /**
+   * Derive the Cut line's clip before every full render (map #48, ticket #52).
+   * The Document's outline *is* the sticker's boundary, so the canvas
+   * `clipPath` is what makes the stage show a sticker rather than a rectangle
+   * containing one: Fabric applies it to the background and the objects, and
+   * the border painter traces the same outline (see the `after:render` wiring
+   * in `createStageCanvas`).
+   *
+   * Derived, never stored: the clip is a pure function of the outline kind and
+   * the Document size, so it re-derives whenever that pair moves — a toolbar
+   * size edit, an import, a New preset, an undo — with no call site having to
+   * remember to sync. The pair is the cache key; unmoved, the derived clip
+   * still stands.
+   *
+   * It hangs off `renderCanvas` rather than a `before:render` listener because
+   * Fabric reads `this.clipPath` into a local *before* firing `before:render`
+   * — a clip assigned there would paint one frame late, which is a visible
+   * flash of unclipped sheet on the first frame after a change.
+   */
+  override renderCanvas(
+    ctx: CanvasRenderingContext2D,
+    objects: FabricObject[],
+  ): void {
+    this.syncOutlineClip()
+    super.renderCanvas(ctx, objects)
+  }
+
+  /**
+   * Re-derive the Cut-line clip when the outline kind or the Document size has
+   * moved. Nothing else calls this — a restore can install a foreign
+   * `clipPath` (a payload from an older build, or a hand-edited one), and the
+   * envelope, not the payload, is the source of truth for the outline, so
+   * `loadFromJSON` drops the cache key and the next render derives over it.
+   */
+  private syncOutlineClip(): void {
+    const key = `${this.outline}|${this.width}x${this.height}`
+    if (key === this.outlineClipKey) return
+    this.clipPath = buildOutlineClip(this.outline, {
+      width: this.width,
+      height: this.height,
+    })
+    this.outlineClipKey = key
   }
 
   /**
@@ -1731,11 +1814,23 @@ export function createStageCanvas(
   canvas.on("selection:updated", bakeActiveTextScale)
 
   // The document border (envelope-owned, ADR 0002) renders as an inset stroke
-  // on the document edge — unlike the shape border, it is inset (§4): the
-  // stroke sits inside the edge, so exports (which render only the document
-  // area) show the full border. `after:render` paints in scene space under
-  // the viewport transform (§9), so the stroke hugs the document edge at any
-  // zoom — the border is document state and scales with the Document.
+  // *on the Cut line* (map #48, ticket #52) — unlike the shape border, it is
+  // inset (§4): the stroke sits inside the edge, so exports (which render only
+  // the document area) show the full border. It traces the outline rather than
+  // the document rect, which it must: this listener runs in `after:render`,
+  // *after* Fabric has applied the Cut line's clip, so a rect stroke would
+  // wrap a circle sticker in a rectangle.
+  //
+  // `after:render` paints in scene space under the viewport transform (§9), so
+  // the stroke hugs the cut at any zoom — the border is document state and
+  // scales with the Document.
+  //
+  // The path is the cut itself, stroked at twice the border's width with the
+  // context clipped to that same path, so the outer half is trimmed and the
+  // visible border is exactly `borderWidth` wide with its outer edge on the
+  // cut — by construction, for every shape. Insetting the path by half the
+  // border instead is exact for a rect and a circle but not for an oval
+  // (traceOutline has the measurement).
   canvas.on("after:render", () => {
     const borderWidth = canvas.borderWidth
     if (!borderWidth) return
@@ -1743,13 +1838,13 @@ export function createStageCanvas(
     ctx.save()
     ctx.transform(...canvas.viewportTransform)
     ctx.strokeStyle = canvas.borderColor
-    ctx.lineWidth = borderWidth
-    ctx.strokeRect(
-      borderWidth / 2,
-      borderWidth / 2,
-      canvas.width - borderWidth,
-      canvas.height - borderWidth,
-    )
+    traceOutline(ctx, canvas.outline, {
+      width: canvas.width,
+      height: canvas.height,
+    })
+    ctx.clip()
+    ctx.lineWidth = borderWidth * 2
+    ctx.stroke()
     ctx.restore()
   })
 

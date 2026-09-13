@@ -627,8 +627,12 @@ export function StageProvider({ children }: { children: ReactNode }) {
   const setDocumentSize = useCallback(
     (width: number, height: number) => {
       if (!canvas?.history) return
-      canvas.setDimensions({ width, height })
-      setDocumentSizeState({ width, height })
+      // The canvas owns the aspect lock (map #48) and resolves the size — on a
+      // Square or Circle the typed axis moves the other with it. The mirrors
+      // re-read what the canvas settled on, so the fields show the locked
+      // size rather than the one that was typed into them.
+      canvas.setDocumentSize(width, height)
+      setDocumentSizeState({ width: canvas.width, height: canvas.height })
       canvas.requestRenderAll()
       canvas.history.commit()
     },

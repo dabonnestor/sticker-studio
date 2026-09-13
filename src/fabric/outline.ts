@@ -48,6 +48,45 @@ export interface DocumentSize {
 }
 
 /**
+ * The rounded-rect corner radius, as a fraction of the outline's short side
+ * (map #48): Rounded corner's radius is a fixed preset, not a user control —
+ * a proportion rather than a px value, so the corner keeps its look at
+ * whatever size the sheet is later resized to.
+ */
+export const ROUNDED_CORNER_RADIUS_RATIO = 0.12
+
+/** The corner radius of a rounded-rect outline at this Document size. */
+export function cornerRadius(size: DocumentSize): number {
+  return Math.min(size.width, size.height) * ROUNDED_CORNER_RADIUS_RATIO
+}
+
+/**
+ * The size a locked Document actually takes (map #48): the axis the user
+ * typed wins and the other mirrors it, so on a Square or Circle editing
+ * width moves height to match and vice versa. The mirror — never a disabled
+ * field, which on a locked sticker reads as broken rather than as a rule.
+ *
+ * Both Square and Circle lock 1:1, so this is one rule, not two.
+ *
+ * The typed axis is the one that differs from `current`, the Document's own
+ * size: a field commits alone, so the two never move at once. A commit that
+ * moves neither — a re-typed value — passes through untouched, leaving the
+ * no-op for the History's dedup rather than for a rule here.
+ */
+export function mirrorLockedSize(
+  current: DocumentSize,
+  next: DocumentSize,
+): DocumentSize {
+  if (next.width !== current.width) {
+    return { width: next.width, height: next.width }
+  }
+  if (next.height !== current.height) {
+    return { width: next.height, height: next.height }
+  }
+  return next
+}
+
+/**
  * The sticker a Document's outline state reads as — derived for display and
  * for filtering the Designs panel (map #48), never stored.
  *
