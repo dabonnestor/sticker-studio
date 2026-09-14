@@ -38,7 +38,7 @@ import {
   refitParentGroup,
   ungroupObjects,
 } from "@/fabric/groups"
-import { BOOT_OUTLINE } from "@/fabric/outline"
+import { BOOT_OUTLINE, type DocumentOutline } from "@/fabric/outline"
 import {
   DOCUMENT_BACKGROUND_COLOR,
   DOCUMENT_BORDER_COLOR,
@@ -151,6 +151,14 @@ interface StageContextValue {
   documentSize: { width: number; height: number }
   /** Resize the Document; the canvas dimensions are the source of truth. */
   setDocumentSize: (width: number, height: number) => void
+  /**
+   * Mirror of the Document's outline (map #48) — envelope-owned document
+   * state, like the size and rotation. The sticker the Document *reads as* is
+   * derived from it (`getStickerShape`) wherever a shape is what's wanted —
+   * notably the Designs panel's filter — and never mirrored, since it is a
+   * reading of this state rather than a second copy of it.
+   */
+  documentOutline: DocumentOutline
   /**
    * Mirror of the Document's look — background color and the border
    * (envelope-owned, §5): the border lives on the canvas (the canvas is the
@@ -459,6 +467,12 @@ export function StageProvider({ children }: { children: ReactNode }) {
     borderWidth: DOCUMENT_BORDER_WIDTH,
     borderColor: DOCUMENT_BORDER_COLOR,
   })
+  // The Document's outline (map #48) — envelope-owned state like the size and
+  // rotation: mirrored so the chrome can read it (the Designs panel filters
+  // its gallery by the shape it reads as), and refreshed by every path that
+  // changes it.
+  const [documentOutline, setDocumentOutline] =
+    useState<DocumentOutline>(BOOT_OUTLINE)
   const [unit, setUnit] = useState<Unit>("in")
   const [historyState, setHistoryState] = useState({ canUndo: false, canRedo: false })
   const [zoom, setZoomState] = useState(100)
@@ -496,6 +510,10 @@ export function StageProvider({ children }: { children: ReactNode }) {
         borderColor: next.borderColor,
       })
       setRotationState(next.getRotation())
+      setDocumentOutline({
+        outline: next.outline,
+        aspectLocked: next.aspectLocked,
+      })
     }
   }, [])
 
@@ -596,7 +614,12 @@ export function StageProvider({ children }: { children: ReactNode }) {
     [canvas],
   )
 
-  /** Re-mirror the document size, border, and rotation — document state (§8). */
+  /**
+   * Re-mirror the document size, border, rotation, and outline — document
+   * state (§8). Every path that changes the Document outside the toolbar's
+   * own commits (a restore, an apply) ends here, so a mirror never describes
+   * a Document the canvas no longer holds.
+   */
   const refreshDocumentMirrors = useCallback(
     (canvas: Canvas) => {
       setDocumentSizeState({ width: canvas.width, height: canvas.height })
@@ -606,6 +629,10 @@ export function StageProvider({ children }: { children: ReactNode }) {
         borderColor: canvas.borderColor,
       })
       setRotationState(canvas.rotation)
+      setDocumentOutline({
+        outline: canvas.outline,
+        aspectLocked: canvas.aspectLocked,
+      })
     },
     [],
   )
@@ -1183,21 +1210,11 @@ export function StageProvider({ children }: { children: ReactNode }) {
       // pre-apply Document. The commit dedup skips a no-op.
       canvas.history.commit()
       setDesignFileName(name)
-      setDocumentSizeState({ width: canvas.width, height: canvas.height })
-      setCanvasPropsState({
-        backgroundColor: (canvas.backgroundColor as string) || DOCUMENT_BACKGROUND_COLOR,
-        borderWidth: canvas.borderWidth,
-        borderColor: canvas.borderColor,
-      })
-      setRotationState(canvas.rotation)
+      // The applied design brought its own envelope — size, border, rotation,
+      // and outline all land together.
+      refreshDocumentMirrors(canvas)
     },
-    [
-      canvas,
-      flushPendingTextEdit,
-      setDesignFileName,
-      setDocumentSizeState,
-      setCanvasPropsState,
-    ],
+    [canvas, flushPendingTextEdit, setDesignFileName, refreshDocumentMirrors],
   )
 
   const importDesignFile = useCallback(
@@ -1461,6 +1478,7 @@ export function StageProvider({ children }: { children: ReactNode }) {
         selection,
         documentSize,
         setDocumentSize,
+        documentOutline,
         canvasProps,
         commitCanvasProps,
         unit,

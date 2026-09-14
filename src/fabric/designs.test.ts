@@ -4,9 +4,10 @@ import { parseDesignFile } from "@/fabric/design-file"
 import {
   PREDESIGNS,
   loadPredesign,
+  predesignShape,
   type Predesign,
 } from "@/fabric/designs"
-import { getStickerShape } from "@/fabric/outline"
+import { BOOT_OUTLINE, getStickerShape } from "@/fabric/outline"
 
 /**
  * The predesigns catalog (the sidebar's Designs panel): the ready-made
@@ -27,6 +28,31 @@ function validFileBody(): string {
     rotation: 0,
     border: { width: 16, color: "#18181B" },
     canvas: { version: "7.4.0", objects: [{ type: "Rect" }] },
+  })
+}
+
+/** A v2 file body carrying an explicit outline (map #48). */
+function outlinedFileBody(
+  outline: { outline: string; aspectLocked: boolean },
+  size = { width: 600, height: 600 },
+): string {
+  return JSON.stringify({
+    format: "sticker-studio",
+    version: 2,
+    size,
+    rotation: 0,
+    outline,
+    border: { width: 16, color: "#18181B" },
+    canvas: { version: "7.4.0", objects: [{ type: "Rect" }] },
+  })
+}
+
+/** A fetch stub serving this body — the catalog's injected seam. */
+function serve(text: string) {
+  return vi.fn().mockResolvedValue({
+    ok: true,
+    status: 200,
+    text: async () => text,
   })
 }
 
@@ -115,6 +141,68 @@ describe("the shipped design files", () => {
         `${id} is not square — author it at the current version, with an outline`,
       ).toBe(envelope.size.height)
     }
+  })
+
+  it("has designs for the boot shape — a fresh session's gallery is never empty", () => {
+    // The Designs panel shows only the designs made for the Document's shape
+    // (map #48), and a fresh session boots as a Square sticker. If the boot
+    // preset and the shipped set ever part ways, the first Designs panel a
+    // user opens is bare — a "none yet" state for a shape that has designs,
+    // which is exactly the state that must mean "nothing authored".
+    const shapes = shippedFiles().map(({ text }) =>
+      getStickerShape(parseDesignFile(text).outline),
+    )
+
+    expect(shapes).toContain(getStickerShape(BOOT_OUTLINE))
+  })
+})
+
+describe("predesignShape — the sticker a design is made for", () => {
+  it("derives the shape from the design's own envelope", async () => {
+    const body = outlinedFileBody(
+      { outline: "oval", aspectLocked: false },
+      { width: 288, height: 192 },
+    )
+
+    await expect(predesignShape(predesign("oval-design"), serve(body))).resolves.toBe(
+      "oval",
+    )
+  })
+
+  it("lets the file's outline outrank its size — a 600×600 design can be a Circle", async () => {
+    // The authored non-square case (map #48): once a file carries an outline,
+    // the size says nothing about the shape. Reading the shape off the size
+    // instead would file this Circle among the Square designs — and an Oval
+    // sticker would then offer a design drawn for a circle.
+    const body = outlinedFileBody({ outline: "oval", aspectLocked: true })
+
+    await expect(
+      predesignShape(predesign("circle-design"), serve(body)),
+    ).resolves.toBe("circle")
+  })
+
+  it("classifies a v1 file by its size — through the migrator, not a stored outline", async () => {
+    await expect(
+      predesignShape(predesign("legacy-square"), serve(validFileBody())),
+    ).resolves.toBe("square")
+  })
+
+  it("shares loadPredesign's cache — the shape costs no second fetch", async () => {
+    const fetchFn = serve(validFileBody())
+    const design = predesign("shared-load")
+
+    await loadPredesign(design, fetchFn)
+    await predesignShape(design, fetchFn)
+
+    expect(fetchFn).toHaveBeenCalledOnce()
+  })
+
+  it("throws loudly on a design that cannot be read (ADR 0002)", async () => {
+    const fetchFn = vi.fn().mockResolvedValue({ ok: false, status: 404 })
+
+    await expect(predesignShape(predesign("missing"), fetchFn)).rejects.toThrow(
+      "That design couldn't be loaded",
+    )
   })
 })
 

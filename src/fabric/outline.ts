@@ -167,6 +167,20 @@ export function getStickerShape(state: DocumentOutline): StickerShape {
 }
 
 /**
+ * The display name of each sticker shape (CONTEXT "Sticker preset" — Square,
+ * Rectangle, Rounded corner, Oval, Circle). The chrome that has to *name* a
+ * shape reads it here rather than spelling its own, so the vocabulary has one
+ * home and a rename reaches every surface.
+ */
+export const STICKER_SHAPE_LABELS: Record<StickerShape, string> = {
+  square: "Square",
+  rectangle: "Rectangle",
+  "rounded-corner": "Rounded corner",
+  oval: "Oval",
+  circle: "Circle",
+}
+
+/**
  * The Default size a fresh sheet of this outline state is created at, or null
  * when the state alone does not fix one.
  *

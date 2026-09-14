@@ -1,6 +1,7 @@
 import { getExportHost } from "@/fabric/export"
 import { parseDesignFile, type DesignFileV2 } from "@/fabric/design-file"
 import { preloadFonts } from "@/fabric/fonts"
+import { getStickerShape, type StickerShape } from "@/fabric/outline"
 
 /**
  * The predesigns catalog (the sidebar's Designs panel): the ready-made
@@ -65,6 +66,25 @@ export async function loadPredesign(
   const design = parseDesignFile(text)
   designCache.set(predesign.id, design)
   return design
+}
+
+/**
+ * The sticker a Predesign is made for — the shape its Design file's envelope
+ * describes, derived (`getStickerShape`) rather than declared beside the
+ * entry above: the file is the only thing that knows what it was drawn for,
+ * and an outline written down twice is an outline that can disagree with
+ * itself (the same reason the Document derives its own shape, map #48).
+ *
+ * Shares `loadPredesign`'s cache, so the Designs panel's filter costs no
+ * fetch beyond the thumbnail it already renders. A design that cannot be read
+ * throws, like every other read of a broken file (ADR 0002).
+ */
+export async function predesignShape(
+  predesign: Predesign,
+  fetchFn?: FetchFn,
+): Promise<StickerShape> {
+  const design = await loadPredesign(predesign, fetchFn)
+  return getStickerShape(design.outline)
 }
 
 /** The thumbnail's long side in px — the tile is ~96 px, 150 keeps it crisp. */
