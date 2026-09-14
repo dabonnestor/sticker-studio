@@ -2,12 +2,18 @@ import { Ellipse, Rect } from "fabric"
 import { describe, expect, it, vi } from "vitest"
 
 import { createStubContext } from "@/fabric/canvas-stub"
-import { buildOutlineClip, traceOutline } from "@/fabric/outline-clip"
+import {
+  BORDER_STROKE_MULTIPLIER,
+  buildOutlineBorder,
+  buildOutlineClip,
+  traceOutline,
+} from "@/fabric/outline-clip"
 
 /**
- * The Cut line's rendering (map #48, ticket #52) — the derived clip and the
- * border painter's path. Both are pure functions of the outline kind and the
- * Document size, driven here without a canvas.
+ * The Cut line's rendering (map #48, tickets #52/#53) — the derived clip, the
+ * exported border, and the stage border painter's path. All three are pure
+ * functions of the outline kind and the Document size, driven here without a
+ * canvas.
  */
 
 /** A 3×2 in Landscape sheet at the 96 DPI basis — the non-square case. */
@@ -54,6 +60,55 @@ describe("buildOutlineClip", () => {
     // picker's suite first caught.
     for (const kind of ["rect", "rounded-rect", "oval"] as const) {
       expect(buildOutlineClip(kind, SQUARE).excludeFromExport).toBe(true)
+    }
+  })
+})
+
+/**
+ * The exported border (ticket #53) — the same geometry as the clip, stroked on
+ * the cut at twice its width so the canvas clip trims the outer half. Unlike
+ * the clip it must serialize: `toSVG` reads object state and never runs
+ * `after:render`, so an SVG export carrying the border needs an object.
+ */
+describe("buildOutlineBorder", () => {
+  it("traces the cut itself, stroked twice the border's width", () => {
+    const border = buildOutlineBorder("rect", LANDSCAPE, "#18181b", 4)
+    expect(border).toBeInstanceOf(Rect)
+    const rect = border as Rect
+    // The path is the *full* Document rect — not inset by the border width:
+    // the outer half of the stroke lands outside the cut and the clip eats it,
+    // which is flush by construction where an inset path is not.
+    expect([rect.width, rect.height]).toEqual([288, 192])
+    expect([rect.left, rect.top]).toEqual([144, 96])
+    expect(rect.strokeWidth).toBe(8)
+    expect(BORDER_STROKE_MULTIPLIER).toBe(2)
+    expect(rect.stroke).toBe("#18181b")
+    // Transparent, not white: the stroke is the whole border.
+    expect(rect.fill).toBe("transparent")
+  })
+
+  it("rounds a rounded-rect outline's border at the preset radius", () => {
+    const border = buildOutlineBorder("rounded-rect", LANDSCAPE, "#18181b", 2) as Rect
+    expect([border.rx, border.ry]).toEqual([23.04, 23.04])
+  })
+
+  it("traces an oval outline's border as the inscribed ellipse", () => {
+    const border = buildOutlineBorder("oval", LANDSCAPE, "#18181b", 3) as Ellipse
+    expect(border).toBeInstanceOf(Ellipse)
+    expect([border.rx, border.ry]).toEqual([144, 96])
+    expect(border.strokeWidth).toBe(6)
+  })
+
+  it("is exported — the clip's exclusion is the clip's alone", () => {
+    for (const kind of ["rect", "rounded-rect", "oval"] as const) {
+      expect(buildOutlineBorder(kind, SQUARE, "#18181b", 2).excludeFromExport).toBe(
+        false,
+      )
+      // Distinct objects: sharing one instance would put the border's stroke
+      // on the clip, or the clip's exclusion on the border.
+      expect(buildOutlineBorder(kind, SQUARE, "#18181b", 2)).not.toBe(
+        buildOutlineClip(kind, SQUARE),
+      )
     }
   })
 })

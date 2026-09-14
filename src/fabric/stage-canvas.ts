@@ -49,7 +49,11 @@ import { History } from "@/fabric/history"
 import { HoverBorder } from "@/fabric/hover-border"
 import { isImageObject } from "@/fabric/images"
 import { BOOT_OUTLINE, BOOT_SIZE, mirrorLockedSize } from "@/fabric/outline"
-import { buildOutlineClip, traceOutline } from "@/fabric/outline-clip"
+import {
+  BORDER_STROKE_MULTIPLIER,
+  buildOutlineClip,
+  traceOutline,
+} from "@/fabric/outline-clip"
 import { DEFAULT_BORDER_COLOR, getShapeKind, restampBorderClip } from "@/fabric/shapes"
 import { SNAP_TOLERANCE_PX, SmartGuides } from "@/fabric/smart-guides"
 import { wireTextInteractions } from "@/fabric/text-interactions"
@@ -1843,7 +1847,7 @@ export function createStageCanvas(
       height: canvas.height,
     })
     ctx.clip()
-    ctx.lineWidth = borderWidth * 2
+    ctx.lineWidth = borderWidth * BORDER_STROKE_MULTIPLIER
     ctx.stroke()
     ctx.restore()
   })

@@ -1,6 +1,7 @@
-import { Rect, StaticCanvas, config, type Canvas } from "fabric"
+import { StaticCanvas, config, type Canvas } from "fabric"
 
 import { designFileBasename, type DocumentEnvelope } from "@/fabric/design-file"
+import { buildOutlineBorder, buildOutlineClip } from "@/fabric/outline-clip"
 
 /**
  * Export pipeline (build spec §11): one shared path for the four
@@ -8,10 +9,11 @@ import { designFileBasename, type DocumentEnvelope } from "@/fabric/design-file"
  * canvas is serialized (the same bytes a Design file carries), the envelope
  * is stripped, and a detached StaticCanvas renders just the Document — no
  * DOM element, no viewport/zoom/pan, no selection chrome, no workspace
- * background. Document rotation applies and the document border renders
- * inset on the edge (the same stroke the stage draws). Export is never an
- * undoable step and never mutates the Document or history — it reads the
- * committed serialization and renders a private copy.
+ * background. Document rotation applies, the document border strokes the
+ * Document's Cut line, and the Cut line clips the render (the same shape the
+ * stage shows, §11). Export is never an undoable step and never mutates the
+ * Document or history — it reads the committed serialization and renders a
+ * private copy.
  *
  * The browser-only, effectful steps (rasterization, the DOM font-face set,
  * downloads) are injected through an {@link ExportHost} so the orchestration
@@ -133,8 +135,9 @@ export interface ExportHost {
   /**
    * Render the document offscreen: build a detached StaticCanvas, load the
    * payload verbatim, size it to the rotated bounds, apply the document
-   * rotation about the center, and draw the inset document border. Returns
-   * the prepared canvas plus the sizes the formats need.
+   * rotation about the center, draw the document border on the Cut line, and
+   * clip the render to it. Returns the prepared canvas plus the sizes the
+   * formats need.
    */
   prepare(input: ExportInput): Promise<PreparedExport>
   /**
@@ -159,6 +162,10 @@ export interface ExportHost {
  * fields (the same five a Design file carries, §11: "the same bytes a Design
  * file would carry", envelope stripped) plus the canvas payload loaded
  * verbatim into the offscreen render.
+ *
+ * `outline`/`aspectLocked` arrive with the rest of the envelope (§11, #51) and
+ * the prepare step reads `outline` — with the size — to derive the Cut line's
+ * clip and border. The payload is *not* the source of truth for either.
  */
 export interface ExportInput extends DocumentEnvelope {
   format: ExportFormat
@@ -282,6 +289,11 @@ async function fetchFontBase64(url: string): Promise<string | null> {
  * a raster. Angles live on the objects, which every renderer honors: the
  * raster renders the rotated scene and `toSVG` serializes the angles. The
  * rotated-bounds canvas (sized by the caller) then contains the full scene.
+ *
+ * The Cut line's clip is scene state too, but it is not rotated here — it is
+ * built *after* these transforms, placed directly on the rotated bounds (see
+ * `prepare`). It is derived from the envelope rather than inherited from the
+ * payload, so there is nothing in `getObjects()` to carry it.
  */
 function rotateSceneAboutCenter(canvas: StaticCanvas, degrees: number): void {
   const radians = (degrees * Math.PI) / 180
@@ -313,9 +325,9 @@ function loadImage(src: string): Promise<HTMLImageElement> {
 /**
  * The real browser host: a detached StaticCanvas renders the document
  * (rotation baked into the scene — see rotateSceneAboutCenter — onto the
- * rotated bounds; the inset border drawn as a real Rect), fonts are awaited
- * against the DOM font set, and each format encodes through Fabric / the DOM
- * canvas / jsPDF.
+ * rotated bounds; the border a real object tracing the Cut line, which also
+ * clips the render), fonts are awaited against the DOM font set, and each
+ * format encodes through Fabric / the DOM canvas / jsPDF.
  */
 export function createExportHost(): ExportHost {
   return {
@@ -330,24 +342,20 @@ export function createExportHost(): ExportHost {
       // the canvas dimensions settle there), awaiting the async enliven
       // before the rotation and border are applied and the canvas is read.
       await canvas.loadFromJSON(input.payload)
-      // Document border — a centered rect at (w−bw)×(h−bw) stroked at bw spans
-      // the document edge exactly: the same inset stroke the stage draws
-      // (§11). As a real object it renders through the same pipeline as the
-      // shapes — full width under the 3.125× raster, and serialized into the
-      // SVG as a vector stroke.
+      // Document border — a real object tracing the Cut line (map #48, ticket
+      // #53), so it renders through the same pipeline as the shapes: full
+      // width under the 3.125× raster, and serialized into the SVG as a vector
+      // stroke. It is a *derived* shape rather than a stock Rect because the
+      // clip below trims it — a rect border on a circle sticker survives only
+      // as four dark wedges at the tangent points (§11, #50's correction).
       if (input.borderWidth) {
         canvas.add(
-          new Rect({
-            left: input.width / 2,
-            top: input.height / 2,
-            width: input.width - input.borderWidth,
-            height: input.height - input.borderWidth,
-            fill: "transparent",
-            stroke: input.borderColor,
-            strokeWidth: input.borderWidth,
-            selectable: false,
-            evented: false,
-          }),
+          buildOutlineBorder(
+            input.outline,
+            { width: input.width, height: input.height },
+            input.borderColor,
+            input.borderWidth,
+          ),
         )
       }
       // The box the rendered scene occupies — the rotated bounds, which are
@@ -374,6 +382,37 @@ export function createExportHost(): ExportHost {
           obj.set({ left: obj.left + dx, top: obj.top + dy })
         }
       }
+      // The Cut line (map #48, ticket #53): the same derived clip the stage
+      // installs, so the render is the sticker rather than a rectangle
+      // containing one. Fabric applies it to the background and the objects
+      // *before* `after:render` — and `toCanvasElement` runs the same
+      // `renderCanvas`, so the clip is honoured by the raster path (PNG, and
+      // JPEG/PDF through it) while `toSVG` writes it as a real `<clipPath>`
+      // wrapping the content: vector-true, not a traced bitmap.
+      //
+      // Built here from the envelope, never read from the payload. The clip is
+      // derived render state and `excludeFromExport` keeps it out of every
+      // serialization, so a clip arriving in a payload is stale or foreign by
+      // construction — `input.outline`/`input.width`/`input.height` are the
+      // source of truth (#51).
+      const clip = buildOutlineClip(input.outline, {
+        width: input.width,
+        height: input.height,
+      })
+      if (input.rotation) {
+        // Scene state, so it takes the rotation and re-centering the objects
+        // just took: the Document center is the rotation's fixed point
+        // (`rotateSceneAboutCenter`), and the shift above moves it to the
+        // resized canvas's center. The clip therefore lands turned and
+        // centered — an unrotated clip would leave the content and border
+        // rotating inside a stationary cut.
+        clip.set({
+          left: bounds.width / 2,
+          top: bounds.height / 2,
+          angle: input.rotation,
+        })
+      }
+      canvas.clipPath = clip
       canvas.requestRenderAll()
       return {
         canvas,

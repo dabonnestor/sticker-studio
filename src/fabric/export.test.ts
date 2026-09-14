@@ -1,4 +1,4 @@
-import { Rect } from "fabric"
+import { Ellipse, Rect } from "fabric"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 
 import {
@@ -272,20 +272,61 @@ describe("the real host — offscreen prepare", () => {
     expect(prepared.canvas.height).toBe(600)
   })
 
-  it("draws the document border as an inset stroked rect", async () => {
+  it("strokes the document border on the Cut line, twice as wide to be trimmed", async () => {
     const host = createExportHost()
     const prepared = await host.prepare(
       baseInput({ borderWidth: 4, borderColor: "#ff0000" }),
     )
     const border = prepared.canvas.getObjects().at(-1)!
     expect(border).toBeInstanceOf(Rect)
-    // A centered (w−bw)×(h−bw) rect stroked at bw spans the document edge.
-    expect(border.width).toBe(600 - 4)
-    expect(border.height).toBe(600 - 4)
+    // The path *is* the cut — the full Document rect, not an inset one — and
+    // the stroke is 2 × 4 so the clip below trims the outer half, leaving the
+    // visible border 4 px wide with its outer edge exactly on the cut. (On a
+    // rect this lands on the same pixels as the old (w−bw)×(h−bw) inset rect
+    // stroked at bw; on a circle it traces the circle instead of wedging.)
+    expect(border.width).toBe(600)
+    expect(border.height).toBe(600)
     expect(border.stroke).toBe("#ff0000")
-    expect(border.strokeWidth).toBe(4)
+    expect(border.strokeWidth).toBe(8)
+    // The border is the artifact — unlike the derived clip, it must serialize.
+    expect(border.excludeFromExport).toBe(false)
   })
 
+  it("traces an oval outline's border as the inscribed ellipse, not a rect", async () => {
+    const host = createExportHost()
+    const payload = { version: "7.4.0", width: 288, height: 192, objects: [] }
+    const prepared = await host.prepare(
+      baseInput({
+        width: 288,
+        height: 192,
+        outline: "oval",
+        borderWidth: 3,
+        borderColor: "#18181b",
+        payload: payload as never,
+      }),
+    )
+    const border = prepared.canvas.getObjects().at(-1)!
+    expect(border).toBeInstanceOf(Ellipse)
+    expect([(border as Ellipse).rx, (border as Ellipse).ry]).toEqual([144, 96])
+    expect(border.strokeWidth).toBe(6)
+  })
+
+  it("traces a rounded-rect outline's border at the preset corner radius", async () => {
+    const host = createExportHost()
+    const payload = { version: "7.4.0", width: 288, height: 192, objects: [] }
+    const prepared = await host.prepare(
+      baseInput({
+        width: 288,
+        height: 192,
+        outline: "rounded-rect",
+        borderWidth: 2,
+        payload: payload as never,
+      }),
+    )
+    const border = prepared.canvas.getObjects().at(-1)! as Rect
+    expect(border).toBeInstanceOf(Rect)
+    expect([border.rx, border.ry]).toEqual([23.04, 23.04])
+  })
   it("exports shape borders at the raster's proportional width — no SVG stroke pin", async () => {
     const host = createExportHost()
     const prepared = await host.prepare(
@@ -378,5 +419,117 @@ describe("the real host — offscreen prepare", () => {
     expect(prepared.canvas.height).toBeCloseTo(300)
     expect(prepared.raster).toEqual(rasterSize(200, 300))
     expect(prepared.points).toEqual(pointSize(200, 300))
+  })
+})
+
+/**
+ * The Cut line's clip (map #48, ticket #53) — the offscreen render is the
+ * sticker, not a rectangle containing one. The clip is *derived* from the
+ * envelope and installed by `prepare` itself: the payload never carries one
+ * (`excludeFromExport` keeps it out of every serialization), so anything that
+ * arrives in one is stale or foreign.
+ */
+describe("the real host — the Cut line clips the export", () => {
+  /** A payload whose own canvas-level clipPath is a 10×10 square at the origin. */
+  const FOREIGN_CLIP_PAYLOAD = {
+    version: "7.4.0",
+    width: 288,
+    height: 192,
+    objects: [],
+    clipPath: { type: "Rect", left: 5, top: 5, width: 10, height: 10 },
+  }
+
+  it("installs the outline's clip — derived from the envelope, not the payload", async () => {
+    const host = createExportHost()
+    const prepared = await host.prepare(
+      baseInput({
+        width: 288,
+        height: 192,
+        outline: "oval",
+        payload: FOREIGN_CLIP_PAYLOAD as never,
+      }),
+    )
+    const clip = prepared.canvas.clipPath as Ellipse
+    // The envelope's oval, not the 10×10 square the payload carried.
+    expect(clip).toBeInstanceOf(Ellipse)
+    expect([clip.rx, clip.ry]).toEqual([144, 96])
+    // Derived render state — it must never round-trip into a payload.
+    expect(clip.excludeFromExport).toBe(true)
+  })
+
+  it("clips at the Document's own size — a rect outline's clip is the rect", async () => {
+    const host = createExportHost()
+    const prepared = await host.prepare(baseInput())
+    const clip = prepared.canvas.clipPath as Rect
+    expect(clip).toBeInstanceOf(Rect)
+    expect([clip.width, clip.height]).toEqual([600, 600])
+    // Unrounded — a sharp-cornered Custom/Rectangle sheet.
+    expect(clip.rx).toBe(0)
+  })
+
+  it("carries the clip through the document rotation, centered on the bounds", async () => {
+    const host = createExportHost()
+    const payload = { version: "7.4.0", width: 300, height: 200, objects: [] }
+    const prepared = await host.prepare(
+      baseInput({
+        width: 300,
+        height: 200,
+        rotation: 90,
+        payload: payload as never,
+      }),
+    )
+    const clip = prepared.canvas.clipPath as Rect
+    // The 300×200 sheet rotated 90° spans 200×300 — the canvas *and* the clip.
+    expect([clip.width, clip.height]).toEqual([300, 200])
+    // An unrotated clip would leave the content and border turning inside a
+    // stationary cut: the clip lands turned, centered on the resized canvas.
+    expect(clip.angle).toBe(90)
+    expect(clip.left).toBeCloseTo(100)
+    expect(clip.top).toBeCloseTo(150)
+  })
+
+  it("writes the clip into the SVG as a real vector clipPath", async () => {
+    const host = createExportHost()
+    const payload = { version: "7.4.0", width: 288, height: 192, objects: [] }
+    const prepared = await host.prepare(
+      baseInput({
+        width: 288,
+        height: 192,
+        outline: "oval",
+        borderWidth: 4,
+        borderColor: "#ff0000",
+        payload: payload as never,
+      }),
+    )
+    const svg = await host.toSvg(prepared, [])
+    // A real `<clipPath>` wrapping the content — not a traced bitmap, so the
+    // cut stays vector-true at any scale. Its body is the oval itself.
+    expect(svg).toMatch(/<clipPath id="CLIPPATH_\d+" >\n\s*<ellipse /)
+    expect(svg).toMatch(/<g clip-path="url\(#CLIPPATH_\d+\)" >\n/)
+    // The border rides inside that group, so the SVG trims its outer half
+    // exactly as the raster does — and it is there at all, unlike the clip,
+    // which `excludeFromExport` would have dropped from the `<defs>`.
+    expect(svg).toContain("stroke: rgb(255,0,0)")
+    expect(svg).toContain("stroke-width: 8;")
+  })
+
+  it("keeps the raster and PDF boxing the Document — the clip is not a crop", async () => {
+    const host = createExportHost()
+    const payload = { version: "7.4.0", width: 288, height: 192, objects: [] }
+    const prepared = await host.prepare(
+      baseInput({
+        width: 288,
+        height: 192,
+        outline: "oval",
+        payload: payload as never,
+      }),
+    )
+    // The shaped sticker is drawn *on* a rectangular page/bitmap sized to the
+    // Document: PNG keeps alpha in the corners, JPEG composites them white,
+    // and PDF gets a plain page. A true die-cut page box is out of scope.
+    expect(prepared.canvas.width).toBe(288)
+    expect(prepared.canvas.height).toBe(192)
+    expect(prepared.raster).toEqual(rasterSize(288, 192))
+    expect(prepared.points).toEqual(pointSize(288, 192))
   })
 })
