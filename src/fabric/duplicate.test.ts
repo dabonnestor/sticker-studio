@@ -14,6 +14,9 @@ import { createShape, getShapeKind } from "@/fabric/shapes"
 import { createStageCanvas, type StageCanvas } from "@/fabric/stage-canvas"
 import { applyTextProps, createText, isTextObject } from "@/fabric/text"
 
+/** The Document these fixtures sit on — 4×4 in, where a shape is 192 px. */
+const DOC = { width: 384, height: 384 }
+
 // The app registers the document custom properties at startup (main.tsx);
 // the tests that exercise id round-trips register them too (ADR 0002).
 registerCustomProperties()
@@ -91,7 +94,7 @@ function addShapeAt(
   left: number,
   top: number,
 ): FabricObject {
-  const obj = createShape(kind)
+  const obj = createShape(kind, DOC)
   obj.set({ left, top })
   canvas.add(obj)
   return obj

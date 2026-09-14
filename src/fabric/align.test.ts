@@ -6,6 +6,9 @@ import { groupObjects } from "@/fabric/groups"
 import { createShape } from "@/fabric/shapes"
 import { createStageCanvas } from "@/fabric/stage-canvas"
 
+/** The Document these fixtures sit on — 4×4 in, where a shape is 192 px. */
+const DOC = { width: 384, height: 384 }
+
 /**
  * Object alignment — a lone object's edge or center meets the Document's
  * (600×600); two or more align to each other, each object's edge or center
@@ -38,7 +41,7 @@ describe("alignObjects", () => {
 
   /** A square positioned by its center (`left`/`top`, v7 center origin). */
   function addSquare(left: number, top: number): FabricObject {
-    const obj = createShape("square")
+    const obj = createShape("square", DOC)
     obj.set({ left, top })
     canvas.add(obj)
     return obj

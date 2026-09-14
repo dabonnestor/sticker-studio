@@ -6,6 +6,9 @@ import { createShape } from "@/fabric/shapes"
 import { createText, fitTextWidth, type TextMeasurer } from "@/fabric/text"
 import { commitTextSession, wireTextInteractions } from "@/fabric/text-interactions"
 
+/** The Document these fixtures sit on — 4×4 in, where a shape is 192 px. */
+const DOC = { width: 384, height: 384 }
+
 /**
  * Text interaction wiring (build spec §6) — driven end-to-end on a real
  * interactive canvas in jsdom: the hidden textarea is a genuine DOM element,
@@ -297,7 +300,7 @@ describe("wireTextInteractions — grouped text never clips", () => {
 
   /** Square 0..192 + text "Text" (42 px) at center 250 → 229..271, grouped. */
   function groupedTextbox(): { textbox: Textbox; group: FabricObject } {
-    const shape = createShape("square")
+    const shape = createShape("square", DOC)
     shape.set({ left: 0, top: 0 })
     textbox = createText(measure)
     textbox.set({ left: 250, top: 0 })

@@ -18,6 +18,9 @@ import {
   type TextMeasurer,
 } from "@/fabric/text"
 
+/** The Document these fixtures sit on — 4×4 in, where a shape is 192 px. */
+const DOC = { width: 384, height: 384 }
+
 // The app registers the document custom properties at startup (main.tsx);
 // the tests that exercise id round-trips (the history's selection restore
 // lives on ids surviving loadFromJSON) register them too (ADR 0002).
@@ -51,7 +54,7 @@ describe("history — snapshot stack", () => {
    * but the app selects before the commit, like a real interaction).
    */
   function addSquare(left = 100, top = 100): FabricObject {
-    const obj = createShape("square")
+    const obj = createShape("square", DOC)
     obj.set({ left, top })
     canvas.add(obj)
     canvas.setActiveObject(obj)
@@ -153,7 +156,7 @@ describe("history — snapshot stack", () => {
     // 105 commits on top of the seeded initial state — the cap keeps the
     // newest 100, dropping the seed and the first five commits.
     for (let i = 0; i < HISTORY_DEPTH + 5; i++) {
-      canvas.add(createShape("square"))
+      canvas.add(createShape("square", DOC))
       canvas.history.commit()
     }
     // 100 entries after the cap → 99 undoable steps, landing on the 6th
@@ -306,7 +309,7 @@ describe("history — snapshot stack", () => {
         version: "7.4.0",
         objects: [
           {
-            ...createShape("triangle").toObject(),
+            ...createShape("triangle", DOC).toObject(),
             type: "Triangle",
           },
         ],
@@ -368,7 +371,7 @@ describe("history — snapshot stack", () => {
     await canvas.history.undo()
     expect(canvas.getObjects().length).toBe(2)
     // A new edit restores undo above the reseeded state.
-    canvas.add(createShape("circle"))
+    canvas.add(createShape("circle", DOC))
     canvas.history.commit()
     expect(canvas.history.canUndo).toBe(true)
   })

@@ -26,6 +26,9 @@ import {
   writeWorkingDraft,
 } from "@/fabric/auto-persist"
 
+/** The Document these fixtures sit on — 4×4 in, where a shape is 192 px. */
+const DOC = { width: 384, height: 384 }
+
 registerCustomProperties()
 
 /**
@@ -50,7 +53,7 @@ describe("auto-persist — working draft", () => {
       document.createElement("canvas"),
       document.createElement("canvas"),
     )
-    const obj = createShape("square")
+    const obj = createShape("square", DOC)
     canvas.add(obj)
     canvas.history.commit()
 
@@ -81,7 +84,7 @@ describe("auto-persist — working draft", () => {
       document.createElement("canvas"),
       document.createElement("canvas"),
     )
-    const obj = createShape("circle")
+    const obj = createShape("circle", DOC)
     maker.add(obj)
     maker.history.commit()
     const stored = JSON.stringify(serializeDesignFile(maker))
@@ -180,7 +183,7 @@ describe("auto-persist — working draft", () => {
       document.createElement("canvas"),
       document.createElement("canvas"),
     )
-    maker.add(createShape("circle"))
+    maker.add(createShape("circle", DOC))
     maker.history.commit()
     const stored = JSON.stringify(serializeDesignFile(maker))
     window.localStorage.setItem(WORKING_DRAFT_KEY, stored)
@@ -202,7 +205,7 @@ describe("auto-persist — working draft", () => {
       document.createElement("canvas"),
       document.createElement("canvas"),
     )
-    maker.add(createShape("triangle"))
+    maker.add(createShape("triangle", DOC))
     maker.history.commit()
     const stored = JSON.stringify(serializeDesignFile(maker))
     window.localStorage.setItem(WORKING_DRAFT_KEY, stored)
@@ -333,7 +336,7 @@ describe("auto-persist — restore", () => {
       document.createElement("canvas"),
       document.createElement("canvas"),
     )
-    source.add(createShape("triangle"))
+    source.add(createShape("triangle", DOC))
     source.setDimensions({ width: 800, height: 400 })
     source.rotation = 90
     window.localStorage.setItem(WORKING_DRAFT_KEY, JSON.stringify(serializeDesignFile(source)))
@@ -377,7 +380,7 @@ describe("auto-persist — restore", () => {
       document.createElement("canvas"),
       document.createElement("canvas"),
     )
-    const obj = createShape("square")
+    const obj = createShape("square", DOC)
     source.add(obj)
     const id = obj["id"] as string
     window.localStorage.setItem(WORKING_DRAFT_KEY, JSON.stringify(serializeDesignFile(source)))

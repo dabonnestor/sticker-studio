@@ -18,6 +18,22 @@ import { NewDesignMenu } from "@/components/new-design-menu"
 import type { DocumentSize, StickerPreset } from "@/fabric/outline"
 import type { Unit } from "@/lib/units"
 
+/**
+ * The menu's copy, spelled out: the preset list is user-facing text, so it is
+ * written here verbatim rather than read back from the module under test — a
+ * label that drifts is then a test that fails, which is the whole point of
+ * pinning it. These are the `in` labels; the px list is asserted in full where
+ * it is tested, so a unit that stops reaching the menu is caught.
+ */
+const LABELS = {
+  square: "Square sticker (2×2 in)",
+  rectangle: "Rectangle sticker (3×2 in)",
+  roundedCorner: "Rounded corner sticker (2×2 in)",
+  oval: "Oval sticker (3×2 in)",
+  circle: "Circle sticker (2×2 in)",
+  custom: "Custom size",
+} as const
+
 // React's act() gate — the flag the test environment sets by convention.
 ;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT =
   true
@@ -27,6 +43,7 @@ describe("the New dropdown", () => {
   let root: Root
   let onStartNew: Mock<(preset: StickerPreset, customSize?: DocumentSize) => void>
   let isDocumentBlank: Mock<() => boolean>
+  let onUnitChange: Mock<(unit: Unit) => void>
 
   beforeEach(() => {
     container = document.createElement("div")
@@ -36,6 +53,7 @@ describe("the New dropdown", () => {
     // A pristine session by default: most of what New does is only visible
     // once the confirmation is out of the way.
     isDocumentBlank = vi.fn<() => boolean>(() => true)
+    onUnitChange = vi.fn<(unit: Unit) => void>()
   })
 
   afterEach(async () => {
@@ -46,15 +64,7 @@ describe("the New dropdown", () => {
   /** Render the menu at the app's active unit, and open it the way the New
    * button does — every one of these starts with the menu on screen. */
   async function openMenu(unit: Unit = "in") {
-    await act(async () => {
-      root.render(
-        <NewDesignMenu
-          onStartNew={onStartNew}
-          isDocumentBlank={isDocumentBlank}
-          unit={unit}
-        />,
-      )
-    })
+    await renderAt(unit)
     const trigger = container.querySelector("button")!
     await act(async () => {
       trigger.dispatchEvent(
@@ -63,6 +73,24 @@ describe("the New dropdown", () => {
       trigger.dispatchEvent(new MouseEvent("click", { bubbles: true }))
     })
     expect(menu()).not.toBeNull()
+  }
+
+  /**
+   * Re-render at a unit without touching the trigger — how the app's unit
+   * moves under an open panel, whether from the panel's own control or from
+   * the toolbar's switcher.
+   */
+  async function renderAt(unit: Unit) {
+    await act(async () => {
+      root.render(
+        <NewDesignMenu
+          onStartNew={onStartNew}
+          isDocumentBlank={isDocumentBlank}
+          unit={unit}
+          onUnitChange={onUnitChange}
+        />,
+      )
+    })
   }
 
   /** Choose a menu item — the pointer sequence a real click sends. */
@@ -106,6 +134,15 @@ describe("the New dropdown", () => {
     return found
   }
 
+  /** The Custom panel's unit row — the three unit buttons, in order. */
+  function unitButtons(): HTMLButtonElement[] {
+    return [
+      ...menu()!.querySelectorAll<HTMLButtonElement>(
+        '[role="group"][aria-label="Units"] button',
+      ),
+    ]
+  }
+
   function createButton(): HTMLButtonElement {
     const found = [...menu()!.querySelectorAll("button")].find(
       (button) => button.textContent?.trim() === "Create",
@@ -139,7 +176,7 @@ describe("the New dropdown", () => {
   /** Open the Custom panel. */
   async function openCustom(unit: Unit = "in") {
     await openMenu(unit)
-    await choose("Custom…")
+    await choose(LABELS.custom)
   }
 
   describe("the preset list", () => {
@@ -151,18 +188,38 @@ describe("the New dropdown", () => {
         ),
       ].map((element) => element.textContent?.trim())
       expect(labels).toEqual([
-        "Square",
-        "Rectangle",
-        "Rounded corner",
-        "Oval",
-        "Circle",
-        "Custom…",
+        LABELS.square,
+        LABELS.rectangle,
+        LABELS.roundedCorner,
+        LABELS.oval,
+        LABELS.circle,
+        LABELS.custom,
+      ])
+    })
+
+    it("names each Default size in the app's active unit", async () => {
+      // The size is half of what the entry is choosing between, so it is read
+      // in the unit the rest of the chrome is already showing — and Custom,
+      // which has no Default size, never grows a parenthetical.
+      await openMenu("px")
+      const labels = [
+        ...menu()!.querySelectorAll<HTMLElement>(
+          '[data-slot="dropdown-menu-item"]',
+        ),
+      ].map((element) => element.textContent?.trim())
+      expect(labels).toEqual([
+        "Square sticker (192×192 px)",
+        "Rectangle sticker (288×192 px)",
+        "Rounded corner sticker (192×192 px)",
+        "Oval sticker (288×192 px)",
+        "Circle sticker (192×192 px)",
+        "Custom size",
       ])
     })
 
     it("starts the chosen preset in silence on a factory-blank Document", async () => {
       await openMenu()
-      await choose("Oval")
+      await choose(LABELS.oval)
 
       expect(onStartNew).toHaveBeenCalledWith("oval", undefined)
       // Nothing to lose, so nothing was asked.
@@ -172,7 +229,7 @@ describe("the New dropdown", () => {
 
     it("passes each item's own preset, not the label it reads as", async () => {
       await openMenu()
-      await choose("Rounded corner")
+      await choose(LABELS.roundedCorner)
       expect(onStartNew).toHaveBeenCalledWith("rounded-corner", undefined)
     })
   })
@@ -181,7 +238,7 @@ describe("the New dropdown", () => {
     it("confirms before starting when the Document holds work", async () => {
       isDocumentBlank.mockReturnValue(false)
       await openMenu()
-      await choose("Oval")
+      await choose(LABELS.oval)
 
       // The choice is held, not acted on: nothing has been discarded yet.
       expect(onStartNew).not.toHaveBeenCalled()
@@ -195,7 +252,7 @@ describe("the New dropdown", () => {
       // later hand to add.
       isDocumentBlank.mockReturnValue(false)
       await openMenu()
-      await choose("Square")
+      await choose(LABELS.square)
 
       expect(dialog()).not.toBeNull()
       expect(onStartNew).not.toHaveBeenCalled()
@@ -204,7 +261,7 @@ describe("the New dropdown", () => {
     it("starts the held design on Discard", async () => {
       isDocumentBlank.mockReturnValue(false)
       await openMenu()
-      await choose("Oval")
+      await choose(LABELS.oval)
       await clickDialogButton("action")
 
       expect(onStartNew).toHaveBeenCalledWith("oval", undefined)
@@ -214,7 +271,7 @@ describe("the New dropdown", () => {
     it("discards nothing on Cancel", async () => {
       isDocumentBlank.mockReturnValue(false)
       await openMenu()
-      await choose("Oval")
+      await choose(LABELS.oval)
       await clickDialogButton("cancel")
 
       expect(onStartNew).not.toHaveBeenCalled()
@@ -226,12 +283,12 @@ describe("the New dropdown", () => {
       // openings of the menu, and the second must not be answered by the
       // first's reading.
       await openMenu()
-      await choose("Oval")
+      await choose(LABELS.oval)
       expect(dialog()).toBeNull()
 
       isDocumentBlank.mockReturnValue(false)
       await openMenu()
-      await choose("Oval")
+      await choose(LABELS.oval)
       expect(dialog()).not.toBeNull()
     })
   })
@@ -249,6 +306,67 @@ describe("the New dropdown", () => {
       expect(field("Height").value).toBe("192")
     })
 
+    it("re-says the typed size in the new unit rather than resetting it", async () => {
+      // The unit is a way of saying a size, never a way of changing one: a
+      // panel that rebuilt itself on a unit switch would hand back the size
+      // it opened on and quietly drop what was typed.
+      await openCustom()
+      await type(field("Width"), "5")
+
+      await renderAt("mm")
+
+      expect(field("Width").value).toBe("127") // 5 in
+      expect(field("Height").value).toBe("50.8") // the 2 in it opened on
+    })
+
+    it("re-says a size typed in px as inches, and back again", async () => {
+      await openCustom("px")
+      await type(field("Width"), "96")
+
+      await renderAt("in")
+      expect(field("Width").value).toBe("1")
+
+      await renderAt("mm")
+      expect(field("Width").value).toBe("25.4")
+    })
+
+    it("leaves text that names no size exactly as typed", async () => {
+      // Nothing to convert, so nothing to re-say — the floor message answers
+      // an unusable field, and a unit switch must not paper over it.
+      await openCustom()
+      await type(field("Width"), "abc")
+
+      await renderAt("mm")
+      expect(field("Width").value).toBe("abc")
+      expect(createButton().disabled).toBe(true)
+    })
+
+    it("sets the app's active unit from the panel's own control", async () => {
+      // The unit is the app's one display preference, not a second one the
+      // panel keeps to itself: the control writes through to the same state
+      // the toolbar's switcher does.
+      await openCustom()
+      const units = unitButtons()
+      expect(units.map((button) => button.textContent?.trim())).toEqual([
+        "in",
+        "mm",
+        "px",
+      ])
+
+      await act(async () => units[1].click())
+      expect(onUnitChange).toHaveBeenCalledWith("mm")
+      // A control inside the panel, not a menu item — the menu stays up for
+      // the size that follows.
+      expect(menu()).not.toBeNull()
+    })
+
+    it("reads the active unit as the pressed one", async () => {
+      await openCustom("px")
+      expect(unitButtons().map((button) => button.getAttribute("aria-pressed"))).toEqual(
+        ["false", "false", "true"],
+      )
+    })
+
     it("keeps the menu open while a field is typed in", async () => {
       // The constraint the ticket names: Radix closes the menu on item
       // select, and the select here only *opens* the fields. If it closed,
@@ -262,7 +380,7 @@ describe("the New dropdown", () => {
 
     it("keeps the caret in the field through the menu's typeahead", async () => {
       // Radix's menu content runs typeahead on any character key pressed
-      // anywhere inside it. "c" matches Circle and Custom… — without the
+      // anywhere inside it. "c" matches Circle sticker and Custom size — without the
       // panel stopping its own keydowns, focus would leave the field the user
       // is typing in and land on a menu item.
       await openCustom()

@@ -5,6 +5,9 @@ import { createStubContext } from "@/fabric/canvas-stub"
 import { createShape } from "@/fabric/shapes"
 import { createStageCanvas, type StageCanvas } from "@/fabric/stage-canvas"
 
+/** The Document these fixtures sit on — 4×4 in, where a shape is 192 px. */
+const DOC = { width: 384, height: 384 }
+
 /**
  * Hover border: the object under the pointer shows its selection-style
  * border — 1 px, the object's own borderColor — before any click. The
@@ -58,7 +61,7 @@ describe("hover border", () => {
   }
 
   it("paints the hovered object's selection-style border on the overlay", () => {
-    const shape = createShape("square")
+    const shape = createShape("square", DOC)
     canvas.add(shape)
     shape.setCoords()
     // The change requests a frame — plain hover moves render nothing.
@@ -77,7 +80,7 @@ describe("hover border", () => {
   })
 
   it("glues the hover border to the Document's position in the overlay", () => {
-    const shape = createShape("square")
+    const shape = createShape("square", DOC)
     canvas.add(shape)
     shape.setCoords()
     // Document at (200,100) inside a workspace overlay starting at (100,40).
@@ -95,7 +98,7 @@ describe("hover border", () => {
   })
 
   it("clears the border when the pointer leaves the object", () => {
-    const shape = createShape("square")
+    const shape = createShape("square", DOC)
     canvas.add(shape)
     shape.setCoords()
     hover(shape)
@@ -112,7 +115,7 @@ describe("hover border", () => {
   })
 
   it("a target-less entry clears the border — the canvas entered over empty space", () => {
-    const shape = createShape("square")
+    const shape = createShape("square", DOC)
     canvas.add(shape)
     shape.setCoords()
     hover(shape)
@@ -122,7 +125,7 @@ describe("hover border", () => {
   })
 
   it("paints nothing over the active object's own selection chrome", () => {
-    const shape = createShape("square")
+    const shape = createShape("square", DOC)
     canvas.add(shape)
     shape.setCoords()
     canvas.setActiveObject(shape)
@@ -134,8 +137,8 @@ describe("hover border", () => {
   })
 
   it("paints nothing over a member of an active selection — its member box already shows", () => {
-    const shape = createShape("square")
-    const other = createShape("circle")
+    const shape = createShape("square", DOC)
+    const other = createShape("circle", DOC)
     other.set({ left: 300, top: 300 })
     canvas.add(shape, other)
     const selection = new ActiveSelection([shape, other], { canvas })
@@ -148,9 +151,9 @@ describe("hover border", () => {
   })
 
   it("paints the hover border alongside an active object's controls", () => {
-    const shape = createShape("square")
+    const shape = createShape("square", DOC)
     shape.set({ left: 100, top: 100 })
-    const other = createShape("circle")
+    const other = createShape("circle", DOC)
     other.set({ left: 300, top: 300 })
     canvas.add(shape, other)
     canvas.setActiveObject(shape)
@@ -172,7 +175,7 @@ describe("hover border", () => {
   })
 
   it("does not paint during an active marquee — its paint owns the overlay", () => {
-    const shape = createShape("square")
+    const shape = createShape("square", DOC)
     canvas.add(shape)
     shape.setCoords()
     const raw = canvas as unknown as {
@@ -188,7 +191,7 @@ describe("hover border", () => {
   })
 
   it("removing the hovered object clears the target at once", () => {
-    const shape = createShape("square")
+    const shape = createShape("square", DOC)
     canvas.add(shape)
     shape.setCoords()
     hover(shape)
@@ -198,7 +201,7 @@ describe("hover border", () => {
   })
 
   it("a renderTop-only frame keeps the hover border", () => {
-    const shape = createShape("square")
+    const shape = createShape("square", DOC)
     canvas.add(shape)
     shape.setCoords()
     hover(shape)

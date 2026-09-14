@@ -8,6 +8,7 @@ import {
 
 import { stampDocumentProps } from "@/fabric/document-props"
 import { refitParentGroup } from "@/fabric/groups"
+import type { DocumentSize } from "@/fabric/outline"
 
 /**
  * Shape model (build spec §4, §5). One Fabric object per shape:
@@ -55,64 +56,116 @@ export interface CutExtent {
 }
 
 /**
- * Per-kind creation spec. Default sizes are inches-specified at the 96 DPI
- * display basis (§5): Square 2×2 → 192×192, Circle Ø2 → radius 96,
- * Rectangle / Oval / Triangle 3×2 (landscape) → 288×192.
+ * The fraction of the Document's short side a sidebar shape is created at
+ * (§5, map #48). A shape is an element *on* the sticker rather than the
+ * sticker itself, so it is sized against the Document it lands on instead of
+ * against a fixed sheet: it arrives with room to move, and it stays in
+ * proportion whatever size the sticker is — the same instinct as an image's
+ * fit to the Document (IMAGE_FIT_RATIO, which sizes a whole design at 0.8
+ * where this sizes one element at half).
+ *
+ * It is a ratio and not an inch size for that reason: the Document's own
+ * Default size is 2×2 in, so a fixed 2×2 in shape would exactly cover the
+ * sticker it was added to, and a 3×2 in one would hang off the edge.
+ */
+export const SHAPE_DEFAULT_RATIO = 0.5
+
+/**
+ * Per-kind creation spec, in multiples of the shape's short side: Square and
+ * Circle 1:1, Rectangle / Oval / Triangle 3:2 landscape. The short side itself
+ * comes from the Document at creation ({@link SHAPE_DEFAULT_RATIO}).
  */
 interface ShapeSpec {
   kind: ShapeKind
-  /** Cut-extent width at creation (border off), px. */
-  width: number
-  /** Cut-extent height at creation (border off), px. */
-  height: number
-  /** Circle radius, px. */
-  radius?: number
-  /** Ellipse radii (oval), px. */
-  ellipseRadii?: { x: number; y: number }
+  /** Cut-extent width, as a multiple of the short side. */
+  widthRatio: number
+  /** Cut-extent height, as a multiple of the short side. */
+  heightRatio: number
 }
 
 const SHAPE_SPECS: Record<ShapeKind, ShapeSpec> = {
-  square: { kind: "square", width: 192, height: 192 },
-  circle: { kind: "circle", width: 192, height: 192, radius: 96 },
-  rectangle: { kind: "rectangle", width: 288, height: 192 },
-  oval: { kind: "oval", width: 288, height: 192, ellipseRadii: { x: 144, y: 96 } },
-  triangle: { kind: "triangle", width: 288, height: 192 },
+  square: { kind: "square", widthRatio: 1, heightRatio: 1 },
+  circle: { kind: "circle", widthRatio: 1, heightRatio: 1 },
+  rectangle: { kind: "rectangle", widthRatio: 1.5, heightRatio: 1 },
+  oval: { kind: "oval", widthRatio: 1.5, heightRatio: 1 },
+  triangle: { kind: "triangle", widthRatio: 1.5, heightRatio: 1 },
 }
 
-/** Build the Fabric object for a spec — shape and cut clipPath share it. */
-function buildShape(spec: ShapeSpec): FabricObject {
-  switch (spec.kind) {
+/** A shape's cut extent at creation, in px at the 96 DPI display basis. */
+export interface ShapeGeometry {
+  width: number
+  height: number
+}
+
+/**
+ * The cut extent a kind is created at on a Document of this size: the shape's
+ * short side is {@link SHAPE_DEFAULT_RATIO} of the Document's short side, and
+ * its own proportions follow from there. The Document's *short* side governs
+ * both, so the shape reads the same on a landscape sticker as on a square one.
+ */
+export function shapeGeometry(
+  kind: ShapeKind,
+  documentSize: DocumentSize,
+): ShapeGeometry {
+  const spec = SHAPE_SPECS[kind]
+  const short = SHAPE_DEFAULT_RATIO * Math.min(documentSize.width, documentSize.height)
+  return {
+    width: spec.widthRatio * short,
+    height: spec.heightRatio * short,
+  }
+}
+
+/** Build the Fabric object for a kind at a geometry — shape and cut share it. */
+function buildShape(kind: ShapeKind, geometry: ShapeGeometry): FabricObject {
+  switch (kind) {
     case "square":
     case "rectangle":
-      return new Rect({ width: spec.width, height: spec.height })
+      return new Rect({ width: geometry.width, height: geometry.height })
     case "circle":
-      return new Circle({ radius: spec.radius! })
+      return new Circle({ radius: geometry.height / 2 })
     case "oval":
-      return new Ellipse({ rx: spec.ellipseRadii!.x, ry: spec.ellipseRadii!.y })
+      return new Ellipse({ rx: geometry.width / 2, ry: geometry.height / 2 })
     case "triangle":
-      return new Triangle({ width: spec.width, height: spec.height })
+      return new Triangle({ width: geometry.width, height: geometry.height })
   }
 }
 
 /**
- * Create a shape of the given kind: default size at the 96 DPI basis, border
- * off (cut = geometry), the cut clipPath at the original edge, and the
- * document identity stamped (id, locked=false, ADR 0002).
+ * Create a shape of the given kind on a Document of the given size: the cut
+ * extent {@link shapeGeometry} answers with, border off (cut = geometry), the
+ * cut clipPath at the original edge, and the document identity stamped (id,
+ * locked=false, ADR 0002).
+ *
+ * The Document size is required rather than defaulted because there is no
+ * answer without it: a shape's created size is a fraction of the Document, so
+ * a caller that has no Document in hand has no shape to create.
  */
-export function createShape(kind: "square" | "rectangle"): Rect
-export function createShape(kind: "circle"): Circle
-export function createShape(kind: "oval"): Ellipse
-export function createShape(kind: "triangle"): Triangle
-export function createShape(kind: ShapeKind): FabricObject
-export function createShape(kind: ShapeKind): FabricObject {
-  const spec = SHAPE_SPECS[kind]
-  const obj = buildShape(spec)
+export function createShape(
+  kind: "square" | "rectangle",
+  documentSize: DocumentSize,
+): Rect
+export function createShape(kind: "circle", documentSize: DocumentSize): Circle
+export function createShape(kind: "oval", documentSize: DocumentSize): Ellipse
+export function createShape(
+  kind: "triangle",
+  documentSize: DocumentSize,
+): Triangle
+export function createShape(
+  kind: ShapeKind,
+  documentSize: DocumentSize,
+): FabricObject
+export function createShape(
+  kind: ShapeKind,
+  documentSize: DocumentSize,
+): FabricObject {
+  const geometry = shapeGeometry(kind, documentSize)
+  const obj = buildShape(kind, geometry)
   obj.fill = DEFAULT_FILL
   obj.stroke = DEFAULT_BORDER_COLOR
   obj.strokeWidth = 0 // border off — a stroke would sit exactly on the cut path
   obj.strokeUniform = true // border renders at fixed px — scaling never thickens it
   obj.noScaleCache = false // live cache re-render while scaling — the fixed px holds mid-gesture
-  obj.clipPath = buildShape(spec) // cut line — grows with the border (§4)
+  obj.clipPath = buildShape(kind, geometry) // cut line — grows with the border (§4)
   return stampDocumentProps(obj)
 }
 

@@ -10,6 +10,7 @@ import {
   mirrorLockedSize,
   presetDefaultSize,
   presetDocument,
+  presetLabel,
   ROUNDED_CORNER_RADIUS_RATIO,
   STICKER_PRESETS,
 } from "@/fabric/outline"
@@ -137,6 +138,42 @@ describe("the sticker preset table", () => {
       width: unitToPx(2, "in"),
       height: unitToPx(2, "in"),
     })
+  })
+})
+
+/**
+ * How New names a preset (map #48): the shape and the Default size it creates
+ * at, read in the unit the app is showing. A preset is a shape *at a size*, so
+ * the name carries both — and CONTEXT's Default size vocabulary is where the
+ * numbers come from (Square 2×2, Circle Ø2, Rectangle/Oval 3×2).
+ */
+describe("presetLabel", () => {
+  it("names the shape and its Default size, as CONTEXT gives them", () => {
+    expect(presetLabel("square", "in")).toBe("Square sticker (2×2 in)")
+    expect(presetLabel("rectangle", "in")).toBe("Rectangle sticker (3×2 in)")
+    expect(presetLabel("rounded-corner", "in")).toBe(
+      "Rounded corner sticker (2×2 in)",
+    )
+    expect(presetLabel("oval", "in")).toBe("Oval sticker (3×2 in)")
+    // A Circle is named by its width×height like every other shape: the
+    // Default size the preset table holds for it is the 192×192 box it is
+    // drawn in, which is the same size CONTEXT "Default size" writes as Ø2.
+    expect(presetLabel("circle", "in")).toBe("Circle sticker (2×2 in)")
+    expect(presetLabel("circle", "px")).toBe("Circle sticker (192×192 px)")
+  })
+
+  it("reads the size in the unit asked for — mm included", () => {
+    expect(presetLabel("square", "px")).toBe("Square sticker (192×192 px)")
+    // 2 in at the 96 DPI basis is 50.8 mm, the way the toolbar reads it.
+    expect(presetLabel("square", "mm")).toBe("Square sticker (50.8×50.8 mm)")
+  })
+
+  it("Custom carries no size, being the one preset with none", () => {
+    // Its width and height are typed at New, so there is no Default size to
+    // name — in any unit.
+    for (const unit of ["in", "mm", "px"] as const) {
+      expect(presetLabel("custom", unit)).toBe("Custom size")
+    }
   })
 })
 

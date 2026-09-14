@@ -81,14 +81,8 @@ import {
   getFontFamilySpec,
   isTextObject,
 } from "@/fabric/text"
-import { commitPx, formatPx, unitToPx, type Unit } from "@/lib/units"
+import { commitPx, formatPx, UNITS, unitToPx, type Unit } from "@/lib/units"
 import { cn } from "@/lib/utils"
-
-const UNITS: { value: Unit; label: string }[] = [
-  { value: "in", label: "in" },
-  { value: "mm", label: "mm" },
-  { value: "px", label: "px" },
-]
 
 /** Opacity slider range and step — 0 (transparent) to 100% (opaque). */
 const OPACITY_RANGE = { min: 0, max: 100, step: 1 } as const
@@ -319,17 +313,44 @@ function SizeFieldPair({
   )
 }
 
+/**
+ * The Document's aspect lock, shown beside the size fields when it holds one
+ * (map #48): a Square or a Circle is created 1:1 and stays there, so a commit
+ * to either field carries the other with it. Rectangle, Rounded corner, Oval,
+ * and Custom resize freely and show nothing — the badge marks a lock that is
+ * really in the envelope, so it never claims one the fields beside it would
+ * deny. Rounded corner in particular: its corners are round, but its ratio is
+ * free, so it is a rounded *rectangle* as readily as a rounded square.
+ */
+function AspectLockBadge() {
+  return (
+    <TooltipLabel label="Aspect ratio locked">
+      <Lock
+        role="img"
+        aria-label="Aspect ratio locked"
+        className="size-3.5 shrink-0 text-muted-foreground"
+      />
+    </TooltipLabel>
+  )
+}
+
 /** Document size (§5) — the canvas dimensions, the basis of export size. */
 function DocumentSize() {
-  const { documentSize, setDocumentSize, unit } = useStage()
+  const { documentSize, setDocumentSize, unit, documentOutline } = useStage()
   return (
-    <SizeFieldPair
-      widthPx={documentSize.width}
-      heightPx={documentSize.height}
-      unit={unit}
-      minPx={MIN_DOCUMENT_SIZE_PX}
-      onCommit={setDocumentSize}
-    />
+    // The badge sits tight against the pair rather than out at the toolbar's
+    // own gap: it governs those two fields, and at an equal distance from the
+    // unit switcher it would read as a third control of its own.
+    <div className="flex items-center gap-1.5">
+      <SizeFieldPair
+        widthPx={documentSize.width}
+        heightPx={documentSize.height}
+        unit={unit}
+        minPx={MIN_DOCUMENT_SIZE_PX}
+        onCommit={setDocumentSize}
+      />
+      {documentOutline.aspectLocked && <AspectLockBadge />}
+    </div>
   )
 }
 

@@ -6,6 +6,9 @@ import { groupObjects } from "@/fabric/groups"
 import { createShape } from "@/fabric/shapes"
 import { createStageCanvas } from "@/fabric/stage-canvas"
 
+/** The Document these fixtures sit on — 4×4 in, where a shape is 192 px. */
+const DOC = { width: 384, height: 384 }
+
 /**
  * Z-order arrange (§7 Q6) — the selection moves as one block: forward /
  * backward step one slot, to-front / to-back jump to the stack ends, the
@@ -28,7 +31,7 @@ describe("arrangeObjects", () => {
   })
 
   function addShape(): FabricObject {
-    const obj = createShape("square")
+    const obj = createShape("square", DOC)
     canvas.add(obj)
     return obj
   }

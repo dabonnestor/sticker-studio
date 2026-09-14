@@ -690,7 +690,12 @@ export function StageProvider({ children }: { children: ReactNode }) {
   const addShape = useCallback(
     (kind: ShapeKind) => {
       if (!canvas?.history) return
-      const obj = createShape(kind)
+      // Sized against the Document it lands on, not a fixed sheet (§5): the
+      // canvas *is* the Document, so its dimensions are the size to measure.
+      const obj = createShape(kind, {
+        width: canvas.getWidth(),
+        height: canvas.getHeight(),
+      })
       canvas.add(obj)
       canvas.centerObject(obj)
       canvas.setActiveObject(obj)

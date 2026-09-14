@@ -17,6 +17,9 @@ import {
 } from "@/fabric/smart-guides"
 import { createText } from "@/fabric/text"
 
+/** The Document these fixtures sit on — 4×4 in, where a shape is 192 px. */
+const DOC = { width: 384, height: 384 }
+
 /**
  * Smart guides (build spec §17, ADR 0004): dragging a shape or text object
  * near another object's edge or center shows a 1 px periwinkle alignment
@@ -89,7 +92,7 @@ function horizontalCoords(guides: SmartGuides): number[] {
 
 /** A 192×192 square with stroke off, positioned by center. */
 function squareAt(left: number, top: number): FabricObject {
-  const shape = createShape("square")
+  const shape = createShape("square", DOC)
   shape.set({ left, top })
   shape.setCoords()
   return shape
@@ -370,7 +373,7 @@ describe("tautological skip", () => {
 
   /** A full-width 600×100 object centered on x=300 — the full-span case. */
   function fullWidthObject(): FabricObject {
-    const shape = createShape("square")
+    const shape = createShape("square", DOC)
     shape.set({ width: 600, height: 100, left: 300, top: 200 })
     shape.setCoords()
     canvas.add(shape)

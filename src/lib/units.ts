@@ -4,6 +4,17 @@
  */
 export type Unit = "in" | "mm" | "px"
 
+/**
+ * The units the app offers, in the order its controls list them. One home for
+ * the list: the toolbar's unit switcher and New's Custom fields both read it,
+ * so a unit added here appears in both rather than in whichever was edited.
+ */
+export const UNITS: { value: Unit; label: string }[] = [
+  { value: "in", label: "in" },
+  { value: "mm", label: "mm" },
+  { value: "px", label: "px" },
+]
+
 /** 1 in = 96 px at the display basis (§5). */
 export const PX_PER_INCH = 96
 

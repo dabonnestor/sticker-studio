@@ -20,6 +20,9 @@ import { registerCustomProperties } from "@/fabric/custom-properties"
 import { createShape, setFillColor } from "@/fabric/shapes"
 import { createStageCanvas } from "@/fabric/stage-canvas"
 
+/** The Document these fixtures sit on — 4×4 in, where a shape is 192 px. */
+const DOC = { width: 384, height: 384 }
+
 // React's act() gate — the flag the test environment sets by convention.
 ;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT =
   true
@@ -249,7 +252,7 @@ describe("color picker — the commit boundary", () => {
   it("records nothing when a shape's color card closes untouched", async () => {
     // A shape's color lives in the canvas payload (fill), not the envelope —
     // the same phantom step reaches the stack through the other comparison.
-    const shape = createShape("square")
+    const shape = createShape("square", DOC)
     canvas.add(shape)
     canvas.setActiveObject(shape)
     canvas.history.commit()

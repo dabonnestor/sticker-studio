@@ -23,12 +23,12 @@ import { Input } from "@/components/ui/input"
 import {
   CUSTOM_DEFAULT_SIZE,
   MIN_DOCUMENT_SIZE_PX,
-  STICKER_SHAPE_LABELS,
+  presetLabel,
   type DocumentSize,
   type StickerPreset,
   type StickerShape,
 } from "@/fabric/outline"
-import { commitPx, formatPx, type Unit } from "@/lib/units"
+import { commitPx, formatPx, UNITS, unitToPx, type Unit } from "@/lib/units"
 
 /**
  * The New dropdown (map #48, ticket #55) — the top bar's start-a-design
@@ -74,6 +74,17 @@ function typedSizePx(text: string, unit: Unit): number | null {
   return px < MIN_DOCUMENT_SIZE_PX ? null : px
 }
 
+/**
+ * A typed field's text, re-said in another unit — the same size either way.
+ * Text that names no size (empty, unparseable) has none to convert, so it is
+ * left exactly as typed for the floor message to answer.
+ */
+function convertText(text: string, from: Unit, to: Unit): string {
+  const value = Number(text)
+  if (text.trim() === "" || !Number.isFinite(value)) return text
+  return formatPx(unitToPx(value, from), to)
+}
+
 /** One of Custom's two fields — a labelled size in the app's active unit. */
 function CustomSizeField({
   label,
@@ -113,6 +124,42 @@ function CustomSizeField({
 }
 
 /**
+ * The unit Custom's fields are typed in — the app's active unit, set from here
+ * so a size can be entered in mm without leaving the menu for the toolbar.
+ *
+ * A row of three rather than a dropdown on purpose: a Radix menu opened inside
+ * a Radix menu portals its content *outside* the New menu, which the outer menu
+ * reads as a click away and closes on — the same class of problem the panel's
+ * keydowns and its item select already work around. Buttons inside the panel
+ * stay inside it, so there is nothing to work around.
+ */
+function UnitChoice({
+  unit,
+  onChange,
+}: {
+  unit: Unit
+  onChange: (unit: Unit) => void
+}) {
+  return (
+    <div role="group" aria-label="Units" className="flex items-center gap-1">
+      {UNITS.map(({ value, label }) => (
+        <Button
+          key={value}
+          type="button"
+          variant={value === unit ? "secondary" : "ghost"}
+          size="xs"
+          className="flex-1"
+          aria-pressed={value === unit}
+          onClick={() => onChange(value)}
+        >
+          {label}
+        </Button>
+      ))}
+    </div>
+  )
+}
+
+/**
  * Custom's fields — a width and a height in the app's active unit, and the one
  * control that creates the sheet.
  *
@@ -126,14 +173,17 @@ function CustomSizeField({
  *
  * The fields open on {@link CUSTOM_DEFAULT_SIZE} rather than on the current
  * Document: Custom is Rectangle with the size left free, so the same click
- * yields the same starting numbers whatever is on the stage. The panel is keyed
- * by the active unit, so a unit switch re-labels the numbers it was opened on.
+ * yields the same starting numbers whatever is on the stage. An open panel
+ * follows a unit switch rather than being rebuilt by one: the numbers are
+ * re-said in the new unit, not reset to the ones the panel opened on.
  */
 function CustomSizeForm({
   unit,
+  onUnitChange,
   onCreate,
 }: {
   unit: Unit
+  onUnitChange: (unit: Unit) => void
   onCreate: (size: DocumentSize) => void
 }) {
   const [width, setWidth] = useState(() =>
@@ -143,6 +193,21 @@ function CustomSizeForm({
     formatPx(CUSTOM_DEFAULT_SIZE.height, unit),
   )
   const widthRef = useRef<HTMLInputElement>(null)
+  // The unit the fields' text is currently said in — the app's unit, until
+  // either the panel's control or the toolbar's switcher moves it.
+  const saidIn = useRef(unit)
+
+  useEffect(() => {
+    const from = saidIn.current
+    if (from === unit) return
+    saidIn.current = unit
+    // The same size, said another way. Rebuilding the fields on the new unit
+    // would instead hand back the size the panel *opened* on, discarding what
+    // was typed — the one place in the app where a unit switch would change
+    // the value rather than only the way it reads.
+    setWidth((text) => convertText(text, from, unit))
+    setHeight((text) => convertText(text, from, unit))
+  }, [unit])
 
   // The panel is opened in order to be typed into — the caret starts in W.
   useEffect(() => {
@@ -179,6 +244,7 @@ function CustomSizeForm({
           onChange={setHeight}
         />
       </div>
+      <UnitChoice unit={unit} onChange={onUnitChange} />
       {/* The floor says itself the way it does in the toolbar — when a field
           is under it, in the unit the number was typed in. */}
       {!ready && (
@@ -222,6 +288,7 @@ export function NewDesignMenu({
   onStartNew,
   isDocumentBlank,
   unit,
+  onUnitChange,
 }: {
   /** Start the design — the stage context's `startNewDesign`. */
   onStartNew: (preset: StickerPreset, customSize?: DocumentSize) => void
@@ -233,6 +300,12 @@ export function NewDesignMenu({
   isDocumentBlank: () => boolean
   /** The app's active display unit, for Custom's fields. */
   unit: Unit
+  /**
+   * Set the active unit — the stage context's `setUnit`. Custom's own unit
+   * control writes the app's one active unit rather than a second one of its
+   * own: a unit is a display preference, and two of them could disagree.
+   */
+  onUnitChange: (unit: Unit) => void
 }) {
   const [open, setOpen] = useState(false)
   const [customOpen, setCustomOpen] = useState(false)
@@ -266,12 +339,20 @@ export function NewDesignMenu({
             <ChevronDown aria-hidden />
           </Button>
         </DropdownMenuTrigger>
-        {/* Wider than the trigger: Custom's two fields and its Create button
-            need the room the "New" label doesn't have. */}
-        <DropdownMenuContent align="start" className="min-w-56">
+        {/* Sized to its own content rather than to the trigger: the shared
+            content pins its width to the New button, which is narrower than a
+            preset's label ("Rounded corner sticker (2×2 in)") and far narrower
+            than Custom's fields and Create button. The floor stays so the menu
+            never shrinks below the panel it opens for itself, and the ceiling
+            is Radix's own available width, so a label too long for the window
+            wraps rather than running off the edge. */}
+        <DropdownMenuContent
+          align="start"
+          className="w-max max-w-(--radix-dropdown-menu-content-available-width) min-w-56"
+        >
           {PRESET_ORDER.map((shape) => (
             <DropdownMenuItem key={shape} onSelect={() => requestNew(shape)}>
-              {STICKER_SHAPE_LABELS[shape]}
+              {presetLabel(shape, unit)}
             </DropdownMenuItem>
           ))}
           <DropdownMenuSeparator />
@@ -285,12 +366,12 @@ export function NewDesignMenu({
               setCustomOpen(true)
             }}
           >
-            Custom…
+            {presetLabel("custom", unit)}
           </DropdownMenuItem>
           {customOpen && (
             <CustomSizeForm
-              key={unit}
               unit={unit}
+              onUnitChange={onUnitChange}
               onCreate={(size) => {
                 setOpen(false)
                 requestNew("custom", size)

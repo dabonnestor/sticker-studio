@@ -13,6 +13,9 @@ import {
 import { createShape } from "@/fabric/shapes"
 import { createStageCanvas } from "@/fabric/stage-canvas"
 
+/** The Document these fixtures sit on — 4×4 in, where a shape is 192 px. */
+const DOC = { width: 384, height: 384 }
+
 registerCustomProperties()
 
 /**
@@ -304,7 +307,7 @@ describe("design file — v2 envelope", () => {
         aspectLocked: false,
         toJSON: () => ({
           version: "7.4.0",
-          objects: [createShape("square").toObject()],
+          objects: [createShape("square", DOC).toObject()],
         }),
       } as unknown as Parameters<typeof serializeDesignFile>[0]
       const file = serializeDesignFile(canvas)

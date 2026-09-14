@@ -6,6 +6,9 @@ import { groupObjects } from "@/fabric/groups"
 import { createShape } from "@/fabric/shapes"
 import { createStageCanvas } from "@/fabric/stage-canvas"
 
+/** The Document these fixtures sit on — 4×4 in, where a shape is 192 px. */
+const DOC = { width: 384, height: 384 }
+
 /**
  * Object flipping (§7 Q6) — each object mirrors around its own center, a
  * toggle: applying the same command again un-flips. The mirror flags are read
@@ -31,7 +34,7 @@ describe("flipObjects", () => {
   })
 
   function addShape(kind: "square" | "triangle" = "square"): FabricObject {
-    const obj = createShape(kind)
+    const obj = createShape(kind, DOC)
     obj.set({ left: 250, top: 250 })
     canvas.add(obj)
     return obj

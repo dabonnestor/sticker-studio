@@ -26,6 +26,9 @@ import {
   revertTextSession,
 } from "@/fabric/text-interactions"
 
+/** The Document these fixtures sit on — 4×4 in, where a shape is 192 px. */
+const DOC = { width: 384, height: 384 }
+
 /**
  * Text model (build spec §6). Text is a Fabric Textbox — a Document object,
  * not a shape: no shape of its own, no cut line (no clipPath). Auto-fit
@@ -119,7 +122,7 @@ describe("createText — a new text box (§6)", () => {
 
   it("is classified as a text object; shapes are not", () => {
     expect(isTextObject(createText())).toBe(true)
-    expect(isTextObject(createShape("square"))).toBe(false)
+    expect(isTextObject(createShape("square", DOC))).toBe(false)
     expect(isTextObject(null)).toBe(false)
   })
 })

@@ -39,6 +39,9 @@ import {
 import { TEXT_DEFAULT_FONT_SIZE, createText } from "@/fabric/text"
 import { registerCustomProperties } from "@/fabric/custom-properties"
 
+/** The Document these fixtures sit on — 4×4 in, where a shape is 192 px. */
+const DOC = { width: 384, height: 384 }
+
 // The document custom properties (ADR 0002) — the restore tests round-trip a
 // locked object and must see its `locked` prop survive save/load.
 registerCustomProperties()
@@ -172,7 +175,7 @@ describe("uniform scaling", () => {
   }
 
   it("freezes a shape's aspect ratio at the gesture start", () => {
-    const shape = createShape("square")
+    const shape = createShape("square", DOC)
     canvas.add(shape)
     shape.set({ scaleX: 2, scaleY: 1 }) // gesture tick 1 — the start ratio
     scale(shape)
@@ -183,7 +186,7 @@ describe("uniform scaling", () => {
   })
 
   it("re-stamps the clip on every scale tick — the fixed-px border's clip extension divides by the scale", () => {
-    const shape = createShape("square")
+    const shape = createShape("square", DOC)
     canvas.add(shape)
     setBorderWidth(shape, 8)
     shape.set({ scaleX: 2, scaleY: 2 })
@@ -223,7 +226,7 @@ describe("uniform scaling", () => {
   })
 
   it("the gesture-end bake leaves shapes carrying their scale — they have no size field", () => {
-    const shape = createShape("square")
+    const shape = createShape("square", DOC)
     canvas.add(shape)
     shape.set({ scaleX: 2, scaleY: 2 })
     canvas.fire("object:modified", { target: shape } as never)
@@ -237,7 +240,7 @@ describe("uniform scaling", () => {
     // deselect). Selecting the text after that fold must bake the folded
     // scale into the size, or the toolbar reads the pre-set size.
     const text = createText()
-    const shape = createShape("square")
+    const shape = createShape("square", DOC)
     canvas.add(text, shape)
     const selection = new ActiveSelection([text, shape], { canvas })
     selection.set({ scaleX: 2, scaleY: 2 })
@@ -252,7 +255,7 @@ describe("uniform scaling", () => {
   })
 
   it("a committed transform clears the frozen ratio for the next gesture", () => {
-    const shape = createShape("square")
+    const shape = createShape("square", DOC)
     canvas.add(shape)
     shape.set({ scaleX: 2, scaleY: 1 })
     scale(shape)
@@ -266,7 +269,7 @@ describe("uniform scaling", () => {
   })
 
   it("square/rectangle keep the side handles — corners and sides scale", () => {
-    const shape = createShape("square")
+    const shape = createShape("square", DOC)
     canvas.add(shape)
     // No `_controlsVisibility` overrides were ever set, so every handle is
     // visible by default: ml/mr scale the width, mt/mb the height, freely
@@ -278,7 +281,7 @@ describe("uniform scaling", () => {
   })
 
   it("circle/oval/triangle stay corner-handles-only — every side hidden", () => {
-    const circle = createShape("circle")
+    const circle = createShape("circle", DOC)
     canvas.add(circle)
     for (const handle of ["ml", "mt", "mr", "mb"] as const) {
       expect(circle._controlsVisibility[handle]).toBe(false)
@@ -352,7 +355,7 @@ describe("free axis scaling (square/rectangle)", () => {
   }
 
   it("a top-handle drag scales the height freely — no ratio frozen", () => {
-    const shape = createShape("square")
+    const shape = createShape("square", DOC)
     canvas.add(shape)
     shape.set({ scaleX: 2, scaleY: 1 })
     scale(shape, "mt") // vertical drag — the ratio lock never engages
@@ -363,7 +366,7 @@ describe("free axis scaling (square/rectangle)", () => {
   })
 
   it("a bottom-handle drag works the same as the top handle", () => {
-    const shape = createShape("rectangle")
+    const shape = createShape("rectangle", DOC)
     canvas.add(shape)
     shape.set({ scaleX: 1, scaleY: 1 })
     scale(shape, "mb")
@@ -373,7 +376,7 @@ describe("free axis scaling (square/rectangle)", () => {
   })
 
   it("a left-handle drag scales the width freely — no ratio frozen", () => {
-    const shape = createShape("square")
+    const shape = createShape("square", DOC)
     canvas.add(shape)
     shape.set({ scaleX: 1, scaleY: 2 })
     scale(shape, "ml") // horizontal drag — the ratio lock never engages
@@ -384,7 +387,7 @@ describe("free axis scaling (square/rectangle)", () => {
   })
 
   it("a right-handle drag scales the width freely on a rectangle", () => {
-    const shape = createShape("rectangle")
+    const shape = createShape("rectangle", DOC)
     canvas.add(shape)
     shape.set({ scaleX: 1, scaleY: 1 })
     scale(shape, "mr")
@@ -394,7 +397,7 @@ describe("free axis scaling (square/rectangle)", () => {
   })
 
   it("a horizontal drag after a vertical drag keeps both axes free", () => {
-    const shape = createShape("square")
+    const shape = createShape("square", DOC)
     canvas.add(shape)
     shape.set({ scaleX: 1, scaleY: 2 }) // height already scaled via mt
     scale(shape, "mt")
@@ -407,7 +410,7 @@ describe("free axis scaling (square/rectangle)", () => {
   })
 
   it("a corner drag after a vertical drag freezes the new aspect", () => {
-    const shape = createShape("square")
+    const shape = createShape("square", DOC)
     canvas.add(shape)
     shape.set({ scaleX: 2, scaleY: 1.5 }) // taller than wide from a mt drag
     scale(shape, "mt") // no ratio recorded
@@ -419,7 +422,7 @@ describe("free axis scaling (square/rectangle)", () => {
   })
 
   it("a vertical drag on a circle stays ratio-locked like every corner drag", () => {
-    const circle = createShape("circle")
+    const circle = createShape("circle", DOC)
     canvas.add(circle)
     circle.set({ scaleX: 2, scaleY: 2 })
     scale(circle, "mt")
@@ -479,7 +482,7 @@ describe("corner handle cursors", () => {
   }
 
   it("shape corners show the diagonal cursors", () => {
-    const shape = createShape("square")
+    const shape = createShape("square", DOC)
     canvas.add(shape)
     canvas.setActiveObject(shape)
     expect(cursorAt(shape, "tl")).toBe("nwse-resize")
@@ -503,7 +506,7 @@ describe("corner handle cursors", () => {
   })
 
   it("rotates the corner diagonals with the object", () => {
-    const shape = createShape("square")
+    const shape = createShape("square", DOC)
     canvas.add(shape)
     canvas.setActiveObject(shape)
     // A 90° turn puts tl at the top-right — its diagonal now runs 135°.
@@ -519,7 +522,7 @@ describe("corner handle cursors", () => {
   })
 
   it("snaps between the 45° steps to the nearest native keyword", () => {
-    const shape = createShape("square")
+    const shape = createShape("square", DOC)
     canvas.add(shape)
     canvas.setActiveObject(shape)
     // 15° of rotation puts the tl diagonal at 60° — no native keyword can
@@ -530,7 +533,7 @@ describe("corner handle cursors", () => {
   })
 
   it("mirrors the corner diagonal under a flip", () => {
-    const shape = createShape("square")
+    const shape = createShape("square", DOC)
     canvas.add(shape)
     canvas.setActiveObject(shape)
     // A flipX puts the tl corner top-right — its drag line runs 135°, not
@@ -545,7 +548,7 @@ describe("corner handle cursors", () => {
   })
 
   it("rotates the side-handle arrows with a square/rectangle", () => {
-    const shape = createShape("square")
+    const shape = createShape("square", DOC)
     canvas.add(shape)
     canvas.setActiveObject(shape)
     // 90° puts the width axis on the vertical — ml sits at the top, mt at
@@ -664,7 +667,7 @@ describe("selection controls mirror", () => {
   })
 
   it("paints a selected object's controls on the overlay, not the lower canvas", () => {
-    const shape = createShape("square")
+    const shape = createShape("square", DOC)
     canvas.add(shape)
     canvas.setActiveObject(shape)
     shape.setCoords()
@@ -677,7 +680,7 @@ describe("selection controls mirror", () => {
   })
 
   it("glues the mirrored controls to the Document's position in the overlay", () => {
-    const shape = createShape("square")
+    const shape = createShape("square", DOC)
     canvas.add(shape)
     canvas.setActiveObject(shape)
     shape.setCoords()
@@ -707,7 +710,7 @@ describe("selection controls mirror", () => {
   })
 
   it("mirrors a locked object's border only — no handles", () => {
-    const shape = createShape("square")
+    const shape = createShape("square", DOC)
     canvas.add(shape)
     setLocked(shape, true)
     canvas.setActiveObject(shape)
@@ -718,7 +721,7 @@ describe("selection controls mirror", () => {
   })
 
   it("paints the rotation badge on the overlay for a multi-selection", () => {
-    const shape = createShape("square")
+    const shape = createShape("square", DOC)
     shape.set({ left: 100, top: 100 })
     const text = createText((s) => s.length * 10)
     text.set({ left: 300, top: 300 })
@@ -734,7 +737,7 @@ describe("selection controls mirror", () => {
   })
 
   it("a marquee commit wipes the stale rect before painting the new controls", () => {
-    const shape = createShape("square")
+    const shape = createShape("square", DOC)
     canvas.add(shape)
     canvas.selectionColor = "rgba(0, 0, 0, 0.3)"
     canvas.selectionBorderColor = "#000"
@@ -757,7 +760,7 @@ describe("selection controls mirror", () => {
   })
 
   it("a renderTop-only frame keeps the previous frame's selection chrome", () => {
-    const shape = createShape("square")
+    const shape = createShape("square", DOC)
     canvas.add(shape)
     canvas.setActiveObject(shape)
     shape.setCoords()
@@ -772,7 +775,7 @@ describe("selection controls mirror", () => {
   })
 
   it("a deselect wipes the chrome before the armed-marquee commit render", () => {
-    const shape = createShape("square")
+    const shape = createShape("square", DOC)
     canvas.add(shape)
     canvas.setActiveObject(shape)
     shape.setCoords()
@@ -843,7 +846,7 @@ describe("mirrored selection cursor", () => {
   }
 
   it("shows the diagonal cursors on corner handles past the Document edge", () => {
-    const shape = createShape("square")
+    const shape = createShape("square", DOC)
     shape.set({ left: -60, top: -60 }) // hangs off the top-left corner
     canvas.add(shape)
     canvas.setActiveObject(shape)
@@ -858,7 +861,7 @@ describe("mirrored selection cursor", () => {
   })
 
   it("rotates the corner cursors on the mirrored chrome", () => {
-    const shape = createShape("square")
+    const shape = createShape("square", DOC)
     shape.set({ left: -60, top: -60, angle: 90 }) // rotated, off the corner
     canvas.add(shape)
     canvas.setActiveObject(shape)
@@ -889,7 +892,7 @@ describe("mirrored selection cursor", () => {
     // mousemove on the synthetic event, leaving the cursor `auto`.
     const text = createText((s) => s.length * 10)
     text.set({ left: -60, top: -60 })
-    const shape = createShape("square")
+    const shape = createShape("square", DOC)
     shape.set({ left: -140, top: -140 })
     canvas.add(text, shape)
     const selection = new ActiveSelection([text, shape], { canvas })
@@ -911,7 +914,7 @@ describe("mirrored selection cursor", () => {
   })
 
   it("shows the rotation cursor on the mirrored rotation handle", () => {
-    const shape = createShape("square")
+    const shape = createShape("square", DOC)
     shape.set({ left: -60, top: -60 })
     canvas.add(shape)
     canvas.setActiveObject(shape)
@@ -920,7 +923,7 @@ describe("mirrored selection cursor", () => {
   })
 
   it("shows the object's hover cursor over the mirrored selection box", () => {
-    const shape = createShape("square")
+    const shape = createShape("square", DOC)
     shape.set({ left: 100, top: 100 })
     canvas.add(shape)
     canvas.setActiveObject(shape)
@@ -932,7 +935,7 @@ describe("mirrored selection cursor", () => {
   })
 
   it("keeps the workspace default cursor past no mirrored chrome", () => {
-    const shape = createShape("square")
+    const shape = createShape("square", DOC)
     // left/top are the center (Fabric 7's default origin) — a 192px square
     // centered at (100,100) spans (4,4)-(196,196) plus the handle pads.
     shape.set({ left: 100, top: 100 })
@@ -948,7 +951,7 @@ describe("mirrored selection cursor", () => {
   })
 
   it("keeps the default cursor while a marquee drag is in progress", () => {
-    const shape = createShape("square")
+    const shape = createShape("square", DOC)
     shape.set({ left: -60, top: -60 })
     canvas.add(shape)
     canvas.setActiveObject(shape)
@@ -988,7 +991,7 @@ describe("multi-selection chrome", () => {
 
   /** A two-object ActiveSelection, as a Shift-click multi-select builds it. */
   function buildSelection() {
-    const shape = createShape("square")
+    const shape = createShape("square", DOC)
     shape.set({ left: 100, top: 100 })
     const text = createText((s) => s.length * 10)
     text.set({ left: 300, top: 300 })
@@ -1086,15 +1089,15 @@ describe("fixed-border cache policy", () => {
   })
 
   it("groups re-render live while scaling — children keep fixed borders", () => {
-    const group = new Group([createShape("square"), createShape("circle")])
+    const group = new Group([createShape("square", DOC), createShape("circle", DOC)])
     expect(group.noScaleCache).toBe(true)
     canvas.add(group)
     expect(group.noScaleCache).toBe(false)
   })
 
   it("the multi-selection re-renders live while scaling", () => {
-    const a = createShape("square")
-    const b = createShape("square")
+    const a = createShape("square", DOC)
+    const b = createShape("square", DOC)
     canvas.add(a, b)
     const selection = new ActiveSelection([a, b], { canvas })
     expect(selection.noScaleCache).toBe(true)
@@ -1143,7 +1146,7 @@ describe("rotation snapping", () => {
   }
 
   it("a rotation gesture lands on the nearest 15° multiple", () => {
-    const shape = createShape("square")
+    const shape = createShape("square", DOC)
     shape.set({ left: 300, top: 300 })
     canvas.add(shape)
     rotateTo(shape, 12) // without snapping this would land on 12°
@@ -1151,7 +1154,7 @@ describe("rotation snapping", () => {
   })
 
   it("snaps symmetrically — a hair of counter-clockwise motion keeps the multiple", () => {
-    const shape = createShape("square")
+    const shape = createShape("square", DOC)
     shape.set({ left: 300, top: 300 })
     canvas.add(shape)
     // The stock floor-biased handler would throw this to 345°; the nearest
@@ -1162,7 +1165,7 @@ describe("rotation snapping", () => {
   })
 
   it("keeps an exact multiple untouched", () => {
-    const shape = createShape("square")
+    const shape = createShape("square", DOC)
     shape.set({ left: 300, top: 300 })
     canvas.add(shape)
     rotateTo(shape, 30)
@@ -1170,7 +1173,7 @@ describe("rotation snapping", () => {
   })
 
   it("rounds each step at its midpoint", () => {
-    const shape = createShape("square")
+    const shape = createShape("square", DOC)
     shape.set({ left: 300, top: 300 })
     canvas.add(shape)
     rotateTo(shape, 7) // below 7.5° — down to 0°
@@ -1180,7 +1183,7 @@ describe("rotation snapping", () => {
   })
 
   it("normalizes a counter-clockwise gesture to 0–360", () => {
-    const shape = createShape("square")
+    const shape = createShape("square", DOC)
     shape.set({ left: 300, top: 300 })
     canvas.add(shape)
     // The nearest multiple of −8° is −15°, shown as 345°.
@@ -1189,7 +1192,7 @@ describe("rotation snapping", () => {
   })
 
   it("wires the snap handler on every object and the multi-selection", () => {
-    const shape = createShape("square")
+    const shape = createShape("square", DOC)
     shape.set({ left: 100, top: 100 })
     const text = createText((s) => s.length * 10)
     text.set({ left: 300, top: 300 })
@@ -1271,7 +1274,7 @@ describe("clip-aware target finding", () => {
   }
 
   it("a press in a circle's clipped-out corner reads as empty canvas", () => {
-    const circle = createShape("circle")
+    const circle = createShape("circle", DOC)
     circle.set({ left: 300, top: 300 })
     canvas.add(circle)
     circle.setCoords()
@@ -1282,7 +1285,7 @@ describe("clip-aware target finding", () => {
   })
 
   it("a press on the border hits the shape — the clip extends past the cut", () => {
-    const square = createShape("square")
+    const square = createShape("square", DOC)
     square.set({ left: 300, top: 300 })
     setBorderWidth(square, 20) // the border is centered on the cut — the clip extends 10 past it
     canvas.add(square)
@@ -1314,9 +1317,9 @@ describe("entered group mode", () => {
       document.createElement("canvas"),
       document.createElement("canvas"),
     )
-    childA = createShape("circle")
+    childA = createShape("circle", DOC)
     childA.set({ left: 100, top: 100 })
-    childB = createShape("square")
+    childB = createShape("square", DOC)
     childB.set({ left: 400, top: 100 })
     canvas.add(childA, childB)
     group = groupObjects(canvas, [childA, childB])!
@@ -1365,7 +1368,7 @@ describe("entered group mode", () => {
   })
 
   it("text children stay editable — only the fixed surface is applied", () => {
-    const a = createShape("square")
+    const a = createShape("square", DOC)
     a.set({ left: 100, top: 100 })
     const text = createText((s) => s.length * 10)
     text.set({ left: 700, top: 100 })
@@ -1413,7 +1416,7 @@ describe("entered group mode", () => {
   })
 
   it("other top-level objects resolve normally while entered", () => {
-    const other = createShape("square")
+    const other = createShape("square", DOC)
     other.set({ left: 600, top: 400 })
     canvas.add(other)
     canvas.enterGroup(group)
@@ -1433,7 +1436,7 @@ describe("entered group mode", () => {
   })
 
   it("a press on an object outside the group exits it", () => {
-    const other = createShape("square")
+    const other = createShape("square", DOC)
     other.set({ left: 600, top: 400 })
     canvas.add(other)
     canvas.enterGroup(group)

@@ -40,7 +40,11 @@ The set of objects (usually one) currently active in the editor: click selects a
 _Avoid_: active objects, highlight, focus
 
 **Default size**:
-The size a shape is created at when added from the sidebar, and the size a Document is created at by its Sticker preset — specified in inches (Square 2×2, Circle Ø2, Rectangle/Oval/Triangle 3×2 landscape), stored in pixels at the 96 DPI display basis. A shape's size is then edited on the canvas with the drag handles, not in the toolbar. Custom is the one preset with no Default size: its width and height are typed at New.
+The size a Document is created at by its Sticker preset — specified in inches (Square 2×2, Circle Ø2, Rectangle/Oval/Triangle 3×2 landscape), stored in pixels at the 96 DPI display basis. A shape's size is then edited on the canvas with the drag handles, not in the toolbar. Custom is the one preset with no Default size: its width and height are typed at New.
+
+**Shape size at creation**:
+Half the Document's short side, whatever size the Document is — a shape added from the sidebar is an element *on* the sticker rather than the sticker itself, so it is sized against the Document it lands on (a 1×1 in square on the default 2×2 in sticker) instead of against a fixed sheet, which would cover a small sticker or overhang it. The shape's own proportions — 1:1 for Square and Circle, 3:2 landscape for Rectangle, Oval, and Triangle — follow from that short side. The size is then edited on the canvas with the drag handles, not in the toolbar.
+_Avoid_: shape Default size, shape preset size
 _Avoid_: preset size
 
 **Document size**:

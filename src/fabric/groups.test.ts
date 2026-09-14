@@ -19,6 +19,9 @@ import {
 } from "@/fabric/text"
 import { createStageCanvas } from "@/fabric/stage-canvas"
 
+/** The Document these fixtures sit on — 4×4 in, where a shape is 192 px. */
+const DOC = { width: 384, height: 384 }
+
 // The app registers the document custom properties at startup (main.tsx);
 // the tests that exercise id round-trips register them too (ADR 0002).
 registerCustomProperties()
@@ -46,7 +49,7 @@ describe("grouping — group / ungroup", () => {
 
   /** Add a shape at a position — unselected, like a restored document. */
   function addShapeAt(kind: "square" | "circle", left: number, top: number): FabricObject {
-    const obj = createShape(kind)
+    const obj = createShape(kind, DOC)
     obj.set({ left, top })
     canvas.add(obj)
     return obj
@@ -316,7 +319,7 @@ describe("refitParentGroup — a child edit re-fits the group, never clipping it
     // size commit grows the box like a real font would.
     const measure = (s: string, style: { fontSize: number }) =>
       s.length * 10 * (style.fontSize / 24)
-    const shape = createShape("square")
+    const shape = createShape("square", DOC)
     shape.set({ left: 0, top: 0 })
     const text = createText(measure)
     text.set({ left: 250, top: 0 })
@@ -351,7 +354,7 @@ describe("refitParentGroup — a child edit re-fits the group, never clipping it
   })
 
   it("a top-level object is its own bounds — a no-op", () => {
-    const obj = createShape("square")
+    const obj = createShape("square", DOC)
     obj.set({ left: 0, top: 0 })
     canvas.add(obj)
     expect(() => refitParentGroup(obj)).not.toThrow()
@@ -359,9 +362,9 @@ describe("refitParentGroup — a child edit re-fits the group, never clipping it
   })
 
   it("an ActiveSelection member is not a document-Group child — a no-op", () => {
-    const a = createShape("square")
+    const a = createShape("square", DOC)
     a.set({ left: 0, top: 0 })
-    const b = createShape("circle")
+    const b = createShape("circle", DOC)
     b.set({ left: 200, top: 0 })
     canvas.add(a, b)
     const selection = new ActiveSelection([a, b], { canvas })

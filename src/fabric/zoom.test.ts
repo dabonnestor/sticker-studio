@@ -21,6 +21,9 @@ import {
   wheelZoomFactor,
 } from "@/fabric/zoom"
 
+/** The Document these fixtures sit on — 4×4 in, where a shape is 192 px. */
+const DOC = { width: 384, height: 384 }
+
 /**
  * Fit zoom (build spec §9): always-fit — the whole Document scales up or down
  * into the workspace minus a fixed 48 px margin, clamped to 10–800%. The
@@ -533,7 +536,7 @@ describe("StageCanvas zoom", () => {
 
   it("new text lands at the workspace center at any zoom", () => {
     canvas.setZoomPercent(200, true)
-    const shape = createShape("square")
+    const shape = createShape("square", DOC)
     canvas.add(shape)
     canvas.viewportCenterObject(shape)
     // The scene point at the workspace center maps back to the center.
@@ -551,7 +554,7 @@ describe("StageCanvas zoom", () => {
     // disappear-at-300% bug). The visible scene region is the whole Document
     // at any zoom: the boundaries never move with the zoom, and a centered
     // object reads on-screen.
-    const shape = createShape("square")
+    const shape = createShape("square", DOC)
     shape.set({ left: 300, top: 300 })
     canvas.add(shape)
     canvas.centerObject(shape)
@@ -573,7 +576,7 @@ describe("StageCanvas zoom", () => {
     // cursor path — the same findControl the in-document hover runs —
     // resolves the handles at any zoom without extra mapping.
     canvas.setZoomPercent(200)
-    const shape = createShape("square")
+    const shape = createShape("square", DOC)
     shape.set({ left: 300, top: 300 })
     canvas.add(shape)
     canvas.setActiveObject(shape)
@@ -797,7 +800,7 @@ describe("zoom is view state", () => {
 
   it("survives undo/redo — the restore replays the Document, not the view", async () => {
     canvas.setZoomPercent(200)
-    const shape = createShape("square")
+    const shape = createShape("square", DOC)
     canvas.add(shape)
     canvas.history.commit()
     expect(canvas.history.canUndo).toBe(true)

@@ -1,3 +1,5 @@
+import { formatPx, type Unit } from "@/lib/units"
+
 /**
  * The Document's outline — the shape of its Cut line (CONTEXT "Cut line",
  * map #48).
@@ -224,6 +226,29 @@ export const STICKER_SHAPE_LABELS: Record<StickerShape, string> = {
   "rounded-corner": "Rounded corner",
   oval: "Oval",
   circle: "Circle",
+}
+
+/**
+ * The name New offers a preset under: a shape named with the noun it creates,
+ * and the Default size it creates at in the app's active unit — because a
+ * preset *is* a shape at a size, and the size is half of what the user is
+ * choosing between.
+ *
+ * The shape's own name comes from {@link STICKER_SHAPE_LABELS} and the size
+ * from {@link STICKER_PRESETS} rather than being spelled again, so a change to
+ * either reaches the menu on its own.
+ *
+ * Custom is named for the one thing it asks for and carries no size, having
+ * none: it is the single entry with a null size, so the assertion below holds
+ * by construction of the table above — the same footing as
+ * {@link CUSTOM_DEFAULT_SIZE}.
+ */
+export function presetLabel(preset: StickerPreset, unit: Unit): string {
+  if (preset === "custom") return "Custom size"
+  const size = STICKER_PRESETS[preset].size!
+  const width = formatPx(size.width, unit)
+  const height = formatPx(size.height, unit)
+  return `${STICKER_SHAPE_LABELS[preset]} sticker (${width}×${height} ${unit})`
 }
 
 /**
