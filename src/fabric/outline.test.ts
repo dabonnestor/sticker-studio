@@ -4,9 +4,12 @@ import {
   BOOT_OUTLINE,
   BOOT_SIZE,
   cornerRadius,
+  CUSTOM_DEFAULT_SIZE,
   getStickerShape,
+  MIN_DOCUMENT_SIZE_PX,
   mirrorLockedSize,
   presetDefaultSize,
+  presetDocument,
   ROUNDED_CORNER_RADIUS_RATIO,
   STICKER_PRESETS,
 } from "@/fabric/outline"
@@ -134,6 +137,77 @@ describe("the sticker preset table", () => {
       width: unitToPx(2, "in"),
       height: unitToPx(2, "in"),
     })
+  })
+})
+
+/**
+ * The Document a preset creates at New (ticket #55) — the outline state and
+ * the size in one answer, because a preset is a shape *at a size*, and the
+ * shape alone inscribes itself in whatever sheet is already on the stage.
+ */
+describe("presetDocument", () => {
+  it("carries each shape preset's outline state and its Default size", () => {
+    for (const preset of SHAPES) {
+      const spec = STICKER_PRESETS[preset]
+      expect(presetDocument(preset)).toEqual({
+        outline: spec.outline,
+        aspectLocked: spec.aspectLocked,
+        width: spec.size!.width,
+        height: spec.size!.height,
+      })
+    }
+  })
+
+  it("reads back as the preset it was created from", () => {
+    // The round trip that makes the table and the derivation one vocabulary:
+    // whatever New creates, the Designs panel filters and the blank-guard
+    // reads as that same sticker.
+    for (const preset of SHAPES) {
+      expect(getStickerShape(presetDocument(preset))).toBe(preset)
+    }
+  })
+
+  it("takes Custom's size from the caller — Custom's spec carries none", () => {
+    expect(presetDocument("custom", { width: 400, height: 250 })).toEqual({
+      outline: "rect",
+      aspectLocked: false,
+      width: 400,
+      height: 250,
+    })
+  })
+
+  it("is sharp-cornered and free-sizing — Custom is rect + free, not a sixth outline", () => {
+    const custom = presetDocument("custom", { width: 400, height: 250 })
+    expect(custom.outline).toBe("rect")
+    expect(custom.aspectLocked).toBe(false)
+    // Which is why a custom sheet reads as Rectangle, and shows Rectangle
+    // Predesigns (§#51's derivation) — how it was made is not a fact about it.
+    expect(getStickerShape(custom)).toBe("rectangle")
+  })
+
+  it("falls back to Custom's opening size, so every preset answers with a Document", () => {
+    expect(presetDocument("custom")).toEqual({
+      outline: "rect",
+      aspectLocked: false,
+      ...CUSTOM_DEFAULT_SIZE,
+    })
+  })
+
+  it("opens Custom on Rectangle's Default size", () => {
+    // Rectangle is the rect + free entry, so it is the vocabulary's own answer
+    // to "a rectangle's size" — no separate constant to drift from it.
+    expect(CUSTOM_DEFAULT_SIZE).toEqual(STICKER_PRESETS.rectangle.size)
+  })
+
+  it("creates no sheet under the Document size floor", () => {
+    // A preset's Default size must be one the toolbar would hold: create a
+    // sheet the size fields then refuse to edit and the app contradicts
+    // itself. Custom is the caller's to guard (the popover's floor).
+    for (const preset of SHAPES) {
+      const doc = presetDocument(preset)
+      expect(doc.width).toBeGreaterThanOrEqual(MIN_DOCUMENT_SIZE_PX)
+      expect(doc.height).toBeGreaterThanOrEqual(MIN_DOCUMENT_SIZE_PX)
+    }
   })
 })
 

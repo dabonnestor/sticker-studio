@@ -12,6 +12,7 @@ import { ActiveSelection, type Canvas, type Object as FabricObject } from "fabri
 import {
   clearWorkingDraft,
   DRAFT_CHAR_CEILING,
+  isFactoryBlank,
   persistWorkingDraft,
 } from "@/fabric/auto-persist"
 import {
@@ -38,7 +39,13 @@ import {
   refitParentGroup,
   ungroupObjects,
 } from "@/fabric/groups"
-import { BOOT_OUTLINE, type DocumentOutline } from "@/fabric/outline"
+import {
+  BOOT_OUTLINE,
+  presetDocument,
+  type DocumentOutline,
+  type DocumentSize,
+  type StickerPreset,
+} from "@/fabric/outline"
 import {
   DOCUMENT_BACKGROUND_COLOR,
   DOCUMENT_BORDER_COLOR,
@@ -418,15 +425,29 @@ interface StageContextValue {
   /** Toggle {@link preview} on the Eye button (state flips, chrome reflows). */
   togglePreview: () => void
   /**
-   * Start a new design (ticket #33) — the auto-persist escape hatch, in the
-   * top-bar File area. Clears the stored working draft (so a refresh boots
-   * blank, not the resumed design), resets the canvas to a fresh factory-
-   * default sheet (default size, no objects, border off, rotation 0, white
-   * background), resets the design-file name to untitled, and clears the
-   * undo stack. Scoped to the draft and the canvas — manual Save/Import/
-   * Export are unaffected.
+   * Start a new design (ticket #33) on a sticker of the chosen preset (map
+   * #48, ticket #55) — the auto-persist escape hatch, in the top-bar File
+   * area. Clears the stored working draft (so a refresh boots blank, not the
+   * resumed design), resets the canvas to the preset's outline state and
+   * Default size (no objects, border off, rotation 0, white background),
+   * resets the design-file name to untitled, and clears the undo stack.
+   * Scoped to the draft and the canvas — manual Save/Import/Export are
+   * unaffected.
+   *
+   * `customSize` is Custom's typed W×H, and is read only by Custom: every
+   * other preset creates at its own Default size, a preset being a shape *at*
+   * a size. Omitting it falls back to {@link CUSTOM_DEFAULT_SIZE}, so the
+   * preset a caller names always produces a Document.
    */
-  startNewDesign: () => void
+  startNewDesign: (preset: StickerPreset, customSize?: DocumentSize) => void
+  /**
+   * Whether the Document is factory-blank — the auto-persist blank-guard's
+   * predicate, asked by New to decide whether starting a design would discard
+   * work (ticket #55). A pull rather than a mirror: blankness turns on nearly
+   * every canvas event, so a mirrored copy would be a second source of truth
+   * for it, free to drift from the one the guard actually writes by.
+   */
+  isDocumentBlank: () => boolean
 }
 
 const StageContext = createContext<StageContextValue | null>(null)
@@ -723,39 +744,60 @@ export function StageProvider({ children }: { children: ReactNode }) {
     setPreview((current) => !current)
   }, [])
 
-  const startNewDesign = useCallback(() => {
-    if (!canvas?.history) return
-    // Ticket #33: the escape hatch. Clearing the draft first means a refresh
-    // boots blank — not the resumed design — and the reset's own History
-    // commit below is blank-guarded (a factory-fresh sheet is never written).
-    clearWorkingDraft()
-    canvas.discardActiveObject()
-    canvas.remove(...canvas.getObjects())
-    canvas.setDimensions({ width: DOCUMENT_WIDTH, height: DOCUMENT_HEIGHT })
-    canvas.rotation = DOCUMENT_ROTATION
-    canvas.borderWidth = DOCUMENT_BORDER_WIDTH
-    canvas.borderColor = DOCUMENT_BORDER_COLOR
-    canvas.backgroundColor = DOCUMENT_BACKGROUND_COLOR
-    // The outline resets with the other document properties (map #48) — a
-    // fresh sheet is the boot sticker preset, not whatever shape the design
-    // being cleared was.
-    canvas.outline = BOOT_OUTLINE.outline
-    canvas.aspectLocked = BOOT_OUTLINE.aspectLocked
-    canvas.requestRenderAll()
-    // Fit is the default zoom on load (§9) — a fresh design shows the whole
-    // default sheet, whatever zoom the previous design left behind (a fit
-    // zoom for a smaller sheet would otherwise carry over). View state: never
-    // an undoable step, like every zoom.
-    canvas.fitToWorkspace()
-    // The undo stack clears with the design — a fresh sheet has no history,
-    // so undo stays dead until the first new edit (ticket #33).
-    canvas.history.reset()
-    // A fresh design is untitled — the imported name must not round-trip
-    // through Save (§10).
-    setDesignFileName("untitled")
-    refreshDocumentMirrors(canvas)
-    reportStatus("Started a new design")
-  }, [canvas, refreshDocumentMirrors, reportStatus, setDesignFileName])
+  const startNewDesign = useCallback(
+    (preset: StickerPreset, customSize?: DocumentSize) => {
+      if (!canvas?.history) return
+      // Ticket #33: the escape hatch. Clearing the draft first means a refresh
+      // boots blank — not the resumed design — and the reset's own History
+      // commit below is blank-guarded (a factory-fresh sheet is never written).
+      clearWorkingDraft()
+      // The Document the chosen preset creates (map #48, ticket #55) — its
+      // outline state and its size, taken together: a preset is a shape *at*
+      // a size.
+      const doc = presetDocument(preset, customSize)
+      canvas.discardActiveObject()
+      canvas.remove(...canvas.getObjects())
+      // The outline goes on before the size, the order `loadEnvelope` uses:
+      // the clip and the border are derived from it, and the size it is read
+      // against is the one being assigned. `setDimensions` rather than
+      // `setDocumentSize` — a preset's Default size is exact, already 1:1 on
+      // the presets that lock, so no mirroring belongs here.
+      canvas.outline = doc.outline
+      canvas.aspectLocked = doc.aspectLocked
+      canvas.setDimensions({ width: doc.width, height: doc.height })
+      canvas.rotation = DOCUMENT_ROTATION
+      canvas.borderWidth = DOCUMENT_BORDER_WIDTH
+      canvas.borderColor = DOCUMENT_BORDER_COLOR
+      canvas.backgroundColor = DOCUMENT_BACKGROUND_COLOR
+      canvas.requestRenderAll()
+      // Fit is the default zoom on load (§9) — a fresh design shows the whole
+      // default sheet, whatever zoom the previous design left behind (a fit
+      // zoom for a smaller sheet would otherwise carry over). View state:
+      // never an undoable step, like every zoom.
+      canvas.fitToWorkspace()
+      // The undo stack clears with the design — a fresh sheet has no history,
+      // so undo stays dead until the first new edit (ticket #33).
+      canvas.history.reset()
+      // A fresh design is untitled — the imported name must not round-trip
+      // through Save (§10).
+      setDesignFileName("untitled")
+      refreshDocumentMirrors(canvas)
+      reportStatus("Started a new design")
+    },
+    [canvas, refreshDocumentMirrors, reportStatus, setDesignFileName],
+  )
+
+  /**
+   * The blank-guard's predicate, asked by New before it discards (ticket
+   * #55). A pull against the live canvas rather than a mirror: blankness
+   * turns on nearly every canvas event, and the answer that matters is the
+   * one the guard itself would act on, at the moment of the click.
+   */
+  const isDocumentBlank = useCallback(() => {
+    // No canvas is nothing to discard — a prompt would guard an empty room.
+    if (!canvas) return true
+    return isFactoryBlank(canvas)
+  }, [canvas])
 
   const addImage = useCallback(
     async (dataURL: string) => {
@@ -1523,6 +1565,7 @@ export function StageProvider({ children }: { children: ReactNode }) {
         preview,
         togglePreview,
         startNewDesign,
+        isDocumentBlank,
       }}
     >
       {children}

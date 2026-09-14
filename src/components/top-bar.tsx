@@ -1,6 +1,7 @@
 import { useRef, type ChangeEvent } from "react"
-import { ChevronDown, FilePlus, FolderOpen, Save, Sticker } from "lucide-react"
+import { ChevronDown, FolderOpen, Save, Sticker } from "lucide-react"
 
+import { NewDesignMenu } from "@/components/new-design-menu"
 import { useStage } from "@/components/stage-context"
 import { Button } from "@/components/ui/button"
 import {
@@ -21,7 +22,7 @@ import { EXPORT_FORMATS } from "@/fabric/export"
  * committed Document in that format.
  */
 export function TopBar() {
-  const { importDesignFile, saveDesignFile, exportCurrent, startNewDesign } =
+  const { importDesignFile, saveDesignFile, exportCurrent, startNewDesign, isDocumentBlank, unit } =
     useStage()
   const fileInputRef = useRef<HTMLInputElement>(null)
 
@@ -46,12 +47,16 @@ export function TopBar() {
 
       {/* Start-new (ticket #33): the auto-persist escape hatch — clears the
           stored working draft and resets the canvas, so the next load boots
-          blank. Deliberately scoped to the draft and the canvas: manual
+          blank. Now a preset picker (map #48, ticket #55): the Document it
+          creates is a sticker of the chosen shape at that preset's Default
+          size, and a sheet holding work is confirmed before it goes.
+          Deliberately scoped to the draft and the canvas: manual
           Save/Import/Export below are unaffected. */}
-      <Button variant="outline" size="sm" onClick={startNewDesign}>
-        <FilePlus aria-hidden />
-        New
-      </Button>
+      <NewDesignMenu
+        onStartNew={startNewDesign}
+        isDocumentBlank={isDocumentBlank}
+        unit={unit}
+      />
 
       <input
         ref={fileInputRef}

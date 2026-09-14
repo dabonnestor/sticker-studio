@@ -48,6 +48,14 @@ export interface DocumentSize {
 }
 
 /**
+ * The Document size floor (§5): no dimension of the Document commits below
+ * this, in px. It sits with the size vocabulary rather than inside either
+ * surface that types a size — the toolbar's size fields and New's Custom
+ * fields — so the two cannot come to disagree about what a sheet may be.
+ */
+export const MIN_DOCUMENT_SIZE_PX = 60
+
+/**
  * The rounded-rect corner radius, as a fraction of the outline's short side
  * (map #48): Rounded corner's radius is a fixed preset, not a user control —
  * a proportion rather than a px value, so the corner keeps its look at
@@ -147,6 +155,44 @@ export const STICKER_PRESETS: Record<StickerPreset, PresetSpec> = {
     size: { width: 192, height: 192 },
   },
   custom: { outline: "rect", aspectLocked: false, size: null },
+}
+
+/**
+ * The size Custom opens on — the popover's starting W×H, and the sheet a
+ * Custom design takes when the fields are left as they were.
+ *
+ * Rectangle's Default size, because Custom *is* Rectangle with the size left
+ * free: the fields open on a known-good rectangle rather than mirroring
+ * whatever Document is on screen, so the same click yields the same sheet
+ * whether the design behind it was a Circle or a wide Oval. The assertion
+ * holds by the table above, where Rectangle is the only rect + free entry.
+ */
+export const CUSTOM_DEFAULT_SIZE: DocumentSize = STICKER_PRESETS.rectangle.size!
+
+/**
+ * The Document a preset creates at New (map #48, ticket #55): an outline state
+ * and a size, together, because a preset is a shape *at a size* — a shape
+ * alone inscribes itself in whatever sheet is already there, and Oval on the
+ * boot square degenerates to a circle.
+ *
+ * Custom's spec deliberately carries no size, so it takes `customSize` — the
+ * width and height typed into the popover — falling back to
+ * {@link CUSTOM_DEFAULT_SIZE}, the same size those fields open on. Every
+ * preset therefore answers with a Document, and no caller has to handle a
+ * preset that creates nothing.
+ */
+export function presetDocument(
+  preset: StickerPreset,
+  customSize: DocumentSize = CUSTOM_DEFAULT_SIZE,
+): DocumentOutline & DocumentSize {
+  const spec = STICKER_PRESETS[preset]
+  const size = spec.size ?? customSize
+  return {
+    outline: spec.outline,
+    aspectLocked: spec.aspectLocked,
+    width: size.width,
+    height: size.height,
+  }
 }
 
 /**

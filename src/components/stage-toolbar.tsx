@@ -67,6 +67,7 @@ import { type AlignCommand } from "@/fabric/align"
 import { type ArrangeCommand } from "@/fabric/arrange"
 import { type FlipCommand } from "@/fabric/flip"
 import { isGroup, isGrouped } from "@/fabric/groups"
+import { MIN_DOCUMENT_SIZE_PX } from "@/fabric/outline"
 import {
   DEFAULT_BORDER_COLOR,
   DEFAULT_FILL,
@@ -88,13 +89,6 @@ const UNITS: { value: Unit; label: string }[] = [
   { value: "mm", label: "mm" },
   { value: "px", label: "px" },
 ]
-
-/**
- * The document size floor (§5) — a canvas dimension can't commit below this,
- * in px. The toolbar's error tooltip shows the floor converted to the active
- * unit, so the message reads in the unit the user is typing.
- */
-const MIN_DOCUMENT_SIZE_PX = 60
 
 /** Opacity slider range and step — 0 (transparent) to 100% (opaque). */
 const OPACITY_RANGE = { min: 0, max: 100, step: 1 } as const
