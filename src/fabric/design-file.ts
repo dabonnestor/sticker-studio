@@ -36,7 +36,8 @@ export type DesignFileMigrator = (file: any) => any
  * and its shape was not a property at all. Classify from the size, mirroring
  * `getShapeKind` for a shape object: a square Document becomes a **Square**
  * sticker (rect, aspect locked), anything else a **Rectangle** (rect, free).
- * The three shipped 600×600 Predesigns therefore become Square, as intended.
+ * The Predesigns shipped at v1 were 600×600, so they became Square, as
+ * intended.
  *
  * Runs before validation, so the size it reads may be malformed — that file
  * is refused loudly by `validate` a step later either way, and the fallback

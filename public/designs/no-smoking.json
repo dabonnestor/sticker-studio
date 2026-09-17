@@ -1,20 +1,24 @@
 {
   "format": "sticker-studio",
-  "version": 1,
+  "version": 2,
   "size": {
-    "width": 600,
-    "height": 600
+    "width": 192,
+    "height": 192
   },
   "rotation": 0,
+  "outline": {
+    "outline": "rect",
+    "aspectLocked": true
+  },
   "border": {
-    "width": 16,
-    "color": "#18181B"
+    "width": 6,
+    "color": "#18181b"
   },
   "canvas": {
     "version": "7.4.0",
     "objects": [
       {
-        "fontSize": 64.44,
+        "fontSize": 20.31,
         "fontWeight": "normal",
         "fontFamily": "Anton",
         "fontStyle": "normal",
@@ -34,7 +38,7 @@
         "textDecorationThickness": 66.667,
         "minWidth": 20,
         "splitByGrapheme": false,
-        "id": "c783d690-a6ef-4819-852b-bd66cc9c9506",
+        "id": "6485a3a4-ef48-4ebd-9e49-82adc7921017",
         "locked": false,
         "uppercase": true,
         "uppercaseSource": "thank you for\nnot smoking",
@@ -43,13 +47,13 @@
         "version": "7.4.0",
         "originX": "center",
         "originY": "center",
-        "left": 300,
-        "top": 452.7855,
-        "width": 522.4526,
-        "height": 160.1978,
+        "left": 96,
+        "top": 144.1499,
+        "width": 164.6497,
+        "height": 50.4907,
         "fill": "#18181b",
         "stroke": null,
-        "strokeWidth": 2.6853,
+        "strokeWidth": 0.8463,
         "strokeDashArray": null,
         "strokeLineCap": "butt",
         "strokeDashOffset": 0,
@@ -74,7 +78,7 @@
       {
         "cropX": 0,
         "cropY": 0,
-        "id": "7f57d0aa-9d3b-4fde-a469-a07927b719f4",
+        "id": "cc198ffe-abf0-441b-8542-c25c4517b0fd",
         "name": "No smoking",
         "locked": false,
         "artworkSource": "Pixabay",
@@ -85,8 +89,8 @@
         "version": "7.4.0",
         "originX": "center",
         "originY": "center",
-        "left": 300,
-        "top": 197.9802,
+        "left": 96,
+        "top": 63.8463,
         "width": 640,
         "height": 640,
         "fill": "rgb(0,0,0)",
@@ -98,8 +102,8 @@
         "strokeLineJoin": "miter",
         "strokeUniform": false,
         "strokeMiterLimit": 4,
-        "scaleX": 0.4131,
-        "scaleY": 0.4131,
+        "scaleX": 0.1302,
+        "scaleY": 0.1302,
         "angle": 0,
         "flipX": false,
         "flipY": false,

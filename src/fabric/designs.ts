@@ -30,7 +30,6 @@ export interface Predesign {
 export const PREDESIGNS: readonly Predesign[] = [
   { id: "no-smoking", name: "No Smoking", url: "/designs/no-smoking.json" },
   { id: "heavy-equipment", name: "Heavy Equipment", url: "/designs/heavy-equipment.json" },
-  { id: "brilliant-work", name: "Brilliant Work", url: "/designs/brilliant-work.json" },
 ]
 
 /**
