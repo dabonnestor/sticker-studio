@@ -436,6 +436,153 @@ describe("free axis scaling (square/rectangle)", () => {
 })
 
 /**
+ * Scaling modifier keys (§5 shapes, §6 text, §7 groups and multi-selections):
+ * Fabric reads two modifier keys during a scale gesture — `uniScaleKey`
+ * (shift) flips the canvas's uniform corner scaling *off*, so the drag pulls
+ * the two axes apart at their own rates, and `altActionKey` (shift) turns a
+ * side-handle scale into a skew. Neither has a meaning here: a corner drag
+ * always holds the aspect ratio (the ratio lock above) and a square/rectangle
+ * side drag always scales its own axis. The canvas disables both (`null` —
+ * Fabric's documented "feature disabled" value), which is what covers the
+ * containers: the ratio lock reads a shape kind off the object, so an
+ * ActiveSelection or a Group — the surfaces whose corners are their only
+ * handles — kept the free path, and a shifted corner drag distorted them.
+ * Driven through the controls' own action handlers — the path a real pointer
+ * takes — with a transform built the way Fabric builds one at pointerdown.
+ */
+describe("scaling modifier keys", () => {
+  let canvas: ReturnType<typeof createStageCanvas>
+
+  beforeEach(() => {
+    canvas = createStageCanvas(
+      document.createElement("canvas"),
+      document.createElement("canvas"),
+    )
+  })
+
+  afterEach(async () => {
+    await canvas.dispose()
+  })
+
+  /** The anchor origin Fabric picks at pointerdown: the opposite handle. */
+  function originFor(corner: string) {
+    return {
+      x: corner.includes("l") ? "right" : corner.includes("r") ? "left" : "center",
+      y: corner.includes("t") ? "bottom" : corner.includes("b") ? "top" : "center",
+    }
+  }
+
+  /** The scene point of a handle — on an unrotated, unflipped object. */
+  function handlePoint(obj: FabricObject, corner: string) {
+    const box = obj.getBoundingRect()
+    const x = corner.includes("l") ? 0 : corner.includes("r") ? box.width : box.width / 2
+    const y = corner.includes("t") ? 0 : corner.includes("b") ? box.height : box.height / 2
+    return { x: box.left + x, y: box.top + y }
+  }
+
+  /** A scale drag through the handle's own action handler, shift or not. */
+  function dragHandle(
+    obj: FabricObject,
+    corner: string,
+    to: { x: number; y: number },
+    { shiftKey = false }: { shiftKey?: boolean } = {},
+  ) {
+    const from = handlePoint(obj, corner)
+    const transform = {
+      target: obj,
+      corner,
+      originX: originFor(corner).x,
+      originY: originFor(corner).y,
+      ex: from.x,
+      ey: from.y,
+      scaleX: obj.scaleX,
+      scaleY: obj.scaleY,
+      skewX: obj.skewX,
+      skewY: obj.skewY,
+      original: {
+        scaleX: obj.scaleX,
+        scaleY: obj.scaleY,
+        skewX: obj.skewX,
+        skewY: obj.skewY,
+        angle: obj.angle,
+        left: obj.left,
+        top: obj.top,
+        flipX: obj.flipX,
+        flipY: obj.flipY,
+      },
+    }
+    obj.controls[corner].actionHandler?.(
+      { shiftKey } as never,
+      transform as never,
+      to.x,
+      to.y,
+    )
+  }
+
+  /** A br drag out to twice the width and half the height — the free path
+   * would land on 2 × 0.5, the locked path on one factor for both axes. */
+  function stretchTo(obj: FabricObject) {
+    const box = obj.getBoundingRect()
+    return { x: box.left + box.width * 2, y: box.top + box.height * 0.5 }
+  }
+
+  it("a multi-selection corner drag holds the set's ratio with shift held", () => {
+    // A fresh set per run — the drag itself moves and scales the fixture.
+    const drag = (shiftKey: boolean) => {
+      const text = createText()
+      const shape = createShape("square", DOC)
+      canvas.add(text, shape)
+      const selection = new ActiveSelection([text, shape], { canvas })
+      canvas.setActiveObject(selection)
+      dragHandle(selection, "br", stretchTo(selection), { shiftKey })
+      return { x: selection.scaleX, y: selection.scaleY }
+    }
+    const shifted = drag(true)
+    const plain = drag(false)
+    expect(shifted.x).toBeCloseTo(plain.x, 10) // shift reaches the same scale…
+    expect(shifted.y).toBeCloseTo(plain.y, 10)
+    expect(shifted.x).toBeCloseTo(shifted.y, 10) // …a single factor: undistorted
+    expect(shifted.x).toBeGreaterThan(1) // and the drag really did scale the set
+  })
+
+  it("a group corner drag holds its ratio with shift held", () => {
+    const drag = (shiftKey: boolean) => {
+      const shape = createShape("square", DOC)
+      const text = createText()
+      canvas.add(shape, text)
+      const group = groupObjects(canvas, [shape, text])!
+      canvas.setActiveObject(group)
+      dragHandle(group, "br", stretchTo(group), { shiftKey })
+      return { x: group.scaleX, y: group.scaleY }
+    }
+    const shifted = drag(true)
+    const plain = drag(false)
+    expect(shifted.x).toBeCloseTo(plain.x, 10)
+    expect(shifted.y).toBeCloseTo(plain.y, 10)
+    expect(shifted.x).toBeCloseTo(shifted.y, 10)
+    expect(shifted.x).toBeGreaterThan(1)
+  })
+
+  it("a side-handle drag scales its own axis with shift held — it never skews", () => {
+    const shape = createShape("square", DOC)
+    canvas.add(shape)
+    const box = shape.getBoundingRect()
+    // The skew Fabric applies on shift reads the pointer's offset along the
+    // *other* axis — this drag carries both, the motion that sheared it.
+    dragHandle(
+      shape,
+      "mr",
+      { x: box.left + box.width * 1.5, y: box.top + box.height },
+      { shiftKey: true },
+    )
+    expect(shape.skewX).toBe(0)
+    expect(shape.skewY).toBe(0)
+    expect(shape.scaleX).toBeCloseTo(1.5, 10) // the width took the drag
+    expect(shape.scaleY).toBe(1) // the height stayed put
+  })
+})
+
+/**
  * Resize-handle cursors (build spec §5, rotation-aware): the aspect-ratio
  * lock makes every corner drag a diagonal gesture, so the corners show a
  * diagonal cursor instead of Fabric's quadrant-based one — which reports

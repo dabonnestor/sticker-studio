@@ -1707,6 +1707,20 @@ export function createStageCanvas(
     width: DOCUMENT_WIDTH,
     height: DOCUMENT_HEIGHT,
     backgroundColor: DOCUMENT_BACKGROUND_COLOR,
+    // Scaling has no modifier keys (§5 shapes, §6 text, §7 groups and
+    // multi-selections): a corner drag always holds the aspect ratio — the
+    // lock below — and a square/rectangle side drag always scales its own
+    // axis. Fabric gives shift both jobs, and both fight that model:
+    // `uniScaleKey` flips the canvas's uniform corner scaling *off*, so the
+    // drag tracks the pointer's x and y at their own rates, and `altActionKey`
+    // turns a side-handle drag into a skew. The ratio lock below reads a shape
+    // kind (or a text or an image) off the object, so it never covered an
+    // ActiveSelection or a Group — the surfaces whose corners are their only
+    // handles — and a shifted corner drag distorted exactly those. `null` is
+    // Fabric's documented "disabled" value for the pair: neither modifier
+    // ever reads as pressed.
+    uniScaleKey: null,
+    altActionKey: null,
   })
 
   // Document border (envelope-owned, ADR 0002) — off at creation. The canvas
@@ -1903,7 +1917,10 @@ export function createStageCanvas(
   // outside the ratio lock — so a square can grow into a taller or wider
   // rectangle. The first `object:scaling` tick records the ratio; later
   // ticks keep it; the end of the gesture (any transform commit) clears it
-  // for the next one.
+  // for the next one. Fabric's own corner scaling already holds the ratio —
+  // the canvas disables the modifier key that would flip it off
+  // (createStageCanvas) — so the correction here is a no-op on a normal drag:
+  // the tick earns its keep by re-stamping the border clip below.
   const gestureRatios = new WeakMap<FabricObject, number>()
   canvas.on("object:scaling", (event) => {
     const obj = event.target
