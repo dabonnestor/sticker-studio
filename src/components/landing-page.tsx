@@ -1,10 +1,9 @@
-import { useEffect, useState, type FormEvent } from "react"
+import { useState, type FormEvent } from "react"
 import { Sticker } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
-import { PREDESIGNS, renderPredesignPreview } from "@/fabric/designs"
 
 /**
  * The landing page — the lead page for B2B print shops, rendered at `/`
@@ -13,12 +12,10 @@ import { PREDESIGNS, renderPredesignPreview } from "@/fabric/designs"
  * shop's site ("we build a design tool for your sticker shop"). Copy and
  * layout settled in the lead-gen grilling session: the hero leads with the
  * offer, every CTA points at the contact form (#contact), and the product
- * sections (features, demo video, predesign gallery) stay as proof of
- * capability. Vocabulary per CONTEXT.md (Export, Cut line, Predesign,
- * Document); branding reuses the app's look (Geist, neutral palette, shadcn
- * components). No screenshots: the hero is text-first and the gallery
- * renders the shipped Predesigns offscreen, exactly as the Designs panel
- * does.
+ * sections (features, demo video) stay as proof of capability. Vocabulary
+ * per CONTEXT.md (Export, Cut line, Predesign, Document); branding reuses
+ * the app's look (Geist, neutral palette, shadcn components). No
+ * screenshots: the hero is text-first.
  */
 
 /** Formspree endpoint — create a form at formspree.io and paste its ID here. */
@@ -58,26 +55,6 @@ const STEPS = [
   },
 ]
 
-/** The three shipped Predesigns' thumbnails, rendered once (see DesignsPanel). */
-function usePredesignThumbnails() {
-  const [thumbs, setThumbs] = useState<Record<string, string>>({})
-  useEffect(() => {
-    let cancelled = false
-    void Promise.all(
-      PREDESIGNS.map(async (predesign) => {
-        const dataURL = await renderPredesignPreview(predesign)
-        if (!cancelled && dataURL) {
-          setThumbs((prev) => ({ ...prev, [predesign.id]: dataURL }))
-        }
-      }),
-    )
-    return () => {
-      cancelled = true
-    }
-  }, [])
-  return thumbs
-}
-
 /**
  * The site header — logo left (linking to `/`), lead CTA right. Shared
  * with the About and legal pages, which point the CTA back at the landing
@@ -95,34 +72,6 @@ export function SiteNav({ ctaHref = "#contact" }: { ctaHref?: string }) {
         <a href={ctaHref}>Get it in your shop</a>
       </Button>
     </header>
-  )
-}
-
-/** A predesign gallery tile — real rendered thumbnail over the design's name. */
-function GalleryTile({
-  predesign,
-  thumb,
-}: {
-  predesign: (typeof PREDESIGNS)[number]
-  thumb?: string
-}) {
-  return (
-    <figure className="flex flex-col gap-2">
-      <div className="aspect-square overflow-hidden rounded-lg border bg-muted/50">
-        {thumb ? (
-          <img
-            src={thumb}
-            alt={predesign.name}
-            className="h-full w-full object-cover"
-          />
-        ) : (
-          <div className="h-full w-full animate-pulse bg-muted" />
-        )}
-      </div>
-      <figcaption className="text-center text-sm font-medium">
-        {predesign.name}
-      </figcaption>
-    </figure>
   )
 }
 
@@ -237,8 +186,6 @@ export function SiteFooter() {
 
 /** The landing page — lead-gen for print shops (settled in the grilling session). */
 export function LandingPage() {
-  const thumbs = usePredesignThumbnails()
-
   return (
     <div className="min-h-screen bg-background text-foreground">
       <SiteNav />
@@ -305,21 +252,6 @@ export function LandingPage() {
                 instead.
               </p>
             </video>
-          </div>
-        </section>
-
-        <section id="designs" className="mx-auto max-w-5xl px-6 py-14">
-          <h2 className="text-center text-2xl font-semibold tracking-tight">
-            Start from a Predesign
-          </h2>
-          <p className="mx-auto mt-2 max-w-md text-center text-muted-foreground">
-            Three ready-made designs, shipped with the app. Customers pick one
-            and make it their own.
-          </p>
-          <div className="mt-8 grid grid-cols-3 gap-6">
-            {PREDESIGNS.map((p) => (
-              <GalleryTile key={p.id} predesign={p} thumb={thumbs[p.id]} />
-            ))}
           </div>
         </section>
 
