@@ -1,11 +1,10 @@
-import { afterEach, describe, expect, it, vi } from "vitest"
+import { describe, expect, it } from "vitest"
 
 import { registerCustomProperties } from "@/fabric/custom-properties"
 import {
   DESIGN_FILE_FORMAT,
   DESIGN_FILE_VERSION,
   DesignFileError,
-  MIGRATORS,
   designFileBasename,
   parseDesignFile,
   serializeDesignFile,
@@ -19,12 +18,13 @@ const DOC = { width: 384, height: 384 }
 registerCustomProperties()
 
 /**
- * Design file (ADR 0002, build spec §10) — the v2 envelope, validation, and
- * the migrators register. `serialize`/`parse` round-trip the current Document
- * through the envelope; validation refuses unknown object types loudly (Fabric
- * enlivening fails silently on those — a silent drop is data loss).
+ * Design file (ADR 0002, build spec §10) — the envelope and its validation.
+ * `serialize`/`parse` round-trip the current Document through the envelope;
+ * validation refuses unknown object types loudly (Fabric enlivening fails
+ * silently on those — a silent drop is data loss) and refuses any file that
+ * is not at the current version (nothing migrates to it).
  */
-describe("design file — v2 envelope", () => {
+describe("design file — the envelope", () => {
   it("serializes the Document as the documented envelope shape", () => {
     const canvas = {
       width: 288,
@@ -91,84 +91,6 @@ describe("design file — v2 envelope", () => {
     }
   })
 
-  /**
-   * The migrators registry (ADR 0002): keyed by the version a file migrates
-   * *from*, each step it one version forward. A hypothetical v0 exercises the
-   * sequencing seam on top of the real v1 → v2 step, so a v0 file has to
-   * traverse two migrators to land current.
-   */
-  it("runs the migrators registry sequentially on load", () => {
-    const legacy = vi.fn((file) => ({ ...file, version: 1 }))
-    MIGRATORS[0] = legacy as never
-    const file = parseDesignFile(
-      JSON.stringify({
-        format: "sticker-studio",
-        version: 0,
-        size: { width: 600, height: 400 },
-        rotation: 0,
-        border: { width: 0, color: "#18181b" },
-        canvas: { objects: [{ type: "Rect" }] },
-      }),
-    )
-    expect(legacy).toHaveBeenCalledTimes(1)
-    expect(file.version).toBe(DESIGN_FILE_VERSION)
-    // The real v1 → v2 step ran after the stub, on its output.
-    expect(file.outline).toEqual({ outline: "rect", aspectLocked: false })
-  })
-
-  /**
-   * v1 → v2 (map #48): a v1 file predates the Document outline entirely. The
-   * migrator classifies from the size, mirroring `getShapeKind` for a shape
-   * object — square when width === height, otherwise rectangle — so the
-   * shipped 600×600 Predesigns land as Square, and a v1 file of any other
-   * shape lands as Rectangle (rect + free, the state Custom shares).
-   */
-  describe("v1 → v2 migration", () => {
-    /** A v1 file as the app wrote it — no `outline` field at all. */
-    const v1File = (size: { width: number; height: number }) => ({
-      format: DESIGN_FILE_FORMAT,
-      version: 1,
-      size,
-      rotation: 0,
-      border: { width: 0, color: "#18181b" },
-      canvas: { version: "7.4.0", objects: [{ type: "Rect" }] },
-    })
-
-    it("a square v1 Document becomes a Square sticker — rect, aspect locked", () => {
-      const file = parseDesignFile(JSON.stringify(v1File({ width: 600, height: 600 })))
-      expect(file.version).toBe(DESIGN_FILE_VERSION)
-      expect(file.outline).toEqual({ outline: "rect", aspectLocked: true })
-    })
-
-    it("a non-square v1 Document becomes a Rectangle — rect, free", () => {
-      const file = parseDesignFile(JSON.stringify(v1File({ width: 800, height: 400 })))
-      expect(file.version).toBe(DESIGN_FILE_VERSION)
-      expect(file.outline).toEqual({ outline: "rect", aspectLocked: false })
-    })
-
-    it("leaves the rest of the envelope untouched", () => {
-      const file = parseDesignFile(JSON.stringify(v1File({ width: 600, height: 600 })))
-      expect(file.size).toEqual({ width: 600, height: 600 })
-      expect(file.rotation).toBe(0)
-      expect(file.border).toEqual({ width: 0, color: "#18181b" })
-      expect(file.canvas.objects).toEqual([{ type: "Rect" }])
-    })
-
-    it("a v1 file with a malformed size is still refused loudly", () => {
-      // The migrator runs first and must not throw on the way to validation.
-      expect(() =>
-        parseDesignFile(JSON.stringify({ ...v1File({ width: 1, height: 1 }), size: {} })),
-      ).toThrow("The file's size is missing or malformed")
-    })
-  })
-
-  // The migration test above mutates the shared MIGRATORS registry — restore
-  // it even if an expect throws mid-test, or a leaked v0 entry would silently
-  // migrate real v1 files in sibling cases.
-  afterEach(() => {
-    delete MIGRATORS[0]
-  })
-
   describe("validation rejects loudly", () => {
     const VALID = {
       format: DESIGN_FILE_FORMAT,
@@ -193,17 +115,21 @@ describe("design file — v2 envelope", () => {
       ).toThrow("This file is not a Sticker Studio design")
     })
 
-    it("a wrong version", () => {
-      // Past the current one: an older app cannot read a newer file, and
-      // there is no migrator to run.
-      expect(() =>
-        parseDesignFile(JSON.stringify({ ...VALID, version: 3 })),
-      ).toThrow("Unsupported design file version 3")
+    it("a version that is not the current one", () => {
+      // Nothing migrates. 2 is what the build before this one wrote; 3 is
+      // past the current one, which an older app cannot read either. Both are
+      // refused loudly rather than read forward.
+      for (const version of [0, 2, 3]) {
+        expect(() =>
+          parseDesignFile(JSON.stringify({ ...VALID, version })),
+        ).toThrow(`Unsupported design file version ${version}`)
+      }
     })
 
     it("a missing outline", () => {
-      // Only a v1 file may lack one — and that is the migrator's job. A
-      // current-version file without an outline is malformed, not legacy.
+      // Every file at the current version carries one — nothing classifies
+      // the shape from the size on the way in. A file without an outline is
+      // malformed.
       expect(() =>
         parseDesignFile(JSON.stringify({ ...VALID, outline: undefined })),
       ).toThrow("The file's outline is missing or malformed")

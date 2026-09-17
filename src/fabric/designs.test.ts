@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest"
 
-import { parseDesignFile } from "@/fabric/design-file"
+import { DESIGN_FILE_VERSION, parseDesignFile } from "@/fabric/design-file"
 import {
   PREDESIGNS,
   loadPredesign,
@@ -19,26 +19,20 @@ import { BOOT_OUTLINE, getStickerShape } from "@/fabric/outline"
  * apply share one fetch.
  */
 
-/** A minimal valid Design file body (the envelope + one known object type). */
-function validFileBody(): string {
-  return JSON.stringify({
-    format: "sticker-studio",
-    version: 1,
-    size: { width: 600, height: 600 },
-    rotation: 0,
-    border: { width: 16, color: "#18181B" },
-    canvas: { version: "7.4.0", objects: [{ type: "Rect" }] },
-  })
-}
-
-/** A v2 file body carrying an explicit outline (map #48). */
-function outlinedFileBody(
-  outline: { outline: string; aspectLocked: boolean },
+/**
+ * A minimal valid Design file body — the envelope, one known object type, and
+ * the outline every file at the current version carries (map #48).
+ */
+function validFileBody(
+  outline: { outline: string; aspectLocked: boolean } = {
+    outline: "rect",
+    aspectLocked: false,
+  },
   size = { width: 600, height: 600 },
 ): string {
   return JSON.stringify({
     format: "sticker-studio",
-    version: 2,
+    version: DESIGN_FILE_VERSION,
     size,
     rotation: 0,
     outline,
@@ -84,10 +78,9 @@ const SHIPPED_FILES = import.meta.glob("../../public/designs/*.json", {
 }) as Record<string, string>
 
 /**
- * The shipped files themselves, each with the id the catalog keys it by. The
- * migration these files once exercised now lives in `design-file.test.ts`,
- * which carries its own v1 fixtures — every file here is at the current
- * version.
+ * The shipped files themselves, each with the id the catalog keys it by.
+ * Every file here is at the current version — nothing is migrated on the way
+ * in, so the bytes these assertions read are exactly the bytes the app reads.
  */
 function shippedFiles(): Array<{
   id: string
@@ -129,7 +122,7 @@ describe("the shipped design files", () => {
 
 describe("predesignShape — the sticker a design is made for", () => {
   it("derives the shape from the design's own envelope", async () => {
-    const body = outlinedFileBody(
+    const body = validFileBody(
       { outline: "oval", aspectLocked: false },
       { width: 288, height: 192 },
     )
@@ -144,17 +137,11 @@ describe("predesignShape — the sticker a design is made for", () => {
     // the size says nothing about the shape. Reading the shape off the size
     // instead would file this Circle among the Square designs — and an Oval
     // sticker would then offer a design drawn for a circle.
-    const body = outlinedFileBody({ outline: "oval", aspectLocked: true })
+    const body = validFileBody({ outline: "oval", aspectLocked: true })
 
     await expect(
       predesignShape(predesign("circle-design"), serve(body)),
     ).resolves.toBe("circle")
-  })
-
-  it("classifies a v1 file by its size — through the migrator, not a stored outline", async () => {
-    await expect(
-      predesignShape(predesign("legacy-square"), serve(validFileBody())),
-    ).resolves.toBe("square")
   })
 
   it("shares loadPredesign's cache — the shape costs no second fetch", async () => {

@@ -1,5 +1,5 @@
 import { getExportHost } from "@/fabric/export"
-import { parseDesignFile, type DesignFileV2 } from "@/fabric/design-file"
+import { parseDesignFile, type DesignFile } from "@/fabric/design-file"
 import { preloadFonts } from "@/fabric/fonts"
 import { getStickerShape, type StickerShape } from "@/fabric/outline"
 
@@ -39,7 +39,7 @@ export const PREDESIGNS: readonly Predesign[] = [
 type FetchFn = (url: string) => Promise<Response>
 
 /** The parsed designs, keyed by id — an apply never re-fetches. */
-const designCache = new Map<string, DesignFileV2>()
+const designCache = new Map<string, DesignFile>()
 
 /**
  * Fetch and parse a predesign — the import path's read+validate, with the
@@ -51,7 +51,7 @@ const designCache = new Map<string, DesignFileV2>()
 export async function loadPredesign(
   predesign: Predesign,
   fetchFn: FetchFn = (url) => fetch(url),
-): Promise<DesignFileV2> {
+): Promise<DesignFile> {
   const cached = designCache.get(predesign.id)
   if (cached) return cached
   let text: string

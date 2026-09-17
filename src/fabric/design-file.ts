@@ -16,55 +16,22 @@ import { OUTLINE_KINDS, type OutlineKind } from "@/fabric/outline"
  *
  * Import validates loudly (ADR 0002): Fabric's enlivening fails *silently*
  * on unknown object types, and a silent drop is data loss — so the file is
- * refused before `loadFromJSON` runs if any object type is unknown. Future
- * file versions migrate via the documented `MIGRATORS` registry, run
- * sequentially on load; v2 ships the registry's first real migrator, the one
- * that classifies a v1 file's outline.
+ * refused before `loadFromJSON` runs if any object type is unknown. Nothing
+ * migrates: v1 is the only version the app has ever written, so there is no
+ * older format to read forward from. A future change to the envelope bumps
+ * the number and brings the migrator that reads this one (ADR 0002).
  */
 
 /** The format marker — a file carrying anything else is not a Design file. */
 export const DESIGN_FILE_FORMAT = "sticker-studio"
 
-/** The current file version — v2 adds the Document's outline (map #48). */
-export const DESIGN_FILE_VERSION = 2
-
-/** A migrator upgrades one object-string version to the next (ADR 0002). */
-export type DesignFileMigrator = (file: any) => any
-
 /**
- * v1 → v2 (map #48): v1 had no Document outline — the sheet was the canvas,
- * and its shape was not a property at all. Classify from the size, mirroring
- * `getShapeKind` for a shape object: a square Document becomes a **Square**
- * sticker (rect, aspect locked), anything else a **Rectangle** (rect, free).
- * The Predesigns shipped at v1 were 600×600, so they became Square, as
- * intended.
- *
- * Runs before validation, so the size it reads may be malformed — that file
- * is refused loudly by `validate` a step later either way, and the fallback
- * below only has to avoid throwing here.
+ * The current file version (ADR 0002) — v1, the only version the app has
+ * written. A file carrying anything else is refused loudly by `validate`
+ * below rather than migrated: there is no older format in existence to read
+ * forward from, and no version of the app ever wrote one.
  */
-function migrateV1(file: any): any {
-  const size = file?.size
-  const square =
-    isRecord(size) &&
-    typeof size.width === "number" &&
-    typeof size.height === "number" &&
-    size.width === size.height
-  return {
-    ...file,
-    version: 2,
-    outline: { outline: "rect", aspectLocked: square },
-  }
-}
-
-/**
- * The documented migration registry (ADR 0002) — keyed by the version a file
- * is migrating *from*; each migrator returns the file one version newer. Run
- * sequentially on load, from the file's version up to the current one.
- */
-export const MIGRATORS: Record<number, DesignFileMigrator> = {
-  1: migrateV1,
-}
+export const DESIGN_FILE_VERSION = 1
 
 /**
  * The object type strings the app knows how to enliven — the whitelist for
@@ -151,8 +118,8 @@ export async function loadEnvelope(
   await canvas.loadFromJSON(payload)
 }
 
-/** The serializable Design file — the v2 envelope (ADR 0002, map #48). */
-export interface DesignFileV2 {
+/** The serializable Design file — the envelope (ADR 0002, map #48). */
+export interface DesignFile {
   format: typeof DESIGN_FILE_FORMAT
   version: typeof DESIGN_FILE_VERSION
   /** Document size in px — `loadFromJSON` never touches canvas size. */
@@ -204,30 +171,9 @@ function validateObjectType(obj: unknown, path: string): void {
 }
 
 /**
- * Migrate a raw parsed file from its declared version to the current one —
- * `MIGRATORS[version]` steps the file one version forward, repeatedly until
- * current. A version the registry has no path from (an unknown old one, or a
- * future one an older app cannot read) is left alone and refused loudly by
- * the version check in `validate`.
- */
-function migrate(raw: Record<string, unknown>): Record<string, unknown> {
-  let file = raw
-  let version = file.version
-  while (
-    typeof version === "number" &&
-    version !== DESIGN_FILE_VERSION &&
-    version in MIGRATORS
-  ) {
-    file = MIGRATORS[version as number](file)
-    version = file.version
-  }
-  return { ...file, version }
-}
-
-/**
- * Validate a raw parsed file's envelope — the format marker and the version
- * (after migration) — and its canvas object types, throwing loudly on any
- * failure. Returns the migrated, validated file.
+ * Validate a raw parsed file's envelope — the format marker and the version —
+ * and its canvas object types, throwing loudly on any failure. Returns the
+ * validated file.
  */
 function validate(raw: unknown): Record<string, unknown> {
   if (!isRecord(raw)) {
@@ -238,13 +184,12 @@ function validate(raw: unknown): Record<string, unknown> {
       `This file is not a Sticker Studio design (format "${String(raw.format)}")`,
     )
   }
-  const file = migrate(raw)
-  if (file.version !== DESIGN_FILE_VERSION) {
+  if (raw.version !== DESIGN_FILE_VERSION) {
     throw new DesignFileError(
-      `Unsupported design file version ${String(file.version)} — this build reads version ${DESIGN_FILE_VERSION}`,
+      `Unsupported design file version ${String(raw.version)} — this build reads version ${DESIGN_FILE_VERSION}`,
     )
   }
-  const size = file.size
+  const size = raw.size
   if (
     !isRecord(size) ||
     typeof size.width !== "number" ||
@@ -252,7 +197,7 @@ function validate(raw: unknown): Record<string, unknown> {
   ) {
     throw new DesignFileError("The file's size is missing or malformed")
   }
-  const border = file.border
+  const border = raw.border
   if (
     !isRecord(border) ||
     typeof border.width !== "number" ||
@@ -260,10 +205,10 @@ function validate(raw: unknown): Record<string, unknown> {
   ) {
     throw new DesignFileError("The file's border is missing or malformed")
   }
-  if (typeof file.rotation !== "number") {
+  if (typeof raw.rotation !== "number") {
     throw new DesignFileError("The file's rotation is missing or malformed")
   }
-  const outline = file.outline
+  const outline = raw.outline
   if (
     !isRecord(outline) ||
     typeof outline.outline !== "string" ||
@@ -272,32 +217,32 @@ function validate(raw: unknown): Record<string, unknown> {
   ) {
     throw new DesignFileError("The file's outline is missing or malformed")
   }
-  const canvas = file.canvas
+  const canvas = raw.canvas
   if (!isRecord(canvas) || !Array.isArray(canvas.objects)) {
     throw new DesignFileError("The file's canvas is missing or malformed")
   }
   canvas.objects.forEach((obj, i) => validateObjectType(obj, `objects[${i}]`))
-  return file
+  return raw
 }
 
 /**
  * Parse a Design file's JSON text. Validates loudly — the format marker,
- * the version (after migration), and the canvas object types — and returns
- * the marked-up file. Throws DesignFileError with a clear message on any
- * structural failure; JSON parse errors keep their cause.
+ * the version, and the canvas object types — and returns the marked-up file.
+ * Throws DesignFileError with a clear message on any structural failure;
+ * JSON parse errors keep their cause.
  */
-export function parseDesignFile(text: string): DesignFileV2 {
+export function parseDesignFile(text: string): DesignFile {
   let raw: unknown
   try {
     raw = JSON.parse(text)
   } catch (error) {
     throw new DesignFileError("This file is not valid JSON", error)
   }
-  return validate(raw) as unknown as DesignFileV2
+  return validate(raw) as unknown as DesignFile
 }
 
 /** Serialize the current Document as a Design file envelope (ADR 0002). */
-export function serializeDesignFile(canvas: Canvas): DesignFileV2 {
+export function serializeDesignFile(canvas: Canvas): DesignFile {
   return {
     format: DESIGN_FILE_FORMAT,
     version: DESIGN_FILE_VERSION,
