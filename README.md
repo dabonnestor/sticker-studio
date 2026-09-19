@@ -11,8 +11,10 @@ and the only requests that leave it are artwork searches against Pixabay and Uns
 
 ![The Sticker Studio editor](public/sticker-studio-demo.gif)
 
-30 seconds, 800×450, 2.4 MB. Repo-relative images render inline on GitHub, so the
-clip plays directly in the README.
+<!-- TODO: replace DEMO_SITE_URL with the deployed demo site. The app is
+     client-side only, so any static host serves it. -->
+
+**▶ Live demo:** `DEMO_SITE_URL` — the app runs entirely in your browser.
 
 ## What it is
 
