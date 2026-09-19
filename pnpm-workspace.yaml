@@ -1,3 +1,9 @@
+# The root package is the whole workspace. This field is redundant for pnpm
+# 10.11+ (which reads a settings-only file fine), but Cloudflare Pages' build
+# image ships pnpm 9.x, where the file is rejected outright with "packages
+# field missing or empty" before it ever looks at the lockfile.
+packages:
+  - '.'
 allowBuilds:
   # fabric ships `canvas` (Node native) as an optional dependency; this app
   # is browser-only, so never build it.
