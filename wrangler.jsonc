@@ -1,0 +1,17 @@
+{
+  // Cloudflare deploys this app as a Worker with static assets. `name` must
+  // match the Worker the repository is connected to in the Cloudflare
+  // dashboard — it is taken from the repo name and has not been confirmed
+  // against the dashboard yet.
+  "name": "sticker-studio",
+  "compatibility_date": "2026-09-19",
+  "assets": {
+    // Vite's default output. Recent wrangler rejects an `assets` block with no
+    // `directory`, which is what the auto-generated project config tripped on.
+    "directory": "./dist",
+    // `/` is the only real route: src/lib/routing.ts sends every other path
+    // back to the editor. That redirect only runs if unknown paths reach the
+    // app, so serving index.html beats handing back Cloudflare's own 404.
+    "not_found_handling": "single-page-application"
+  }
+}
