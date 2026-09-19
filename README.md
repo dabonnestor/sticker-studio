@@ -9,15 +9,10 @@ and the only requests that leave it are artwork searches against Pixabay and Uns
 
 ## Demo
 
-[**▶ Watch the demo**](public/sticker-studio-demo.mp4) — 87 seconds, 1920×1080.
+![The Sticker Studio editor](public/sticker-studio-demo.gif)
 
-<video src="public/sticker-studio-demo.mp4" controls width="100%" title="Sticker Studio demo"></video>
-
-<!-- GitHub strips <video> elements whose src is a repo-relative path, so on GitHub
-     the link above is the way to reach the clip (the <video> renders on forges and
-     Markdown previewers that permit it). For an inline player on GitHub itself,
-     drag the file into a GitHub issue or comment box and put the resulting
-     user-attachments URL in the src above, replacing the relative path. -->
+30 seconds, 800×450, 2.4 MB. Repo-relative images render inline on GitHub, so the
+clip plays directly in the README.
 
 ## What it is
 
