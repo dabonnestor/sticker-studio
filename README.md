@@ -11,10 +11,8 @@ and the only requests that leave it are artwork searches against Pixabay and Uns
 
 ![The Sticker Studio editor](public/sticker-studio-demo.gif)
 
-<!-- TODO: replace DEMO_SITE_URL with the deployed demo site. The app is
-     client-side only, so any static host serves it. -->
-
-**▶ Live demo:** `DEMO_SITE_URL` — the app runs entirely in your browser.
+**▶ [Live demo](https://sticker-studio.dabonnestor.workers.dev/)** — the app runs
+entirely in your browser, so nothing you design leaves the tab.
 
 ## What it is
 
