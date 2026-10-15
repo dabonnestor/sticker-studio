@@ -76,9 +76,25 @@ export function isTextObject(obj: FabricObject | null | undefined): obj is Textb
   return obj instanceof Textbox
 }
 
-/** What the toolbar offers for a family (§6) — the faces it really bundles. */
+/**
+ * The five font categories (CONTEXT.md) the picker groups families under, in
+ * the picker's order — Sans, Serif, Display, Handwriting, Mono. Literal-typed
+ * so a family's `category` is checked against exactly these. "Handwriting",
+ * not "Script".
+ */
+export const FONT_CATEGORIES = ["Sans", "Serif", "Display", "Handwriting", "Mono"] as const
+
+/** One of the five picker groups a bundled family is filed under. */
+export type FontCategory = (typeof FONT_CATEGORIES)[number]
+
+/**
+ * What the toolbar offers for a family (§6) — its picker group, and the faces
+ * it really bundles.
+ */
 export interface FontFamilySpec {
   family: string
+  /** The picker group this family is filed under (one of FONT_CATEGORIES). */
+  category: FontCategory
   /** Real weights (Bebas Neue, Anton and Pacifico are static 400-only). */
   weights: readonly number[]
   /** A real italic face exists — no faux italic for families without one. */
@@ -86,23 +102,34 @@ export interface FontFamilySpec {
 }
 
 /**
- * The ten bundled families (build spec §12), in picker order. The asset files
- * and @font-face rules live in `fonts.ts`; this table is the model's view —
- * the real faces the toolbar may offer and `applyTextProps` may snap to.
- * Literal-typed (`as const`) so `fonts.ts` can key its asset table to the
+ * The ten bundled families (build spec §12), in picker order — grouped by
+ * category (FONT_CATEGORIES order), each carrying its `category`. The asset
+ * files and @font-face rules live in `fonts.ts`; this table is the model's
+ * view — the real faces the toolbar may offer and `applyTextProps` may snap
+ * to. Literal-typed (`as const`) so `fonts.ts` can key its asset table to the
  * exact family names.
  */
 export const FONT_FAMILIES = [
-  { family: "Inter", weights: [400, 500, 600, 700, 800], italic: true },
-  { family: "Work Sans", weights: [400, 500, 600, 700, 800], italic: true },
-  { family: "Barlow", weights: [400, 600, 700, 900], italic: true },
-  { family: "Lora", weights: [400, 500, 600, 700], italic: true },
-  { family: "Playfair Display", weights: [400, 500, 600, 700, 800, 900], italic: true },
-  { family: "Bebas Neue", weights: [400], italic: false },
-  { family: "Anton", weights: [400], italic: false },
-  { family: "Pacifico", weights: [400], italic: false },
-  { family: "Dancing Script", weights: [400, 500, 600, 700], italic: false },
-  { family: "JetBrains Mono", weights: [400, 500, 600, 700, 800], italic: true },
+  { family: "Inter", category: "Sans", weights: [400, 500, 600, 700, 800], italic: true },
+  { family: "Work Sans", category: "Sans", weights: [400, 500, 600, 700, 800], italic: true },
+  { family: "Barlow", category: "Sans", weights: [400, 600, 700, 900], italic: true },
+  { family: "Lora", category: "Serif", weights: [400, 500, 600, 700], italic: true },
+  {
+    family: "Playfair Display",
+    category: "Serif",
+    weights: [400, 500, 600, 700, 800, 900],
+    italic: true,
+  },
+  { family: "Bebas Neue", category: "Display", weights: [400], italic: false },
+  { family: "Anton", category: "Display", weights: [400], italic: false },
+  { family: "Pacifico", category: "Handwriting", weights: [400], italic: false },
+  {
+    family: "Dancing Script",
+    category: "Handwriting",
+    weights: [400, 500, 600, 700],
+    italic: false,
+  },
+  { family: "JetBrains Mono", category: "Mono", weights: [400, 500, 600, 700, 800], italic: true },
 ] as const satisfies readonly FontFamilySpec[]
 
 /** The spec for a family, or undefined for families outside the bundle. */

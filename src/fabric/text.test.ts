@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest"
 import { registerCustomProperties } from "@/fabric/custom-properties"
 import { createShape } from "@/fabric/shapes"
 import {
+  FONT_CATEGORIES,
   FONT_FAMILIES,
   TEXT_DEFAULT_FAMILY,
   TEXT_DEFAULT_FONT_SIZE,
@@ -48,20 +49,31 @@ const STYLE: TextMeasureStyle = {
   fontStyle: "",
 }
 
+describe("FONT_CATEGORIES — the five picker groups", () => {
+  it("holds the five categories in picker order — Sans, Serif, Display, Handwriting, Mono", () => {
+    expect(FONT_CATEGORIES).toEqual(["Sans", "Serif", "Display", "Handwriting", "Mono"])
+  })
+})
+
 describe("FONT_FAMILIES — the ten bundled families (§12)", () => {
-  it("lists ten families in picker order", () => {
-    expect(FONT_FAMILIES.map((s) => s.family)).toEqual([
-      "Inter",
-      "Work Sans",
-      "Barlow",
-      "Lora",
-      "Playfair Display",
-      "Bebas Neue",
-      "Anton",
-      "Pacifico",
-      "Dancing Script",
-      "JetBrains Mono",
+  it("lists the ten families in picker order, each filed under its category", () => {
+    expect(FONT_FAMILIES.map(({ family, category }) => [family, category])).toEqual([
+      ["Inter", "Sans"],
+      ["Work Sans", "Sans"],
+      ["Barlow", "Sans"],
+      ["Lora", "Serif"],
+      ["Playfair Display", "Serif"],
+      ["Bebas Neue", "Display"],
+      ["Anton", "Display"],
+      ["Pacifico", "Handwriting"],
+      ["Dancing Script", "Handwriting"],
+      ["JetBrains Mono", "Mono"],
     ])
+  })
+
+  it("keeps the families grouped by category, in the categories' picker order", () => {
+    const ranks = FONT_FAMILIES.map(({ category }) => FONT_CATEGORIES.indexOf(category))
+    expect(ranks).toEqual([...ranks].sort((a, b) => a - b))
   })
 
   it("static 400-only families are exactly that", () => {

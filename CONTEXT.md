@@ -67,6 +67,10 @@ _Avoid_: text edit, edit mode
 The width behavior of a Text object — the box hugs its content at creation and re-fits at the end of each Text session while it has never been manually resized; the first manual resize hands the width to the user, and multi-line text wraps at that width.
 _Avoid_: auto-grow, fit-to-content
 
+**Font category**:
+One of the five groups the bundled font families are sorted into for the picker, in the picker's order — Sans, Serif, Display, Handwriting, Mono. A family is filed under exactly one category, and the picker shows one labelled section per category. The term is Handwriting, not Script.
+_Avoid_: Script, typeface group
+
 **Zoom**:
 The magnification of the stage, as a percentage where 100% renders one document pixel as one screen pixel. Zoom is view state — never part of the Document, never an undoable step, and interactions that change only the view (zoom, pan, selection) are not interaction boundaries.
 _Avoid_: scale, magnification
