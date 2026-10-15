@@ -1,10 +1,21 @@
-import { type Canvas, Group, Textbox, cache, config } from "fabric"
+import { type Canvas, Group, Textbox, cache, config, type Object as FabricObject } from "fabric"
 
-import { FONT_FAMILIES, type FontFamilySpec, type TextMeasureStyle } from "@/fabric/text"
+import { refitParentGroup } from "@/fabric/groups"
+import {
+  FONT_FAMILIES,
+  fitToContent,
+  getFontFamilySpec,
+  isTextObject,
+  snapToRealFace,
+  type FontFamilySpec,
+  type TextMeasureStyle,
+  type TextPropsPatch,
+} from "@/fabric/text"
 
-// The ten bundled font families (build spec §12, research issue #3). All are
-// SIL OFL 1.1 and ship unmodified from Fontsource (woff2, latin subset — the
-// ~400–470 KB bundle the research budgeted). Variable families bundle one file
+// The bundled font families (build spec §12, map #71). All are SIL OFL 1.1
+// and ship unmodified from Fontsource (woff2, latin subset — the ten-family
+// bundle is 22 files / ~732 KB as measured in #58; the expanded roster
+// arrives with map #71's family tickets). Variable families bundle one file
 // per style covering their whole weight axis; Barlow, Bebas Neue, Anton and
 // Pacifico are static — one file per weight.
 //
@@ -13,30 +24,141 @@ import { FONT_FAMILIES, type FontFamilySpec, type TextMeasureStyle } from "@/fab
 // family name instead, so the name in the family picker, in Fabric's
 // `fontFamily`, and in `config.fontPaths` (SVG export) are all the same
 // string.
+//
+// Loading is on demand — the map #71 policy, settled in #59 (this comment is
+// its canonical in-code form). The contract, in one breath: every @font-face
+// registers at startup; every face fetch is caused by an explicit use or by
+// an item rendered on screen; every measurement that persists or exports is
+// computed against the real face — or heals on its own next load.
+//
+// - **Registration is up-front, loading is not.** `registerFonts()` injects
+//   the rules and fills `config.fontPaths`; a cold boot on an empty design
+//   fetches no font file.
+// - **Loads are per face** — the exact (family, weight, style) a surface
+//   needs, never a whole family: a variable package collapses to one file
+//   per style, a static family fetches only the used weight/italic files.
+// - **Awaited paths are bounded** ({@link FONT_LOAD_TIMEOUT_MS}): Add Text,
+//   a toolbar commit, and Export await their faces, and past the bound
+//   proceed with the fallback face and warn — a hung server never holds a
+//   click. Restore, import, and hover previews request their faces rather
+//   than awaiting them.
+// - **The arrival fix-up** ({@link healFontsOnArrival}) repairs late faces:
+//   a canvas never repaints when a font lands, and Fabric caches per-face
+//   char widths — so when faces arrive, the objects using those families are
+//   re-measured, auto-fit boxes re-fit, char caches cleared, and the stage
+//   repainted. It never records history and never re-persists the draft: a
+//   face correction, not a document edit.
+// - **Failures never revert and never cascade**: a failed or timed-out face
+//   is evicted so the next explicit touch retries it, and one 404 never
+//   skips the fix-up for the families that did arrive.
 
-/** Fontsource file URLs — `?url` resolves to the bundled asset URL. */
-import interNormal from "@fontsource-variable/inter/files/inter-latin-wght-normal.woff2?url"
-import interItalic from "@fontsource-variable/inter/files/inter-latin-wght-italic.woff2?url"
-import workSansNormal from "@fontsource-variable/work-sans/files/work-sans-latin-wght-normal.woff2?url"
-import workSansItalic from "@fontsource-variable/work-sans/files/work-sans-latin-wght-italic.woff2?url"
-import barlow400 from "@fontsource/barlow/files/barlow-latin-400-normal.woff2?url"
-import barlow600 from "@fontsource/barlow/files/barlow-latin-600-normal.woff2?url"
-import barlow700 from "@fontsource/barlow/files/barlow-latin-700-normal.woff2?url"
-import barlow900 from "@fontsource/barlow/files/barlow-latin-900-normal.woff2?url"
-import barlow400Italic from "@fontsource/barlow/files/barlow-latin-400-italic.woff2?url"
-import barlow600Italic from "@fontsource/barlow/files/barlow-latin-600-italic.woff2?url"
-import barlow700Italic from "@fontsource/barlow/files/barlow-latin-700-italic.woff2?url"
-import barlow900Italic from "@fontsource/barlow/files/barlow-latin-900-italic.woff2?url"
-import loraNormal from "@fontsource-variable/lora/files/lora-latin-wght-normal.woff2?url"
-import loraItalic from "@fontsource-variable/lora/files/lora-latin-wght-italic.woff2?url"
-import playfairNormal from "@fontsource-variable/playfair-display/files/playfair-display-latin-wght-normal.woff2?url"
-import playfairItalic from "@fontsource-variable/playfair-display/files/playfair-display-latin-wght-italic.woff2?url"
-import bebasNormal from "@fontsource/bebas-neue/files/bebas-neue-latin-400-normal.woff2?url"
-import antonNormal from "@fontsource/anton/files/anton-latin-400-normal.woff2?url"
-import pacificoNormal from "@fontsource/pacifico/files/pacifico-latin-400-normal.woff2?url"
-import dancingNormal from "@fontsource-variable/dancing-script/files/dancing-script-latin-wght-normal.woff2?url"
-import jetbrainsNormal from "@fontsource-variable/jetbrains-mono/files/jetbrains-mono-latin-wght-normal.woff2?url"
-import jetbrainsItalic from "@fontsource-variable/jetbrains-mono/files/jetbrains-mono-latin-wght-italic.woff2?url"
+// Fontsource file URLs, acquired with `new URL(…, import.meta.url)` over
+// static literals — deliberately not `?url` imports: in dev a `?url` import
+// is a JS stub module the browser fetches at boot, which reads as a request
+// for every bundled font on a cold empty design (#63's DevTools acceptance);
+// `new URL` stays an inert string until a face is actually used. Vite
+// resolves each literal at build time, so the URL is fetchable in both
+// environments — the injected @font-face rules and `config.fontPaths` need
+// one, and the build emits the bytes as hashed assets.
+
+/** `@fontsource-variable/inter` — variable: one file per style. */
+const interNormal = new URL(
+  "../../node_modules/@fontsource-variable/inter/files/inter-latin-wght-normal.woff2",
+  import.meta.url,
+).href
+const interItalic = new URL(
+  "../../node_modules/@fontsource-variable/inter/files/inter-latin-wght-italic.woff2",
+  import.meta.url,
+).href
+/** `@fontsource-variable/work-sans` — variable: one file per style. */
+const workSansNormal = new URL(
+  "../../node_modules/@fontsource-variable/work-sans/files/work-sans-latin-wght-normal.woff2",
+  import.meta.url,
+).href
+const workSansItalic = new URL(
+  "../../node_modules/@fontsource-variable/work-sans/files/work-sans-latin-wght-italic.woff2",
+  import.meta.url,
+).href
+/** `@fontsource/barlow` — static: one file per weight and style. */
+const barlow400 = new URL(
+  "../../node_modules/@fontsource/barlow/files/barlow-latin-400-normal.woff2",
+  import.meta.url,
+).href
+const barlow600 = new URL(
+  "../../node_modules/@fontsource/barlow/files/barlow-latin-600-normal.woff2",
+  import.meta.url,
+).href
+const barlow700 = new URL(
+  "../../node_modules/@fontsource/barlow/files/barlow-latin-700-normal.woff2",
+  import.meta.url,
+).href
+const barlow900 = new URL(
+  "../../node_modules/@fontsource/barlow/files/barlow-latin-900-normal.woff2",
+  import.meta.url,
+).href
+const barlow400Italic = new URL(
+  "../../node_modules/@fontsource/barlow/files/barlow-latin-400-italic.woff2",
+  import.meta.url,
+).href
+const barlow600Italic = new URL(
+  "../../node_modules/@fontsource/barlow/files/barlow-latin-600-italic.woff2",
+  import.meta.url,
+).href
+const barlow700Italic = new URL(
+  "../../node_modules/@fontsource/barlow/files/barlow-latin-700-italic.woff2",
+  import.meta.url,
+).href
+const barlow900Italic = new URL(
+  "../../node_modules/@fontsource/barlow/files/barlow-latin-900-italic.woff2",
+  import.meta.url,
+).href
+/** `@fontsource-variable/lora` — variable: one file per style. */
+const loraNormal = new URL(
+  "../../node_modules/@fontsource-variable/lora/files/lora-latin-wght-normal.woff2",
+  import.meta.url,
+).href
+const loraItalic = new URL(
+  "../../node_modules/@fontsource-variable/lora/files/lora-latin-wght-italic.woff2",
+  import.meta.url,
+).href
+/** `@fontsource-variable/playfair-display` — variable: one file per style. */
+const playfairNormal = new URL(
+  "../../node_modules/@fontsource-variable/playfair-display/files/playfair-display-latin-wght-normal.woff2",
+  import.meta.url,
+).href
+const playfairItalic = new URL(
+  "../../node_modules/@fontsource-variable/playfair-display/files/playfair-display-latin-wght-italic.woff2",
+  import.meta.url,
+).href
+/** `@fontsource/bebas-neue` — static, single face. */
+const bebasNormal = new URL(
+  "../../node_modules/@fontsource/bebas-neue/files/bebas-neue-latin-400-normal.woff2",
+  import.meta.url,
+).href
+/** `@fontsource/anton` — static, single face. */
+const antonNormal = new URL(
+  "../../node_modules/@fontsource/anton/files/anton-latin-400-normal.woff2",
+  import.meta.url,
+).href
+/** `@fontsource/pacifico` — static, single face. */
+const pacificoNormal = new URL(
+  "../../node_modules/@fontsource/pacifico/files/pacifico-latin-400-normal.woff2",
+  import.meta.url,
+).href
+/** `@fontsource-variable/dancing-script` — variable, normal style only. */
+const dancingNormal = new URL(
+  "../../node_modules/@fontsource-variable/dancing-script/files/dancing-script-latin-wght-normal.woff2",
+  import.meta.url,
+).href
+/** `@fontsource-variable/jetbrains-mono` — variable: one file per style. */
+const jetbrainsNormal = new URL(
+  "../../node_modules/@fontsource-variable/jetbrains-mono/files/jetbrains-mono-latin-wght-normal.woff2",
+  import.meta.url,
+).href
+const jetbrainsItalic = new URL(
+  "../../node_modules/@fontsource-variable/jetbrains-mono/files/jetbrains-mono-latin-wght-italic.woff2",
+  import.meta.url,
+).href
 
 /** The metadata (family, weights, italic) comes from the text model's table. */
 type FontSpec = FontFamilySpec & {
@@ -167,9 +289,9 @@ let fontsRegistered = false
 
 /**
  * Register the @font-face rules and point Fabric's SVG-export font registry
- * (`config.fontPaths`) at the bundled files. Runs once at app startup — the
- * browser downloads each face on first use; `preloadFonts` then forces the
- * download so measuring and rasterizing see real metrics.
+ * (`config.fontPaths`) at the bundled files. Runs once at app startup —
+ * rule text only: nothing here fetches a face (§1 of the policy below), and
+ * the faces load on demand through {@link loadFontFaces}.
  */
 export function registerFonts(): void {
   if (fontsRegistered) return
@@ -186,29 +308,149 @@ export function registerFonts(): void {
   config.fontPaths = Object.fromEntries(FONT_SPECS.map((s) => [s.family, s.url]))
 }
 
-let fontsLoaded: Promise<void> | null = null
+/**
+ * One text face — the exact (family, weight, style) a surface needs. Loading
+ * is per face, never per family (§2 of the policy): a variable package
+ * collapses to one file per style, and a static family fetches only the used
+ * weight/italic files. Weights and styles are real faces only — the same
+ * pairs `snapToRealFace` resolves to.
+ */
+export interface FontFaceSpec {
+  family: string
+  weight: number
+  style: "normal" | "italic"
+}
 
 /**
- * Preload every bundled face — each offered weight, normal and italic — and
- * resolve when all of them are ready. The text auto-fit measures glyphs with
- * `ctx.measureText`; a not-yet-loaded face silently falls back to the default
- * font and the fit would be wrong, so creating text awaits this. Memoized;
- * idempotent.
+ * How long an awaited path waits (§9) — Add Text, a family/weight/style
+ * click, and Export race this bound; on timeout they proceed with the
+ * fallback face and warn. Offline fetches reject fast; the bound only
+ * catches a hung server, so a click never hangs on the network.
  */
-export function preloadFonts(): Promise<void> {
-  if (!fontsLoaded) {
-    fontsLoaded = Promise.all(
-      FONT_SPECS.flatMap((s) =>
-        s.weights.flatMap((weight) => [
-          document.fonts.load(`${weight} 24px ${s.family}`),
-          ...(s.italic
-            ? [document.fonts.load(`italic ${weight} 24px ${s.family}`)]
-            : []),
-        ]),
-      ),
-    ).then(() => document.fonts.ready.then(() => undefined))
+export const FONT_LOAD_TIMEOUT_MS = 10_000
+
+/** The dedupe key of a face — the (family, weight, style) triple. */
+function faceKey(spec: FontFaceSpec): string {
+  return `${spec.family}|${spec.weight}|${spec.style}`
+}
+
+/**
+ * The in-flight/fulfilled load memo — dedupes every request for one face, so
+ * a hover skim fires each fetch once. Deliberately no negative cache (§9): a
+ * failed probe is evicted below, so the next explicit touch retries it. A
+ * probe that settles after its caller timed out stays memoized — a retry
+ * joins it and, if the face arrived in the meantime, succeeds instantly.
+ */
+const faceLoads = new Map<string, Promise<boolean>>()
+
+/**
+ * Probe the DOM for one face — `document.fonts.load` fetches the exact
+ * descriptor if it isn't available yet. An empty match (a family the bundle
+ * doesn't ship, or a face beyond a family's real set) and an errored
+ * download both read as failure; only a non-empty, all-loaded set is
+ * success.
+ */
+async function probeFace(spec: FontFaceSpec): Promise<boolean> {
+  const descriptor = `${spec.style === "italic" ? "italic " : ""}${spec.weight} 24px "${spec.family}"`
+  const faces = await document.fonts.load(descriptor)
+  return faces.length > 0 && faces.every((face) => face.status === "loaded")
+}
+
+/** The memoized probe for a face — started once, joined by every caller. */
+function loadFace(spec: FontFaceSpec): Promise<boolean> {
+  const key = faceKey(spec)
+  const existing = faceLoads.get(key)
+  if (existing) return existing
+  const probe = probeFace(spec).catch(() => false)
+  faceLoads.set(key, probe)
+  // Evict a failure — the no-negative-cache rule above: the next explicit
+  // touch starts a fresh probe.
+  void probe.then((arrived) => {
+    if (!arrived) faceLoads.delete(key)
+  })
+  return probe
+}
+
+/** Race a probe against the awaited-path bound — a timeout reads as failure. */
+function boundedProbe(probe: Promise<boolean>, boundMs: number): Promise<boolean> {
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => resolve(false), boundMs)
+    void probe.then(
+      (arrived) => {
+        clearTimeout(timer)
+        resolve(arrived)
+      },
+      () => {
+        clearTimeout(timer)
+        resolve(false)
+      },
+    )
+  })
+}
+
+/**
+ * Request the given faces and heal the canvas as each family's batch lands —
+ * the one entry point every path shares: Add Text, toolbar commits,
+ * restore/import, hover previews, and export's readiness check.
+ *
+ * Returns the families that failed or timed out, in first-use order (deduped
+ * triples; [] when everything arrived), and never rejects — a failed face is
+ * a warning, never an exception (§9). `canvas` is null where there is nothing
+ * live to heal (export's offscreen path); otherwise each family's arrival
+ * runs {@link healFontsOnArrival} scoped to that family, so the fix-up lands
+ * per family as it settles and one 404 never skips the families that did
+ * arrive (§4). A batch that settles past `boundMs` still heals when it
+ * lands — its caller proceeded with a fallback face, and a late arrival must
+ * not leave fallback-computed widths standing.
+ */
+export async function loadFontFaces(
+  canvas: Canvas | null,
+  faces: readonly FontFaceSpec[],
+  boundMs: number = FONT_LOAD_TIMEOUT_MS,
+): Promise<string[]> {
+  const seen = new Set<string>()
+  const groups = new Map<string, FontFaceSpec[]>()
+  for (const spec of faces) {
+    const key = faceKey(spec)
+    if (seen.has(key)) continue
+    seen.add(key)
+    const group = groups.get(spec.family)
+    if (group) group.push(spec)
+    else groups.set(spec.family, [spec])
   }
-  return fontsLoaded
+
+  const results = await Promise.all(
+    [...groups].map(async ([family, familyFaces]) => {
+      const probes = familyFaces.map((spec) => loadFace(spec))
+      if (canvas) {
+        // The arrival fix-up is attached to the raw probes: it fires when
+        // the faces land — even past the bound — once per family per call.
+        let healed = false
+        for (const probe of probes) {
+          void probe.then((arrived) => {
+            if (arrived && !healed) {
+              healed = true
+              healFontsOnArrival(canvas, [family])
+            }
+          })
+        }
+      }
+      // `allSettled` per family: one failed face never skips the fix-up for
+      // the faces that arrived (§4 isolation). A family counts as arrived
+      // when at least one of its faces landed.
+      const settled = await Promise.allSettled(
+        probes.map((probe) => boundedProbe(probe, boundMs)),
+      )
+      return {
+        family,
+        arrived: settled.some(
+          (result) => result.status === "fulfilled" && result.value,
+        ),
+      }
+    }),
+  )
+
+  return results.filter((result) => !result.arrived).map((result) => result.family)
 }
 
 /**
@@ -230,58 +472,180 @@ function makeTextMeasurer(): (text: string, style: TextMeasureStyle) => number {
 }
 
 /**
- * Re-render the canvas once every font is available.
+ * The arrival fix-up (§4) — repair the canvas after late faces land.
  *
- * The fonts start downloading at startup (§12) and text measures await them,
- * but the canvas does not: a Textbox restored from a working draft is
- * rasterized the moment its frame renders — before the webfonts resolve on a
- * cold or revalidating cache, filling the bitmap with the fallback face. A
- * canvas never repaints when a late font lands (`font-display: swap` reflows
- * DOM text, not canvas pixels), and Fabric blits each object's cached bitmap
- * (`isCacheDirty`, §Object.d.ts `dirty`) — so the wrong font baked into that
- * cache persists until the user touches the object.
+ * A canvas never repaints when a webfont arrives (`font-display: swap`
+ * reflows DOM text, not canvas pixels) and Fabric caches per-face char
+ * widths — a Textbox measured against the fallback face keeps its wrong
+ * wrapping, height, and (for `autoFit`) width until a fix-up runs. For every
+ * text object using an arrived family — top level and group children — clear
+ * Fabric's char cache for the family, re-measure, re-fit `autoFit` widths (a
+ * box fitted from fallback metrics must hug the real face), mark the object
+ * (and its parent group — a group caches its own bitmap on top of the
+ * children's) dirty, and repaint.
  *
- * The Stage calls this once, after its mount restore, so the restored text is
- * marked dirty and redrawn with the real faces. Marking `dirty` on an object
- * (and its group children — a group caches its own bitmap on top of the
- * children's) makes `renderCache` re-draw it on the next repaint. Only objects
- * are invalidated — shapes and the background carry no text, but re-rendering
- * them is a no-cost correctness guard. Shares the memoized `preloadFonts()`
- * promise, so this never downloads twice.
+ * Scoped: only the arrived families' texts are touched. Non-recording and
+ * non-persisting — never a history step, never a draft write: a face
+ * correction, not a document edit. A live text session is skipped — its own
+ * re-fit settles at session exit, and re-measuring mid-edit would fight the
+ * caret. Self-healing by design: a stored fallback-computed width (a draft
+ * written before the face arrived) is corrected by the next load's fix-up.
  */
-export function rerenderOnFontsLoaded(canvas: Canvas): void {
-  void preloadFonts().then(() => {
-    // Fabric's measuring cache holds per-family char widths measured with
-    // whatever face was loaded at measure time — a Textbox restored before
-    // the webfonts resolved cached fallback-face widths under the real
-    // family's key. Clear it, or the re-measure below would re-read the
-    // fallback widths and keep the wrong wrapping.
-    cache.clearFontCache()
-    canvas.forEachObject((obj) => {
-      // A Textbox restored or imported before the webfonts resolve was
-      // measured with the fallback face — its wrapping (and thus its height;
-      // Textbox keeps the box width) is wrong and would stick, since a canvas
-      // never re-measures when a late font lands. Re-measure with the real
-      // face now, so the box matches the face the design was saved with.
-      if (obj instanceof Textbox) {
-        obj.initDimensions()
-        obj.setCoords()
+export function healFontsOnArrival(canvas: Canvas, families: readonly string[]): void {
+  const arrived = new Set(families)
+  if (arrived.size === 0) return
+
+  // Fabric's char cache holds widths measured with whatever face was loaded
+  // at measure time — a fallback-face entry under the real family's key
+  // would poison the re-measure below. Clear per arrived family, so other
+  // families' caches survive.
+  for (const family of arrived) cache.clearFontCache(family)
+
+  const measure = getTextMeasurer()
+  const healText = (text: Textbox): void => {
+    if (text.isEditing) return
+    if (text.autoFit) {
+      fitToContent(text, measure)
+    } else {
+      // A user-owned width is face-independent, but the wrapping inside it
+      // re-measures — height and line count follow the real face.
+      text.initDimensions()
+      text.setCoords()
+    }
+    // A group's bounds were computed against the fallback-measured child —
+    // re-fit the parent so the corrected child isn't clipped by the group's
+    // cached bounds. A no-op at the top level.
+    refitParentGroup(text)
+    text.dirty = true
+  }
+
+  canvas.forEachObject((obj) => {
+    if (isTextObject(obj) && arrived.has(obj.fontFamily)) healText(obj)
+    if (obj instanceof Group) {
+      for (const child of obj.getObjects()) {
+        if (isTextObject(child) && arrived.has(child.fontFamily)) {
+          healText(child)
+          // The group caches its own bitmap on top of the children's — mark
+          // it too, or its cache rows re-blit the stale child caches.
+          obj.dirty = true
+        }
       }
-      obj.dirty = true
-      // A group caches its own bitmap on top of the children's — children must
-      // be marked too, or the group's cache rows re-blit the stale child caches.
-      if (obj instanceof Group) {
-        obj.getObjects().forEach((child) => {
-          if (child instanceof Textbox) {
-            child.initDimensions()
-            child.setCoords()
-          }
-          child.dirty = true
-        })
-      }
-    })
-    canvas.requestRenderAll()
+    }
   })
+  canvas.requestRenderAll()
+}
+
+/**
+ * Normalize a stored (family, weight, style) into a real face — the same
+ * snap a family commit applies (via `snapToRealFace`), so a stale stored
+ * pair (an old draft's weight beyond the family's set, a faux italic) loads
+ * the face that really renders instead of probing for one that never existed
+ * and warning falsely. Unknown families pass through — the probe finds no
+ * face, which is exactly the failure the caller warns about.
+ */
+function storedFace(family: string, weight: unknown, style: unknown): FontFaceSpec {
+  const real = snapToRealFace(
+    getFontFamilySpec(family),
+    Number(weight) || 400,
+    style === "italic" ? "italic" : "normal",
+  )
+  return { family, ...real }
+}
+
+/**
+ * The faces actually used in a serialized document — walked through the
+ * top-level `objects`, recursing into groups (single-level, §7, but the walk
+ * costs nothing and future-proofs), reading each text object's
+ * family/weight/style. These are the faces restore and import request,
+ * export awaits, and the SVG embeds. Deduped by triple, first-use order.
+ * (Lifted from the export pipeline by #63 — every engine caller needs it.)
+ */
+export function collectUsedFontFaces(payload: {
+  objects?: Array<Record<string, unknown>>
+}): FontFaceSpec[] {
+  const seen = new Map<string, FontFaceSpec>()
+  const walk = (objects: Array<Record<string, unknown>> | undefined): void => {
+    for (const obj of objects ?? []) {
+      if (typeof obj.fontFamily === "string" && obj.fontFamily) {
+        const spec = storedFace(obj.fontFamily, obj.fontWeight, obj.fontStyle)
+        seen.set(faceKey(spec), spec)
+      }
+      const children = obj.objects as Array<Record<string, unknown>> | undefined
+      if (Array.isArray(children)) walk(children)
+    }
+  }
+  walk(payload.objects)
+  return [...seen.values()]
+}
+
+/**
+ * The faces a live canvas's text objects use — {@link collectUsedFontFaces}'
+ * companion for the restore path: the draft is loaded onto the canvas first
+ * (that *is* the fallback render), then the canvas itself is walked, so what
+ * gets requested is exactly what's on the sheet — groups included. Deduped
+ * by triple, first-use order.
+ */
+export function collectCanvasFontFaces(canvas: Canvas): FontFaceSpec[] {
+  const seen = new Map<string, FontFaceSpec>()
+  const add = (obj: FabricObject): void => {
+    if (!isTextObject(obj) || !obj.fontFamily) return
+    const spec = storedFace(obj.fontFamily, obj.fontWeight, obj.fontStyle)
+    seen.set(faceKey(spec), spec)
+  }
+  canvas.forEachObject((obj) => {
+    add(obj)
+    if (obj instanceof Group) obj.getObjects().forEach(add)
+  })
+  return [...seen.values()]
+}
+
+/**
+ * The exact face a text-property patch leaves the object on — computed from
+ * the current object state plus the patch, without mutating (§5): the click
+ * path awaits this face before `applyTextProps` runs, so the re-fit measures
+ * the real face. The snap is the rule `applyTextProps` runs on a family
+ * change (`snapToRealFace`), so the awaited face and the committed face are
+ * one answer.
+ */
+export function resolveTextFace(obj: Textbox, patch: TextPropsPatch): FontFaceSpec {
+  const family = patch.fontFamily ?? obj.fontFamily
+  const weight = patch.fontWeight ?? (Number(obj.fontWeight) || 400)
+  const style = patch.fontStyle ?? (obj.fontStyle === "italic" ? "italic" : "normal")
+  return { family, ...snapToRealFace(getFontFamilySpec(family), weight, style) }
+}
+
+/**
+ * The commit / Add Text warning (§9), verbatim:
+ * `Anton couldn't be loaded — using a fallback font`.
+ */
+export function fontCommitWarning(family: string): string {
+  return `${family} couldn't be loaded — using a fallback font`
+}
+
+/**
+ * The restore / import warning (§9), summed over the families that never
+ * arrived: `Couldn't load 2 fonts — using fallbacks (Anton, Pacifico)`, or
+ * the singular `Couldn't load Anton — using a fallback`.
+ */
+export function fontFallbackNotice(families: readonly string[]): string {
+  if (families.length === 1) return `Couldn't load ${families[0]} — using a fallback`
+  return `Couldn't load ${families.length} fonts — using fallbacks (${families.join(", ")})`
+}
+
+/**
+ * The export warning (§9, the existing shape kept): `Some fonts couldn't be
+ * loaded — exported with fallback rendering (Anton)`.
+ */
+export function fontExportWarning(families: readonly string[]): string {
+  return `Some fonts couldn't be loaded — exported with fallback rendering (${families.join(", ")})`
+}
+
+/**
+ * Clear the load memo — a test hook, so suites start from a cold engine (the
+ * `resetAutoPersistTestState` precedent). Never called by app code.
+ */
+export function resetFontLoadTestState(): void {
+  faceLoads.clear()
 }
 
 let sharedTextMeasurer: ReturnType<typeof makeTextMeasurer> | null = null

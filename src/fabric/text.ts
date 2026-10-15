@@ -138,6 +138,27 @@ export function getFontFamilySpec(family: string): FontFamilySpec | undefined {
 }
 
 /**
+ * Snap a weight/style pair to a family's real faces (§6): a weight the
+ * family doesn't bundle takes 400, and italic on a family that ships no
+ * italic takes normal — anything else would render as a browser-synthesized
+ * faux face. `applyTextProps`' family change and the font engine (which must
+ * await the exact face a commit leaves the object on) resolve through this
+ * one function. An unknown family (outside the bundle) has no faces to snap
+ * to — the pair passes through and the load roster-checks it.
+ */
+export function snapToRealFace(
+  spec: FontFamilySpec | undefined,
+  weight: number,
+  style: "normal" | "italic",
+): { weight: number; style: "normal" | "italic" } {
+  if (!spec) return { weight, style }
+  return {
+    weight: spec.weights.includes(weight) ? weight : 400,
+    style: style === "italic" && !spec.italic ? "normal" : style,
+  }
+}
+
+/**
  * The family's bold weight for the Bold toggle — the weight nearest 700
  * among its 500+ faces (CSS bold), or undefined when the family ships no
  * bold face (the static 400-only families — no faux bold, like no faux
@@ -292,14 +313,11 @@ export function applyTextProps(
     // Real faces only (§6): a weight or italic the new family doesn't bundle
     // would render as a browser-synthesized faux face. Snap down — a static
     // 400-only family takes 400 / normal.
-    const spec = getFontFamilySpec(patch.fontFamily)
-    if (spec) {
-      const weight = Number(obj.fontWeight) || 400
-      if (!spec.weights.includes(weight)) obj.set("fontWeight", 400)
-      if (obj.fontStyle === "italic" && !spec.italic) {
-        obj.set("fontStyle", "normal")
-      }
-    }
+    const weight = Number(obj.fontWeight) || 400
+    const style = obj.fontStyle === "italic" ? "italic" : "normal"
+    const real = snapToRealFace(getFontFamilySpec(patch.fontFamily), weight, style)
+    if (real.weight !== weight) obj.set("fontWeight", real.weight)
+    if (real.style !== style) obj.set("fontStyle", real.style)
   }
   if (patch.fontSize !== undefined) obj.set("fontSize", patch.fontSize)
   if (patch.fillColor !== undefined) obj.set("fill", patch.fillColor)

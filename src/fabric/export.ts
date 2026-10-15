@@ -1,7 +1,14 @@
 import { StaticCanvas, config, type Canvas } from "fabric"
 
 import { designFileBasename, type DocumentEnvelope } from "@/fabric/design-file"
+import {
+  collectUsedFontFaces,
+  fontExportWarning,
+  loadFontFaces,
+  type FontFaceSpec,
+} from "@/fabric/fonts"
 import { buildOutlineBorder, buildOutlineClip } from "@/fabric/outline-clip"
+import { getFontFamilySpec } from "@/fabric/text"
 
 /**
  * Export pipeline (build spec §11): one shared path for the four
@@ -104,28 +111,6 @@ export function exportFilename(baseName: string, format: ExportFormat): string {
 }
 
 /**
- * The font families actually used in a serialized document — walked through
- * the top-level `objects`, recursing into groups (single-level, §7, but the
- * walk costs nothing and future-proofs) and reading each object's
- * `fontFamily`. These are the faces SVG embeds and the faces the
- * font-readiness check must confirm before rasterizing.
- */
-export function collectUsedFontFamilies(payload: {
-  objects?: Array<Record<string, unknown>>
-}): string[] {
-  const seen = new Set<string>()
-  const walk = (objs: Array<Record<string, unknown>> | undefined): void => {
-    for (const obj of objs ?? []) {
-      if (typeof obj.fontFamily === "string" && obj.fontFamily) seen.add(obj.fontFamily)
-      const children = obj.objects as Array<Record<string, unknown>> | undefined
-      if (Array.isArray(children)) walk(children)
-    }
-  }
-  walk(payload.objects)
-  return [...seen]
-}
-
-/**
  * A browser-effectful seam of the export pipeline — everything the
  * orchestrator cannot do in jsdom (offscreen rendering, the DOM font set,
  * raster encoding, downloads). Injected so {@link exportDocument} is
@@ -141,20 +126,36 @@ export interface ExportHost {
    */
   prepare(input: ExportInput): Promise<PreparedExport>
   /**
-   * Await the fonts the document uses; return a warning when a family failed
-   * to load, so the caller exports with fallback rendering and reports it.
+   * Await the exact faces the document uses — the raster formats measure at
+   * `loadFromJSON`, and a fallback-wrapped box would bake into the pixels
+   * permanently. Returns the families that failed or timed out (empty when
+   * all arrived), so the caller exports with fallback rendering and reports
+   * it (§8).
    */
-  awaitFonts(usedFamilies: string[]): Promise<string | undefined>
+  awaitFonts(usedFaces: readonly FontFaceSpec[]): Promise<readonly string[]>
   /** Rasterize the prepared canvas to a PNG blob at 300 DPI (alpha kept). */
   toPng(prepared: PreparedExport): Promise<Blob | null>
   /** Rasterize the prepared canvas composited onto white — a JPEG blob. */
   toJpeg(prepared: PreparedExport): Promise<Blob | null>
   /** Serialize to SVG with each used family's bytes embedded (self-contained). */
-  toSvg(prepared: PreparedExport, usedFamilies: string[]): Promise<string>
+  toSvg(
+    prepared: PreparedExport,
+    usedFamilies: readonly string[],
+  ): Promise<SvgResult>
   /** Build a PDF page sized to the Document in points, 300 DPI PNG embedded. */
   toPdf(png: Blob, sizePt: Size): Promise<Blob>
   /** Trigger the download of a finished artifact. */
   download(blob: Blob, filename: string): void
+}
+
+/** The SVG serializer's result: the markup plus families it couldn't embed. */
+export interface SvgResult {
+  svg: string
+  /**
+   * Families whose bytes couldn't be fetched — their faces stay an external
+   * URL in the file, so the caller warns (§8/§9).
+   */
+  failedFamilies: string[]
 }
 
 /**
@@ -189,11 +190,14 @@ export interface PreparedExport {
  * live canvas is flushed before the serialization that feeds this), so this
  * runner consumes an already-committed snapshot. It refuses a raster (any
  * non-SVG format — PDF embeds a 300 DPI PNG) that would exceed the browser
- * canvas ceiling; renders the document offscreen; awaits the used fonts
- * (surfacing a fallback warning if one failed); dispatches to the format
- * renderer; downloads; and returns the filename plus any warning. It never
- * runs on the live canvas and never records — export is not an undoable step
- * (§11) and mutates nothing.
+ * canvas ceiling; collects the used faces; for a raster awaits them *before*
+ * the offscreen render (§8 — the offscreen canvas measures at `loadFromJSON`
+ * and a fallback wrap would bake into the pixels permanently, with no fix-up
+ * to repaint it), while SVG skips the wait (it embeds the files' bytes, no
+ * loaded face needed) and surfaces the same warning when an embed fetch
+ * fails; dispatches to the format renderer; downloads; and returns the
+ * filename plus any warning. It never runs on the live canvas and never
+ * records — export is not an undoable step (§11) and mutates nothing.
  */
 export async function exportDocument(
   input: ExportInput,
@@ -211,9 +215,15 @@ export async function exportDocument(
     )
   }
 
+  // The faces the document's text uses — the same walk restore runs (§2).
+  const usedFaces = collectUsedFontFaces(input.payload)
+  let warning: string | undefined
+  if (input.format !== "SVG") {
+    const failedFamilies = await host.awaitFonts(usedFaces)
+    if (failedFamilies.length > 0) warning = fontExportWarning(failedFamilies)
+  }
+
   const prepared = await host.prepare(input)
-  const usedFamilies = collectUsedFontFamilies(input.payload)
-  const warning = await host.awaitFonts(usedFamilies)
 
   let blob: Blob
   switch (input.format) {
@@ -230,7 +240,11 @@ export async function exportDocument(
       break
     }
     case "SVG": {
-      const svg = await host.toSvg(prepared, usedFamilies)
+      // One embed per family — the registry (`config.fontPaths`) is keyed by
+      // family, and the dedupe keeps the fetch pass single.
+      const usedFamilies = [...new Set(usedFaces.map((face) => face.family))]
+      const { svg, failedFamilies } = await host.toSvg(prepared, usedFamilies)
+      if (failedFamilies.length > 0) warning = fontExportWarning(failedFamilies)
       blob = new Blob([svg], { type: "image/svg+xml;charset=utf-8" })
       break
     }
@@ -244,16 +258,6 @@ export async function exportDocument(
 
   host.download(blob, filename)
   return { filename, warning }
-}
-
-/** Whether the given family is actually usable, once loaded — the readiness
- * probe's answer. `document.fonts.load` resolves when the face is ready (or
- * the check can answer); `check` then reports whether the face is usable.
- * The family is wrapped in quotes so names with spaces ("Work Sans") parse as
- * one. */
-async function checkFontLoaded(family: string): Promise<boolean> {
-  await document.fonts.load(`16px "${family}"`)
-  return document.fonts.check(`16px "${family}"`)
 }
 
 /** A Blob rendered as a data URL — the bridge into drawImage and jsPDF. */
@@ -421,17 +425,31 @@ export function createExportHost(): ExportHost {
       }
     },
 
-    async awaitFonts(usedFamilies) {
-      if (usedFamilies.length === 0) return undefined
-      // Wait for every pending face, then confirm the used families loaded.
-      await document.fonts.ready
-      const failed: string[] = []
-      for (const family of usedFamilies) {
-        const loaded = await checkFontLoaded(family).catch(() => false)
-        if (!loaded) failed.push(family)
+    async awaitFonts(usedFaces) {
+      if (usedFaces.length === 0) return []
+      // `document.fonts.check` answers true for families that don't exist at
+      // all, and `load` resolves empty for a family with no matching face —
+      // so an unbundled family (a hand-edited or foreign Design file) is
+      // caught by the roster comparison and warned without a fruitless
+      // probe; the bundled faces go through the engine's bounded loader
+      // (§8), which dedupes against faces the session already has.
+      const unbundled = new Set<string>()
+      const probes: FontFaceSpec[] = []
+      for (const face of usedFaces) {
+        if (getFontFamilySpec(face.family)) probes.push(face)
+        else unbundled.add(face.family)
       }
-      if (failed.length === 0) return undefined
-      return `Some fonts couldn't be loaded — exported with fallback rendering (${failed.join(", ")})`
+      const failed = new Set(await loadFontFaces(null, probes))
+      const failedFamilies: string[] = []
+      for (const face of usedFaces) {
+        if (
+          (unbundled.has(face.family) || failed.has(face.family)) &&
+          !failedFamilies.includes(face.family)
+        ) {
+          failedFamilies.push(face.family)
+        }
+      }
+      return failedFamilies
     },
 
     async toPng(prepared) {
@@ -486,7 +504,9 @@ export function createExportHost(): ExportHost {
       // createSVGFontFacesMarkup references `config.fontPaths[family]` as an
       // external URL; a self-contained SVG must carry the face. Fabric 7.4
       // sanitization stays on. A fetch failure leaves the external URL, so
-      // the file still opens (it just needs the network for that face).
+      // the file still opens (it just needs the network for that face) and
+      // the family is reported back for the export warning (§8).
+      const failedFamilies: string[] = []
       for (const family of usedFamilies) {
         const url = config.fontPaths[family]
         if (!url) continue
@@ -495,9 +515,11 @@ export function createExportHost(): ExportHost {
         const base64 = await fetchFontBase64(url)
         if (base64) {
           svg = svg.split(href).join(`url(data:font/woff2;base64,${base64})`)
+        } else {
+          failedFamilies.push(family)
         }
       }
-      return svg
+      return { svg, failedFamilies }
     },
 
     async toPdf(png, sizePt) {

@@ -2,7 +2,7 @@ import { StrictMode } from "react"
 import { createRoot } from "react-dom/client"
 
 import { registerCustomProperties } from "@/fabric/custom-properties"
-import { preloadFonts, registerFonts } from "@/fabric/fonts"
+import { registerFonts } from "@/fabric/fonts"
 
 import "./index.css"
 
@@ -12,11 +12,11 @@ import App from "./App"
 // (ADR 0002, build spec §4).
 registerCustomProperties()
 
-// All 10 families load at startup (§12): register the @font-face rules and
-// start the downloads. Creating text awaits preloadFonts before measuring,
-// so the downloads never block the shell — only measurement.
+// Every bundled family's @font-face rules register at startup — rule text
+// only. Nothing font-related downloads until a surface uses or shows a face
+// (the loading policy, #59 §1): a cold start on an empty design requests
+// zero font bytes.
 registerFonts()
-void preloadFonts()
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>

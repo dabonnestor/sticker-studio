@@ -22,7 +22,14 @@ import {
 } from "@/fabric/catalog"
 import { createPixabayCatalog } from "@/fabric/pixabay-catalog"
 import { createUnsplashCatalog } from "@/fabric/unsplash-catalog"
-import { getTextMeasurer, preloadFonts } from "@/fabric/fonts"
+import {
+  collectUsedFontFaces,
+  fontCommitWarning,
+  fontFallbackNotice,
+  getTextMeasurer,
+  loadFontFaces,
+  resolveTextFace,
+} from "@/fabric/fonts"
 import {
   alignObjects,
   type AlignCommand,
@@ -77,6 +84,7 @@ import {
 } from "@/fabric/svg-import"
 import type { ShapeKind } from "@/fabric/shapes"
 import {
+  TEXT_DEFAULT_FAMILY,
   applyTextProps,
   createText,
   isTextObject,
@@ -705,12 +713,21 @@ export function StageProvider({ children }: { children: ReactNode }) {
     [canvas],
   )
 
+  const reportStatus = useCallback((message: string) => {
+    setStatus(message)
+  }, [])
+
   const addText = useCallback(() => {
     if (!canvas?.history) return
     void (async () => {
-      // Auto-fit measures glyphs — only meaningful once every family is
-      // loaded (§12). The preload starts at startup, so this resolves fast.
-      await preloadFonts()
+      // Auto-fit measures glyphs — the default face is awaited before the
+      // measure (§5): a box fitted from fallback metrics would hug the wrong
+      // face. One file (~50 KB) on a cold cache; a failed or hung face lands
+      // the box anyway and warns (§9) — never a hang, never a silent revert.
+      const failed = await loadFontFaces(canvas, [
+        { family: TEXT_DEFAULT_FAMILY, weight: 400, style: "normal" },
+      ])
+      if (failed.length > 0) reportStatus(fontCommitWarning(failed[0]))
       const obj = createText(getTextMeasurer())
       canvas.add(obj)
       canvas.viewportCenterObject(obj)
@@ -725,11 +742,7 @@ export function StageProvider({ children }: { children: ReactNode }) {
       obj.selectAll()
       canvas.requestRenderAll()
     })()
-  }, [canvas])
-
-  const reportStatus = useCallback((message: string) => {
-    setStatus(message)
-  }, [])
+  }, [canvas, reportStatus])
 
   // Auto-persist (map #27, tickets #31–#33): every real document commit — the
   // same interaction boundaries the History records — writes the working
@@ -979,19 +992,53 @@ export function StageProvider({ children }: { children: ReactNode }) {
   const commitTextProps = useCallback(
     (patch: TextPropsPatch, recordHistory = true) => {
       if (!canvas?.history) return
+      const history = canvas.history
       const obj = canvas.getActiveObjects()[0]
       if (!isTextObject(obj)) return
-      applyTextProps(obj, patch, getTextMeasurer())
-      // A size-affecting commit (family/size/spacing) re-hugged the box — a
-      // group sized to the pre-edit child would clip it (see refitParentGroup).
-      refitParentGroup(obj)
-      canvas.requestRenderAll()
-      setSelection(canvas.getActiveObjects())
-      // The family/weight dropdown hover previews apply without recording —
-      // only a click is one undoable step (ADR 0001, §8).
-      if (recordHistory) canvas.history.commit()
+      const touchesFace =
+        patch.fontFamily !== undefined ||
+        patch.fontWeight !== undefined ||
+        patch.fontStyle !== undefined
+
+      const apply = () => {
+        applyTextProps(obj, patch, getTextMeasurer())
+        // A size-affecting commit (family/size/spacing) re-hugged the box — a
+        // group sized to the pre-edit child would clip it (see refitParentGroup).
+        refitParentGroup(obj)
+        canvas.requestRenderAll()
+        setSelection(canvas.getActiveObjects())
+        // The family/weight dropdown hover previews apply without recording —
+        // only a click is one undoable step (ADR 0001, §8).
+        if (recordHistory) history.commit()
+      }
+
+      if (touchesFace && recordHistory) {
+        // A family/weight/style click awaits the target face before it
+        // applies (§5): the re-fit must measure the real face, not the
+        // fallback. The await is bounded — a hung face past 10 s proceeds
+        // with the fallback and warns (§9), and the click never silently
+        // reverts. (A click usually follows its hover kick, so the face is
+        // already in the memo and this resolves in a microtask.)
+        void loadFontFaces(canvas, [resolveTextFace(obj, patch)]).then((failed) => {
+          apply()
+          if (failed.length > 0) {
+            reportStatus(fontCommitWarning(patch.fontFamily ?? obj.fontFamily))
+          }
+        })
+        return
+      }
+
+      apply()
+      if (touchesFace) {
+        // A hover preview applies immediately and swaps when the face
+        // arrives (§6): the load is kicked deduped, the arrival fix-up
+        // re-measures and re-fits, and a failure stays quiet — the click is
+        // where a failure speaks (§9). The restore that follows a preview
+        // lands on an already-loaded family, so it is instant.
+        void loadFontFaces(canvas, [resolveTextFace(obj, patch)])
+      }
     },
-    [canvas],
+    [canvas, reportStatus],
   )
 
   const arrangeSelection = useCallback(
@@ -1260,8 +1307,16 @@ export function StageProvider({ children }: { children: ReactNode }) {
       // The applied design brought its own envelope — size, border, rotation,
       // and outline all land together.
       refreshDocumentMirrors(canvas)
+      // The applied design's faces are requested, not awaited (§3) — offline
+      // must still open the Document: the canvas renders fallback faces
+      // immediately, and each family's arrival re-measures, re-fits autoFit
+      // widths, and repaints, scoped to its texts (§4). Families that never
+      // arrive (offline, a dead URL) warn once, after the apply landed (§9).
+      void loadFontFaces(canvas, collectUsedFontFaces(design.canvas)).then((failed) => {
+        if (failed.length > 0) reportStatus(fontFallbackNotice(failed))
+      })
     },
-    [canvas, flushPendingTextEdit, setDesignFileName, refreshDocumentMirrors],
+    [canvas, flushPendingTextEdit, setDesignFileName, refreshDocumentMirrors, reportStatus],
   )
 
   const importDesignFile = useCallback(

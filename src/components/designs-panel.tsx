@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { ArrowLeft, Loader2 } from "lucide-react"
 
 import { useStage } from "@/components/stage-context"
@@ -31,8 +31,9 @@ import {
  */
 export function DesignsPanel({ onBack, active }: { onBack: () => void; active: boolean }) {
   const { insertPredesign, documentOutline } = useStage()
-  // The rendered thumbnails, keyed by design id — rendered once on mount and
-  // cached in the designs module, so returning to the panel never re-renders.
+  // The rendered thumbnails, keyed by design id — rendered on the panel's
+  // first open (the §10 gate) and cached in the designs module, so returning
+  // to the panel never re-renders.
   const [previews, setPreviews] = useState<Record<string, string>>({})
   // The sticker each design is made for, keyed by design id — read from the
   // design's own envelope (map #48), so it cannot drift from the file.
@@ -47,24 +48,41 @@ export function DesignsPanel({ onBack, active }: { onBack: () => void; active: b
   // Document, so overlapping applies would race).
   const [applying, setApplying] = useState<string | null>(null)
 
-  // Read every design on mount — its thumbnail and its sticker shape, from
-  // the one cached load. The panel stays mounted across navigation (see the
-  // Shapes panel), so this runs once per app session.
+  // The thumbnail renders are kicked on the panel's *first open*, not at
+  // mount (§10): a thumbnail fetches its design's own fonts — ~110 KB on the
+  // current roster, more once the library grows — and the panel mounts
+  // hidden at boot, so an eager render would quietly fetch fonts for tiles
+  // nobody opened, breaking the zero-fonts-at-startup rule. The designs
+  // module's cache keeps the rendered tiles across navigation.
+  const thumbnailsRequested = useRef(false)
+  useEffect(() => {
+    if (!active || thumbnailsRequested.current) return
+    thumbnailsRequested.current = true
+    void (async () => {
+      await Promise.all(
+        PREDESIGNS.map(async (predesign) => {
+          const dataURL = await renderPredesignPreview(predesign)
+          if (dataURL) {
+            setPreviews((prev) => ({ ...prev, [predesign.id]: dataURL }))
+          }
+        }),
+      )
+    })()
+  }, [active])
+
+  // Read every design's sticker shape on mount, from the one cached load.
+  // The panel stays mounted across navigation (see the Shapes panel), so this
+  // runs once per app session. Shapes alone decide the gallery's filter, so
+  // this — not the thumbnails — settles the empty state.
   useEffect(() => {
     let cancelled = false
     void (async () => {
       await Promise.all(
         PREDESIGNS.map(async (predesign) => {
-          const [dataURL, shape] = await Promise.all([
-            renderPredesignPreview(predesign),
-            // A design that cannot be read has no shape to match, so it stays
-            // out of every gallery — a broken file is never offered as a tile.
-            predesignShape(predesign).catch(() => null),
-          ])
+          // A design that cannot be read has no shape to match, so it stays
+          // out of every gallery — a broken file is never offered as a tile.
+          const shape = await predesignShape(predesign).catch(() => null)
           if (cancelled) return
-          if (dataURL) {
-            setPreviews((prev) => ({ ...prev, [predesign.id]: dataURL }))
-          }
           if (shape) {
             setShapes((prev) => ({ ...prev, [predesign.id]: shape }))
           }

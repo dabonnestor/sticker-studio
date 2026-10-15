@@ -6,7 +6,6 @@ import {
   ExportError,
   MAX_RASTER_PX,
   RASTER_MULTIPLIER,
-  collectUsedFontFamilies,
   createExportHost,
   exceedsRasterCeiling,
   exportDocument,
@@ -18,6 +17,7 @@ import {
   type ExportInput,
   type PreparedExport,
 } from "@/fabric/export"
+import { resetFontLoadTestState } from "@/fabric/fonts"
 
 /**
  * Export pipeline (build spec §11) — the shared path for all four
@@ -25,10 +25,25 @@ import {
  * (jsdom has no canvas raster, no real fonts, no downloads — the real host
  * is `createExportHost`). These tests exercise every decision the pipeline
  * makes: the 300 DPI pixel/point math, the 8192-px ceiling refusal, the
- * offscreen prepare, the font-wait fallback warning, the per-format dispatch
- * and naming, and the fact that export never runs on the live canvas or
- * mutates its input.
+ * offscreen prepare, the used-face collection and await-before-prepare
+ * order, the font-fallback warnings, the per-format dispatch and naming,
+ * and the fact that export never runs on the live canvas or mutates its
+ * input.
  */
+
+/** What `document.fonts.load` resolves with for a face that loaded. */
+const LOADED_FACE = { status: "loaded" } as FontFace
+
+/** jsdom ships no FontFaceSet — the real host's probe reads document.fonts. */
+const fontSet = {
+  load: vi.fn<(descriptor: string) => Promise<FontFace[]>>(async () => [LOADED_FACE]),
+  ready: Promise.resolve(),
+}
+
+Object.defineProperty(document, "fonts", {
+  value: fontSet,
+  configurable: true,
+})
 
 /** A canned prepared export whose canvas the mock formats never read. */
 const PREPARED: PreparedExport = {
@@ -46,10 +61,10 @@ type MockHost = {
 function createMockHost(overrides: Partial<MockHost> = {}): MockHost {
   const host: MockHost = {
     prepare: vi.fn(async () => PREPARED) as MockHost["prepare"],
-    awaitFonts: vi.fn(async () => undefined) as MockHost["awaitFonts"],
+    awaitFonts: vi.fn(async () => [] as readonly string[]) as MockHost["awaitFonts"],
     toPng: vi.fn(async () => new Blob(["png"])) as MockHost["toPng"],
     toJpeg: vi.fn(async () => new Blob(["jpeg"])) as MockHost["toJpeg"],
-    toSvg: vi.fn(async () => "<svg/>") as MockHost["toSvg"],
+    toSvg: vi.fn(async () => ({ svg: "<svg/>", failedFamilies: [] })) as MockHost["toSvg"],
     toPdf: vi.fn(async () => new Blob(["pdf"])) as MockHost["toPdf"],
     download: vi.fn() as MockHost["download"],
     ...overrides,
@@ -139,38 +154,27 @@ describe("naming", () => {
   })
 })
 
-describe("collectUsedFontFamilies", () => {
-  it("collects the families actually used, recursing into groups, deduped", () => {
-    const families = collectUsedFontFamilies(
-      baseInput().payload as never,
-    )
-    expect(families.sort()).toEqual(["Inter", "Work Sans"])
-    // The shape (no fontFamily) and the clip-path shape contribute nothing.
-    expect(families.length).toBe(2)
-  })
-
-  it("returns an empty list when no text is in the document", () => {
-    expect(
-      collectUsedFontFamilies({ objects: [{ type: "Rect" }] } as never),
-    ).toEqual([])
-  })
-})
-
 describe("exportDocument — dispatch and flow", () => {
   let host: MockHost
 
   beforeEach(() => {
+    resetFontLoadTestState()
     host = createMockHost()
   })
 
-  it("renders offscreen, awaits fonts, then downloads — and reports a warning", async () => {
-    host.awaitFonts.mockResolvedValue(
-      "Some fonts couldn't be loaded — exported with fallback rendering (Inter)",
-    )
+  it("awaits the used faces before prepare, then downloads — and reports a warning", async () => {
+    host.awaitFonts.mockResolvedValue(["Inter"])
     const result = await exportDocument(baseInput(), host)
 
-    expect(host.prepare).toHaveBeenCalledTimes(1)
-    expect(host.awaitFonts).toHaveBeenCalledWith(["Work Sans", "Inter"])
+    expect(host.awaitFonts).toHaveBeenCalledWith([
+      { family: "Work Sans", weight: 400, style: "normal" },
+      { family: "Inter", weight: 400, style: "normal" },
+    ])
+    // The raster measures at loadFromJSON — a fallback wrap would bake in,
+    // so the await must land before the offscreen render (§8).
+    expect(host.awaitFonts.mock.invocationCallOrder[0]).toBeLessThan(
+      host.prepare.mock.invocationCallOrder[0],
+    )
     expect(host.toPng).toHaveBeenCalledWith(PREPARED)
     expect(host.download).toHaveBeenCalledWith(
       expect.any(Blob),
@@ -181,6 +185,16 @@ describe("exportDocument — dispatch and flow", () => {
       warning:
         "Some fonts couldn't be loaded — exported with fallback rendering (Inter)",
     })
+  })
+
+  it("awaits the used faces for every raster format — JPEG and PDF too", async () => {
+    await exportDocument(baseInput({ format: "JPEG" }), host)
+    await exportDocument(baseInput({ format: "PDF" }), host)
+    expect(host.awaitFonts).toHaveBeenCalledTimes(2)
+    expect(host.awaitFonts).toHaveBeenCalledWith([
+      { family: "Work Sans", weight: 400, style: "normal" },
+      { family: "Inter", weight: 400, style: "normal" },
+    ])
   })
 
   it("dispatches PNG to toPng only", async () => {
@@ -197,12 +211,23 @@ describe("exportDocument — dispatch and flow", () => {
     expect(host.toPng).not.toHaveBeenCalled()
   })
 
-  it("dispatches SVG to toSvg and wraps it as an SVG blob", async () => {
+  it("dispatches SVG to toSvg and wraps it as an SVG blob — no font await (§8)", async () => {
     const result = await exportDocument(baseInput({ format: "SVG" }), host)
     expect(host.toSvg).toHaveBeenCalledWith(PREPARED, ["Work Sans", "Inter"])
     const blob = host.download.mock.calls[0][0] as Blob
     expect(blob.type).toContain("image/svg+xml")
     expect(result.filename).toBe("untitled.svg")
+    // SVG embeds the files' bytes at serialization time — no loaded face is
+    // needed, so the pipeline never awaits fonts for it.
+    expect(host.awaitFonts).not.toHaveBeenCalled()
+  })
+
+  it("warns when an SVG embed fetch fails — same export wording (§8/§9)", async () => {
+    host.toSvg.mockResolvedValue({ svg: "<svg/>", failedFamilies: ["Anton"] })
+    const result = await exportDocument(baseInput({ format: "SVG" }), host)
+    expect(result.warning).toBe(
+      "Some fonts couldn't be loaded — exported with fallback rendering (Anton)",
+    )
   })
 
   it("dispatches PDF through PNG then jsPDF", async () => {
@@ -356,7 +381,7 @@ describe("the real host — offscreen prepare", () => {
         } as never,
       }),
     )
-    const svg = await host.toSvg(prepared, [])
+    const { svg } = await host.toSvg(prepared, [])
     // The editor's fixed-px flag must not survive as a viewport-pinned stroke:
     // `non-scaling-stroke` would keep the border at 8 px no matter how the SVG
     // is scaled, unlike the rasters which bake it proportionally. Instead the
@@ -419,6 +444,53 @@ describe("the real host — offscreen prepare", () => {
     expect(prepared.canvas.height).toBeCloseTo(300)
     expect(prepared.raster).toEqual(rasterSize(200, 300))
     expect(prepared.points).toEqual(pointSize(200, 300))
+  })
+})
+
+/**
+ * The real host's font readiness (§8): probe the exact used faces through
+ * the engine, and roster-check families the bundle doesn't ship — `load`
+ * resolves empty for those and `check` would answer true, so the roster
+ * comparison is what catches a foreign Design file's family.
+ */
+describe("the real host — awaitFonts", () => {
+  beforeEach(() => {
+    resetFontLoadTestState()
+    fontSet.load.mockReset()
+    fontSet.load.mockImplementation(async () => [LOADED_FACE])
+  })
+
+  it("probes the exact used faces and reports none failed", async () => {
+    const host = createExportHost()
+    const failed = await host.awaitFonts([
+      { family: "Barlow", weight: 700, style: "italic" },
+    ])
+    expect(failed).toEqual([])
+    expect(fontSet.load).toHaveBeenCalledWith('italic 700 24px "Barlow"')
+  })
+
+  it("roster-checks unbundled families without a pointless probe", async () => {
+    const host = createExportHost()
+    const failed = await host.awaitFonts([
+      { family: "Comic Sans", weight: 400, style: "normal" },
+      { family: "Inter", weight: 400, style: "normal" },
+    ])
+    expect(failed).toEqual(["Comic Sans"])
+    expect(fontSet.load).toHaveBeenCalledTimes(1)
+    expect(fontSet.load).toHaveBeenCalledWith('400 24px "Inter"')
+  })
+
+  it("reports the families whose probe failed — first-use order", async () => {
+    const host = createExportHost()
+    fontSet.load.mockImplementation(async (descriptor) =>
+      descriptor.includes("Anton") ? [] : [LOADED_FACE],
+    )
+    const failed = await host.awaitFonts([
+      { family: "Anton", weight: 400, style: "normal" },
+      { family: "Comic Sans", weight: 400, style: "normal" },
+      { family: "Inter", weight: 400, style: "normal" },
+    ])
+    expect(failed).toEqual(["Anton", "Comic Sans"])
   })
 })
 
@@ -501,7 +573,7 @@ describe("the real host — the Cut line clips the export", () => {
         payload: payload as never,
       }),
     )
-    const svg = await host.toSvg(prepared, [])
+    const { svg } = await host.toSvg(prepared, [])
     // A real `<clipPath>` wrapping the content — not a traced bitmap, so the
     // cut stays vector-true at any scale. Its body is the oval itself.
     expect(svg).toMatch(/<clipPath id="CLIPPATH_\d+" >\n\s*<ellipse /)

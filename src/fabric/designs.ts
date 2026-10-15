@@ -1,6 +1,6 @@
 import { getExportHost } from "@/fabric/export"
 import { parseDesignFile, type DesignFile } from "@/fabric/design-file"
-import { preloadFonts } from "@/fabric/fonts"
+import { collectUsedFontFaces, loadFontFaces } from "@/fabric/fonts"
 import { getStickerShape, type StickerShape } from "@/fabric/outline"
 
 /**
@@ -97,17 +97,20 @@ const previewCache = new Map<string, string>()
  * Render a predesign's gallery thumbnail — the design rendered offscreen at a
  * small size, exactly as it would appear on the stage: the same prepare path
  * the export pipeline uses (payload loaded verbatim, the document border
- * drawn inset, the rotation baked in), then a downscaled PNG data URL. Fonts
- * are awaited first so the thumbnail shows the real faces, not the fallback
- * (the app preloads them at startup, so this resolves fast). Returns null on
- * any failure — the tile falls back to its placeholder. Cached per id.
+ * drawn inset, the rotation baked in), then a downscaled PNG data URL. The
+ * design's own faces are awaited — scoped to what it uses — before the
+ * offscreen render: the tile is a raster with no fix-up to repaint it, so a
+ * fallback-faced measurement would bake in permanently (the raster-export
+ * rule, §8). The render itself is gated to the Designs panel's first open
+ * (§10), so nothing here runs at boot. Returns null on any failure — the
+ * tile falls back to its placeholder. Cached per id.
  */
 export async function renderPredesignPreview(predesign: Predesign): Promise<string | null> {
   const cached = previewCache.get(predesign.id)
   if (cached) return cached
   try {
     const design = await loadPredesign(predesign)
-    await preloadFonts()
+    await loadFontFaces(null, collectUsedFontFaces(design.canvas))
     const prepared = await getExportHost().prepare({
       format: "PNG",
       width: design.size.width,

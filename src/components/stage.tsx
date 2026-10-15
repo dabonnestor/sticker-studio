@@ -2,7 +2,7 @@ import { useEffect, useRef, type MouseEvent } from "react"
 
 import { useStage } from "@/components/stage-context"
 import { restoreWorkingDraft } from "@/fabric/auto-persist"
-import { rerenderOnFontsLoaded } from "@/fabric/fonts"
+import { collectCanvasFontFaces, fontFallbackNotice, loadFontFaces } from "@/fabric/fonts"
 import { createStageCanvas, StageCanvas } from "@/fabric/stage-canvas"
 import { wheelZoomFactor } from "@/fabric/zoom"
 import { exposeStageCanvas } from "@/lib/dev"
@@ -91,12 +91,16 @@ export function Stage() {
       if (cancelled) return
       registerCanvas(canvas)
       exposeStageCanvas(canvas)
-      // Refit the missing half of the font preload: a restored draft renders
-      // before the webfonts resolve on a cold cache, baking the fallback face
-      // into the canvas. Once they settle, mark every object dirty and
-      // repaint, so the real fonts reach the rasterized text. `requestRenderAll`
-      // is a no-op after dispose — the strict-mode double-mount is safe.
-      rerenderOnFontsLoaded(canvas)
+      // A restored draft's faces are requested, not awaited (§3): the canvas
+      // renders immediately with fallback faces, and each family's arrival
+      // re-measures, re-fits autoFit widths, and repaints — scoped to its
+      // texts (§4). Families that never arrive (offline, a dead URL) warn
+      // once here; the restore still opened the Document (§9). The heal is a
+      // no-op after a dispose — `requestRenderAll` is guarded, and the
+      // object collection is empty — so the StrictMode double-mount is safe.
+      void loadFontFaces(canvas, collectCanvasFontFaces(canvas)).then((failed) => {
+        if (failed.length > 0) reportStatus(fontFallbackNotice(failed))
+      })
       // Fit is the default zoom on load (§9) — the workspace is laid out by
       // now, so the client size is real. Resize re-centers at the current
       // zoom and never re-fits; the observer lives with the canvas.
