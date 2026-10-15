@@ -1,4 +1,11 @@
-import { useEffect, useRef, useState, type ReactNode } from "react"
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type ReactNode,
+  type RefObject,
+} from "react"
 import {
   AlignCenter,
   AlignCenterHorizontal,
@@ -44,6 +51,7 @@ import {
 import {
   DropdownMenu,
   DropdownMenuContent,
+  DropdownMenuGroup,
   DropdownMenuItem,
   DropdownMenuLabel,
   DropdownMenuSeparator,
@@ -66,6 +74,7 @@ import {
 import { type AlignCommand } from "@/fabric/align"
 import { type ArrangeCommand } from "@/fabric/arrange"
 import { type FlipCommand } from "@/fabric/flip"
+import { loadFontFaces, type FontFaceSpec } from "@/fabric/fonts"
 import { isGroup, isGrouped } from "@/fabric/groups"
 import { MIN_DOCUMENT_SIZE_PX } from "@/fabric/outline"
 import {
@@ -75,6 +84,7 @@ import {
   getShapeKind,
 } from "@/fabric/shapes"
 import {
+  FONT_CATEGORIES,
   FONT_FAMILIES,
   TEXT_FILL,
   getBoldWeight,
@@ -526,13 +536,221 @@ function useHoverPreview<T>(
 }
 
 /**
- * Font family as a dropdown menu (§6) with hover preview: pointing at an
- * option applies it to the selection immediately, and moving off restores
- * the committed family — the face reads on the trigger throughout, so the
- * user can skim faces without committing; clicking picks the hovered face.
- * Skimming records no undo step — only the click does (§8).
+ * A family's browse face — the 400 normal a menu item renders (§7: one face
+ * per item; later weights load on commit).
  */
-function FontFamilyField({
+function browseFace(family: string): FontFaceSpec {
+  return { family, weight: 400, style: "normal" }
+}
+
+/** How an item's browse face settled — undefined while still pending. */
+type BrowseFaceState = "arrived" | "failed"
+
+/**
+ * The picker's browse state (§7): which families' 400-normal faces have
+ * settled for the menu, and the deduped kick every reveal rides. The kick
+ * goes through `loadFontFaces` — the same engine memo the hover preview and
+ * the commits use — so an item's reveal and the fetch can never diverge: a
+ * face already in flight (or fulfilled) resolves in a microtask.
+ *
+ * A settled face never regresses to pending: a failed one keeps its name
+ * showing in the fallback while the load is retried on the next touch (no
+ * negative cache, §9), upgrading to arrived — not hiding again behind a
+ * skeleton. The ~10 s bound is the reveal's patience, not the fetch's: a
+ * hung face past it drops the skeleton instead of pulsing forever, and the
+ * next explicit touch retries.
+ */
+function useBrowseFaces(): {
+  settled: ReadonlyMap<string, BrowseFaceState>
+  requestFace: (family: string) => void
+} {
+  const [settled, setSettled] = useState<ReadonlyMap<string, BrowseFaceState>>(
+    () => new Map(),
+  )
+  const inFlightRef = useRef(new Set<string>())
+
+  const requestFace = useCallback((family: string) => {
+    if (inFlightRef.current.has(family)) return
+    inFlightRef.current.add(family)
+    void loadFontFaces(null, [browseFace(family)]).then((failed) => {
+      inFlightRef.current.delete(family)
+      const state: BrowseFaceState = failed.length === 0 ? "arrived" : "failed"
+      setSettled((previous) =>
+        previous.get(family) === state
+          ? previous
+          : new Map(previous).set(family, state),
+      )
+    })
+  }, [])
+
+  return { settled, requestFace }
+}
+
+/**
+ * Kick each item's face the moment it scrolls into the menu's viewport (§7,
+ * visible-first): every item is observed once, its family requested at the
+ * first intersection, and then it stops observing. The observer's implicit
+ * viewport root reads as "the menu's viewport" because the menu clips its own
+ * scroll box — an item scrolled out of view is not intersecting, which is how
+ * the prototype's staggered reveals behaved (#61 reviewed that wiring; no
+ * all-on-open fallback). Where IntersectionObserver is missing entirely, the
+ * recorded fallback applies: request everything on open.
+ */
+function useVisibleFaceRequests(
+  listRef: RefObject<HTMLDivElement | null>,
+  requestFace: (family: string) => void,
+): void {
+  useEffect(() => {
+    const list = listRef.current
+    if (!list) return
+    const items = [...list.querySelectorAll<HTMLElement>("[data-font-family]")]
+    if (items.length === 0) return
+    const kick = (element: Element) => {
+      const family = (element as HTMLElement).dataset.fontFamily
+      if (family) requestFace(family)
+    }
+
+    if (typeof IntersectionObserver === "undefined") {
+      items.forEach(kick)
+      return
+    }
+
+    const observer = new IntersectionObserver((entries) => {
+      for (const entry of entries) {
+        if (!entry.isIntersecting) continue
+        observer.unobserve(entry.target)
+        kick(entry.target)
+      }
+    })
+    for (const item of items) observer.observe(item)
+    return () => observer.disconnect()
+  }, [listRef, requestFace])
+}
+
+/**
+ * One family option (§7/#61): a one-line 14 px item at weight 400, reading
+ * the name in its own face once it has arrived — behind a pulsing
+ * placeholder bar until the browse load settles (the skeleton reveal #61
+ * settled as the amendment to the swap-only clause). A failed face reveals
+ * the name in the fallback face, quiet (§9): the picker stays usable
+ * offline, and the click is where a failure speaks. Pointing at the option
+ * kicks the family's face load — deduped, the same one the visibility gate
+ * kicks, so fetch and reveal can't diverge — and previews the family on the
+ * selection (applied without committing and without awaiting; the arrival
+ * fix-up re-fits when the face lands). The click is the one undoable step.
+ */
+function FontFamilyItem({
+  family,
+  settled,
+  requestFace,
+  preview,
+  restore,
+  commit,
+}: {
+  family: string
+  /** How the browse face settled — undefined while pending. */
+  settled: BrowseFaceState | undefined
+  requestFace: (family: string) => void
+  preview: (family: string) => void
+  restore: () => void
+  commit: (family: string) => void
+}) {
+  return (
+    <DropdownMenuItem
+      data-font-family={family}
+      data-face-state={settled ?? "pending"}
+      className="px-2 py-1.5 text-sm font-normal"
+      // The own-face style only once the face has arrived — and only because
+      // the item is on screen, which is what requested it (§7).
+      style={settled === "arrived" ? { fontFamily: family } : undefined}
+      onMouseEnter={() => {
+        requestFace(family)
+        preview(family)
+      }}
+      onMouseLeave={restore}
+      onClick={() => commit(family)}
+    >
+      {settled ? (
+        <span className="min-w-0 truncate">{family}</span>
+      ) : (
+        <>
+          {/* The name stays in the accessibility tree (and the menu's
+              typeahead) while the bar hides it visually. */}
+          <span className="sr-only">{family}</span>
+          <span
+            data-skeleton
+            aria-hidden
+            className="inline-block h-3.5 animate-pulse rounded bg-muted"
+            style={{ width: `${Math.round(family.length * 7.4)}px` }}
+          />
+        </>
+      )}
+    </DropdownMenuItem>
+  )
+}
+
+/** The five picker sections in FONT_CATEGORIES order, each family filed once. */
+const FONT_FAMILIES_BY_CATEGORY = FONT_CATEGORIES.map((category) => ({
+  category,
+  families: FONT_FAMILIES.filter((spec) => spec.category === category),
+}))
+
+/**
+ * The open menu's body (§7/#61): the five sections — a muted category label
+ * each, a separator between groups, nothing else (no counts, no weight
+ * hints) — and the visibility gate over the flat item list.
+ */
+function FontFamilyMenu({
+  settled,
+  requestFace,
+  preview,
+  restore,
+  commit,
+}: {
+  settled: ReadonlyMap<string, BrowseFaceState>
+  requestFace: (family: string) => void
+  preview: (family: string) => void
+  restore: () => void
+  commit: (family: string) => void
+}) {
+  const listRef = useRef<HTMLDivElement | null>(null)
+  useVisibleFaceRequests(listRef, requestFace)
+
+  return (
+    <div ref={listRef}>
+      {FONT_FAMILIES_BY_CATEGORY.map(({ category, families }, index) => (
+        <DropdownMenuGroup key={category}>
+          {index > 0 && <DropdownMenuSeparator />}
+          <DropdownMenuLabel>{category}</DropdownMenuLabel>
+          {families.map(({ family }) => (
+            <FontFamilyItem
+              key={family}
+              family={family}
+              settled={settled.get(family)}
+              requestFace={requestFace}
+              preview={preview}
+              restore={restore}
+              commit={commit}
+            />
+          ))}
+        </DropdownMenuGroup>
+      ))}
+    </div>
+  )
+}
+
+/**
+ * Font family as a dropdown menu (§6) with hover preview and the grouped,
+ * own-face presentation (§7, #64): five category sections, one-line items in
+ * their own 14 px / 400 faces, a fixed ~300 px menu that caps to available
+ * height and scrolls within itself, and the trigger in the current family's
+ * face (at the trigger's 12 px). Pointing at an option applies it to the
+ * selection immediately and moving off restores the committed family — the
+ * face reads on the trigger throughout, so the user can skim faces without
+ * committing; clicking picks the hovered face. Skimming records no undo step
+ * — only the click does (§8). Exported for the toolbar suite.
+ */
+export function FontFamilyField({
   family,
   onApply,
   onCommit,
@@ -546,6 +764,7 @@ function FontFamilyField({
   disabled?: boolean
 }) {
   const { preview, restore, commit } = useHoverPreview(family, onApply, onCommit)
+  const { settled, requestFace } = useBrowseFaces()
 
   return (
     <DropdownMenu
@@ -561,23 +780,24 @@ function FontFamilyField({
           disabled={disabled}
           aria-label="Font family"
         >
-          <span className="truncate">{family}</span>
+          <span className="truncate" style={{ fontFamily: family }}>
+            {family}
+          </span>
           <ChevronDown aria-hidden className="size-3 shrink-0" />
         </Button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="start">
-        <DropdownMenuLabel>Font family</DropdownMenuLabel>
-        <DropdownMenuSeparator />
-        {FONT_FAMILIES.map(({ family: name }) => (
-          <DropdownMenuItem
-            key={name}
-            onMouseEnter={() => preview(name)}
-            onMouseLeave={restore}
-            onClick={() => commit(name)}
-          >
-            {name}
-          </DropdownMenuItem>
-        ))}
+      {/* A fixed ~300 px (19 rem ≈ 304 px in the mock) — the trigger-width
+          default is far too narrow for a ~30-family roster. The content caps
+          to available height and scrolls within itself (the primitive's own
+          max-h/overflow). */}
+      <DropdownMenuContent align="start" className="w-[19rem]">
+        <FontFamilyMenu
+          settled={settled}
+          requestFace={requestFace}
+          preview={preview}
+          restore={restore}
+          commit={commit}
+        />
       </DropdownMenuContent>
     </DropdownMenu>
   )
