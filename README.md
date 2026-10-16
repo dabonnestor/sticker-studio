@@ -44,12 +44,17 @@ width as you scale, so a 4 px border stays 4 px whether the sticker is 1 inch or
 **Shapes** — Square, Circle, Rectangle, Oval, and Triangle, each sized against the
 document it lands on rather than a fixed sheet.
 
-**Text** — ten bundled font families, self-hosted, with per-textbox styling: family,
-size, weight, color, bold, italic, underline, alignment, line height, letter spacing,
-and uppercase. Type is auto-fit to content until you resize the box yourself. Font
-family and weight preview on hover without committing. Bold and italic disable
-themselves with an explanation when a family ships no real bold or italic face — no
-faux slanting. Styling is per-textbox; there is no per-character rich text.
+**Text** — thirty bundled font families across five categories — Sans, Serif,
+Display, Handwriting, Mono — grouped in the picker, each option reading its own name
+in its own face, with per-textbox styling: family, size, weight, color, bold, italic,
+underline, alignment, line height, letter spacing, and uppercase. The fonts are
+self-hosted SIL OFL files loaded on demand: nothing font-related downloads at
+startup, a design fetches only the faces it uses, and opening the picker is what
+brings the roster's faces in. Type is auto-fit to content until you resize the box
+yourself. Font family and weight preview on hover without committing. Bold and
+italic disable themselves with an explanation when a family ships no real bold or
+italic face — no faux slanting. Styling is per-textbox; there is no per-character
+rich text.
 
 **Artwork** — search Pixabay for illustrations and Unsplash for photographs from
 inside the app. Artwork is embedded at insert time, so a design stays self-contained
@@ -145,7 +150,7 @@ tested without a browser. `CONTEXT.md` is the domain glossary and is the best en
 point for the vocabulary the code uses: Document, Cut line, Group, Selection, Export,
 Snap, Duplicate.
 
-`pnpm test` runs 704 tests across 32 files.
+`pnpm test` runs 738 tests across 33 files.
 
 ## License
 

@@ -107,8 +107,8 @@ export interface FontFamilySpec {
  * asset files and @font-face rules live in `fonts.ts`; this table is the
  * model's view — the real faces the toolbar may offer and `applyTextProps`
  * may snap to. Literal-typed (`as const`) so `fonts.ts` can key its asset
- * table to the exact family names. The map #71 roster (#65–#69) grows this
- * per category; the original ten stay and lead each group.
+ * table to the exact family names. The map #71 roster (#65–#69) landed the
+ * growth — thirty families, the original ten leading each group.
  */
 export const FONT_FAMILIES = [
   { family: "Inter", category: "Sans", weights: [400, 500, 600, 700, 800], italic: true },

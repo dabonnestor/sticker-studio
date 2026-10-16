@@ -13,11 +13,11 @@ import {
 } from "@/fabric/text"
 
 // The bundled font families (build spec §12, map #71). All are SIL OFL 1.1
-// and ship unmodified from Fontsource (woff2, latin subset — the pre-map
-// baseline was ten families / 22 files / ~732 KB as measured in #58; map
-// #71's family tickets #65–#69 expand the roster per category). Variable
-// families bundle one file per style covering their whole weight axis;
-// static families bundle one file per real weight.
+// and ship unmodified from Fontsource (woff2, latin subset — map #71 grew
+// the pre-map baseline of ten families / 22 files / ~732 KB, measured in #58,
+// to the thirty families below across #65–#69). Variable families bundle one
+// file per style covering their whole weight axis; static families bundle one
+// file per real weight.
 //
 // The Fontsource variable packages register their faces under the
 // "… Variable" family name; we write our own @font-face rules under the plain

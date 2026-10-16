@@ -5,6 +5,48 @@ All notable changes to Sticker Studio are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.0] — 2026-10-17
+
+The font library. The picker's ten families become thirty across five categories —
+Sans, Serif, Display, Handwriting, Mono — and fonts load on demand: nothing
+font-related downloads at startup, a design downloads only the faces it uses, and
+opening the picker is what downloads the faces on screen.
+
+### Added
+
+**Text**
+
+- Twenty new bundled font families, all self-hosted SIL OFL 1.1 — Sans: Figtree,
+  Space Grotesk, Karla; Serif: EB Garamond, Libre Baskerville, Bodoni Moda,
+  Fraunces; Display: Archivo Black, Alfa Slab One, Bungee, Lobster; Handwriting:
+  Caveat, Great Vibes, Patrick Hand, Amatic SC; Mono: Space Mono, IBM Plex Mono,
+  Azeret Mono, DM Mono, Source Code Pro. Variable packages ship one file per
+  style; static families bundle their real weights; italic is offered only where
+  the family really ships it — no faux faces.
+- The font picker is grouped into five labelled sections — Sans, Serif, Display,
+  Handwriting, Mono — with each option reading its own name in its own face once
+  that face has arrived: a placeholder bar until then, the fallback name if it
+  can't load.
+
+**Top bar**
+
+- A link to the repository, beside Export.
+
+### Changed
+
+- Fonts load on demand instead of at startup. Registering the faces downloads
+  nothing; restoring or importing a design requests exactly the faces it uses,
+  applying a family waits for its face before the text re-fits, and Export waits
+  for the faces it will render. A face that arrives late re-fits the text using
+  it — a stored width heals on its own next load, without recording an undo step.
+- `CONTEXT.md` gains the **Font category** term — the five picker groups, filed
+  Handwriting and not Script.
+
+### Documentation
+
+- The README's Text section tells the loaded-on-demand story, and the demo GIF is
+  re-recorded at the same 800×450 and 30 seconds.
+
 ## [1.0.0] — 2026-09-19
 
 The first release. Sticker Studio is a client-side sticker design editor: arrange
@@ -111,4 +153,5 @@ browser — no backend, no account.
 - Vite inlines `VITE_*` variables into the client bundle at build time, so those search
   keys ship to end users. Both providers' own client-side examples work the same way.
 
+[1.1.0]: https://github.com/dabonnestor/sticker-studio/releases/tag/v1.1.0
 [1.0.0]: https://github.com/dabonnestor/sticker-studio/releases/tag/v1.0.0
