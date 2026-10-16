@@ -17,7 +17,7 @@ import {
 // baseline was ten families / 22 files / ~732 KB as measured in #58; map
 // #71's family tickets #65–#69 expand the roster per category). Variable
 // families bundle one file per style covering their whole weight axis;
-// Barlow, Bebas Neue, Anton and Pacifico are static — one file per weight.
+// static families bundle one file per real weight.
 //
 // The Fontsource variable packages register their faces under the
 // "… Variable" family name; we write our own @font-face rules under the plain
@@ -199,6 +199,26 @@ const antonNormal = new URL(
   "../../node_modules/@fontsource/anton/files/anton-latin-400-normal.woff2",
   import.meta.url,
 ).href
+/** `@fontsource/archivo-black` — static, single face. */
+const archivoBlackNormal = new URL(
+  "../../node_modules/@fontsource/archivo-black/files/archivo-black-latin-400-normal.woff2",
+  import.meta.url,
+).href
+/** `@fontsource/alfa-slab-one` — static, single face. */
+const alfaSlabOneNormal = new URL(
+  "../../node_modules/@fontsource/alfa-slab-one/files/alfa-slab-one-latin-400-normal.woff2",
+  import.meta.url,
+).href
+/** `@fontsource/bungee` — static, single face. */
+const bungeeNormal = new URL(
+  "../../node_modules/@fontsource/bungee/files/bungee-latin-400-normal.woff2",
+  import.meta.url,
+).href
+/** `@fontsource/lobster` — static, single face. */
+const lobsterNormal = new URL(
+  "../../node_modules/@fontsource/lobster/files/lobster-latin-400-normal.woff2",
+  import.meta.url,
+).href
 /** `@fontsource/pacifico` — static, single face. */
 const pacificoNormal = new URL(
   "../../node_modules/@fontsource/pacifico/files/pacifico-latin-400-normal.woff2",
@@ -362,6 +382,22 @@ const FONT_ASSETS = {
   Anton: {
     url: antonNormal,
     faces: face("Anton", "normal", "400", antonNormal),
+  },
+  "Archivo Black": {
+    url: archivoBlackNormal,
+    faces: face("Archivo Black", "normal", "400", archivoBlackNormal),
+  },
+  "Alfa Slab One": {
+    url: alfaSlabOneNormal,
+    faces: face("Alfa Slab One", "normal", "400", alfaSlabOneNormal),
+  },
+  Bungee: {
+    url: bungeeNormal,
+    faces: face("Bungee", "normal", "400", bungeeNormal),
+  },
+  Lobster: {
+    url: lobsterNormal,
+    faces: face("Lobster", "normal", "400", lobsterNormal),
   },
   Pacifico: {
     url: pacificoNormal,

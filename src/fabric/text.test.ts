@@ -72,6 +72,10 @@ describe("FONT_FAMILIES — the bundled families (§12)", () => {
       ["Fraunces", "Serif"],
       ["Bebas Neue", "Display"],
       ["Anton", "Display"],
+      ["Archivo Black", "Display"],
+      ["Alfa Slab One", "Display"],
+      ["Bungee", "Display"],
+      ["Lobster", "Display"],
       ["Pacifico", "Handwriting"],
       ["Dancing Script", "Handwriting"],
       ["JetBrains Mono", "Mono"],
@@ -84,7 +88,7 @@ describe("FONT_FAMILIES — the bundled families (§12)", () => {
   })
 
   it("static 400-only families are exactly that", () => {
-    for (const family of ["Bebas Neue", "Anton", "Pacifico"]) {
+    for (const family of ["Bebas Neue", "Anton", "Pacifico", "Archivo Black", "Alfa Slab One", "Bungee", "Lobster"]) {
       const spec = FONT_FAMILIES.find((s) => s.family === family)!
       expect(spec.weights).toEqual([400])
       expect(spec.italic).toBe(false)
@@ -100,7 +104,7 @@ describe("getBoldWeight — the Bold toggle's weight (§6)", () => {
   })
 
   it("is undefined for static 400-only families — no faux bold", () => {
-    for (const family of ["Bebas Neue", "Anton", "Pacifico"]) {
+    for (const family of ["Bebas Neue", "Anton", "Pacifico", "Archivo Black", "Alfa Slab One", "Bungee", "Lobster"]) {
       expect(getBoldWeight(family)).toBeUndefined()
     }
   })

@@ -95,7 +95,7 @@ export interface FontFamilySpec {
   family: string
   /** The picker group this family is filed under (one of FONT_CATEGORIES). */
   category: FontCategory
-  /** Real weights (Bebas Neue, Anton and Pacifico are static 400-only). */
+  /** Real weights (static 400-only families carry exactly [400]). */
   weights: readonly number[]
   /** A real italic face exists — no faux italic for families without one. */
   italic: boolean
@@ -135,6 +135,10 @@ export const FONT_FAMILIES = [
   { family: "Fraunces", category: "Serif", weights: [400, 500, 600, 700, 800, 900], italic: true },
   { family: "Bebas Neue", category: "Display", weights: [400], italic: false },
   { family: "Anton", category: "Display", weights: [400], italic: false },
+  { family: "Archivo Black", category: "Display", weights: [400], italic: false },
+  { family: "Alfa Slab One", category: "Display", weights: [400], italic: false },
+  { family: "Bungee", category: "Display", weights: [400], italic: false },
+  { family: "Lobster", category: "Display", weights: [400], italic: false },
   { family: "Pacifico", category: "Handwriting", weights: [400], italic: false },
   {
     family: "Dancing Script",
