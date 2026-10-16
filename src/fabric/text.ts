@@ -102,17 +102,21 @@ export interface FontFamilySpec {
 }
 
 /**
- * The ten bundled families (build spec §12), in picker order — grouped by
- * category (FONT_CATEGORIES order), each carrying its `category`. The asset
- * files and @font-face rules live in `fonts.ts`; this table is the model's
- * view — the real faces the toolbar may offer and `applyTextProps` may snap
- * to. Literal-typed (`as const`) so `fonts.ts` can key its asset table to the
- * exact family names.
+ * The bundled families (build spec §12, map #71), in picker order — grouped
+ * by category (FONT_CATEGORIES order), each carrying its `category`. The
+ * asset files and @font-face rules live in `fonts.ts`; this table is the
+ * model's view — the real faces the toolbar may offer and `applyTextProps`
+ * may snap to. Literal-typed (`as const`) so `fonts.ts` can key its asset
+ * table to the exact family names. The map #71 roster (#65–#69) grows this
+ * per category; the original ten stay and lead each group.
  */
 export const FONT_FAMILIES = [
   { family: "Inter", category: "Sans", weights: [400, 500, 600, 700, 800], italic: true },
   { family: "Work Sans", category: "Sans", weights: [400, 500, 600, 700, 800], italic: true },
   { family: "Barlow", category: "Sans", weights: [400, 600, 700, 900], italic: true },
+  { family: "Figtree", category: "Sans", weights: [400, 500, 600, 700, 800, 900], italic: true },
+  { family: "Space Grotesk", category: "Sans", weights: [400, 500, 600, 700], italic: false },
+  { family: "Karla", category: "Sans", weights: [400, 500, 600, 700, 800], italic: true },
   { family: "Lora", category: "Serif", weights: [400, 500, 600, 700], italic: true },
   {
     family: "Playfair Display",
@@ -162,7 +166,7 @@ export function snapToRealFace(
  * The family's bold weight for the Bold toggle — the weight nearest 700
  * among its 500+ faces (CSS bold), or undefined when the family ships no
  * bold face (the static 400-only families — no faux bold, like no faux
- * italic). All ten multi-weight families land on 700.
+ * italic). Every multi-weight family lands on 700.
  */
 export function getBoldWeight(family: string): number | undefined {
   const bolds = getFontFamilySpec(family)?.weights.filter((w) => w >= 500) ?? []

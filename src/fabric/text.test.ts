@@ -55,12 +55,15 @@ describe("FONT_CATEGORIES — the five picker groups", () => {
   })
 })
 
-describe("FONT_FAMILIES — the ten bundled families (§12)", () => {
-  it("lists the ten families in picker order, each filed under its category", () => {
+describe("FONT_FAMILIES — the bundled families (§12)", () => {
+  it("lists the families in picker order, each filed under its category", () => {
     expect(FONT_FAMILIES.map(({ family, category }) => [family, category])).toEqual([
       ["Inter", "Sans"],
       ["Work Sans", "Sans"],
       ["Barlow", "Sans"],
+      ["Figtree", "Sans"],
+      ["Space Grotesk", "Sans"],
+      ["Karla", "Sans"],
       ["Lora", "Serif"],
       ["Playfair Display", "Serif"],
       ["Bebas Neue", "Display"],

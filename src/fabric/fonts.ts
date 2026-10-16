@@ -13,11 +13,11 @@ import {
 } from "@/fabric/text"
 
 // The bundled font families (build spec §12, map #71). All are SIL OFL 1.1
-// and ship unmodified from Fontsource (woff2, latin subset — the ten-family
-// bundle is 22 files / ~732 KB as measured in #58; the expanded roster
-// arrives with map #71's family tickets). Variable families bundle one file
-// per style covering their whole weight axis; Barlow, Bebas Neue, Anton and
-// Pacifico are static — one file per weight.
+// and ship unmodified from Fontsource (woff2, latin subset — the pre-map
+// baseline was ten families / 22 files / ~732 KB as measured in #58; map
+// #71's family tickets #65–#69 expand the roster per category). Variable
+// families bundle one file per style covering their whole weight axis;
+// Barlow, Bebas Neue, Anton and Pacifico are static — one file per weight.
 //
 // The Fontsource variable packages register their faces under the
 // "… Variable" family name; we write our own @font-face rules under the plain
@@ -110,6 +110,29 @@ const barlow700Italic = new URL(
 ).href
 const barlow900Italic = new URL(
   "../../node_modules/@fontsource/barlow/files/barlow-latin-900-italic.woff2",
+  import.meta.url,
+).href
+/** `@fontsource-variable/figtree` — variable: one file per style. */
+const figtreeNormal = new URL(
+  "../../node_modules/@fontsource-variable/figtree/files/figtree-latin-wght-normal.woff2",
+  import.meta.url,
+).href
+const figtreeItalic = new URL(
+  "../../node_modules/@fontsource-variable/figtree/files/figtree-latin-wght-italic.woff2",
+  import.meta.url,
+).href
+/** `@fontsource-variable/space-grotesk` — variable, normal style only. */
+const spaceGroteskNormal = new URL(
+  "../../node_modules/@fontsource-variable/space-grotesk/files/space-grotesk-latin-wght-normal.woff2",
+  import.meta.url,
+).href
+/** `@fontsource-variable/karla` — variable: one file per style. */
+const karlaNormal = new URL(
+  "../../node_modules/@fontsource-variable/karla/files/karla-latin-wght-normal.woff2",
+  import.meta.url,
+).href
+const karlaItalic = new URL(
+  "../../node_modules/@fontsource-variable/karla/files/karla-latin-wght-italic.woff2",
   import.meta.url,
 ).href
 /** `@fontsource-variable/lora` — variable: one file per style. */
@@ -234,6 +257,26 @@ const FONT_ASSETS = {
       face("Barlow", "italic", "900", barlow900Italic),
     ].join("\n"),
   },
+  Figtree: {
+    url: figtreeNormal,
+    faces: variableFace("Figtree", "300 900", {
+      normal: figtreeNormal,
+      italic: figtreeItalic,
+    }).join("\n"),
+  },
+  "Space Grotesk": {
+    url: spaceGroteskNormal,
+    faces: variableFace("Space Grotesk", "300 700", {
+      normal: spaceGroteskNormal,
+    }).join("\n"),
+  },
+  Karla: {
+    url: karlaNormal,
+    faces: variableFace("Karla", "200 800", {
+      normal: karlaNormal,
+      italic: karlaItalic,
+    }).join("\n"),
+  },
   Lora: {
     url: loraNormal,
     faces: variableFace("Lora", "400 700", {
@@ -276,7 +319,7 @@ const FONT_ASSETS = {
 } satisfies Record<FontFamilyName, { url: string; faces: string }>
 
 /**
- * The ten bundled families — metadata from the model, assets keyed above.
+ * The bundled families — metadata from the model, assets keyed above.
  * `FontFamilyName` is derived from FONT_FAMILIES, and the `satisfies` on
  * FONT_ASSETS ties the asset keys to exactly those names.
  */
