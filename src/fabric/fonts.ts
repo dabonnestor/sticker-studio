@@ -229,6 +229,30 @@ const dancingNormal = new URL(
   "../../node_modules/@fontsource-variable/dancing-script/files/dancing-script-latin-wght-normal.woff2",
   import.meta.url,
 ).href
+/** `@fontsource-variable/caveat` — variable, normal style only. */
+const caveatNormal = new URL(
+  "../../node_modules/@fontsource-variable/caveat/files/caveat-latin-wght-normal.woff2",
+  import.meta.url,
+).href
+/** `@fontsource/great-vibes` — static, single face. */
+const greatVibesNormal = new URL(
+  "../../node_modules/@fontsource/great-vibes/files/great-vibes-latin-400-normal.woff2",
+  import.meta.url,
+).href
+/** `@fontsource/patrick-hand` — static, single face. */
+const patrickHandNormal = new URL(
+  "../../node_modules/@fontsource/patrick-hand/files/patrick-hand-latin-400-normal.woff2",
+  import.meta.url,
+).href
+/** `@fontsource/amatic-sc` — static: one file per real weight (400, 700). */
+const amaticSc400 = new URL(
+  "../../node_modules/@fontsource/amatic-sc/files/amatic-sc-latin-400-normal.woff2",
+  import.meta.url,
+).href
+const amaticSc700 = new URL(
+  "../../node_modules/@fontsource/amatic-sc/files/amatic-sc-latin-700-normal.woff2",
+  import.meta.url,
+).href
 /** `@fontsource-variable/jetbrains-mono` — variable: one file per style. */
 const jetbrainsNormal = new URL(
   "../../node_modules/@fontsource-variable/jetbrains-mono/files/jetbrains-mono-latin-wght-normal.woff2",
@@ -408,6 +432,27 @@ const FONT_ASSETS = {
     faces: variableFace("Dancing Script", "400 700", {
       normal: dancingNormal,
     }).join("\n"),
+  },
+  Caveat: {
+    url: caveatNormal,
+    faces: variableFace("Caveat", "400 700", {
+      normal: caveatNormal,
+    }).join("\n"),
+  },
+  "Great Vibes": {
+    url: greatVibesNormal,
+    faces: face("Great Vibes", "normal", "400", greatVibesNormal),
+  },
+  "Patrick Hand": {
+    url: patrickHandNormal,
+    faces: face("Patrick Hand", "normal", "400", patrickHandNormal),
+  },
+  "Amatic SC": {
+    url: amaticSc400,
+    faces: [
+      face("Amatic SC", "normal", "400", amaticSc400),
+      face("Amatic SC", "normal", "700", amaticSc700),
+    ].join("\n"),
   },
   "JetBrains Mono": {
     url: jetbrainsNormal,

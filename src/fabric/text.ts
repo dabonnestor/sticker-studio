@@ -146,6 +146,10 @@ export const FONT_FAMILIES = [
     weights: [400, 500, 600, 700],
     italic: false,
   },
+  { family: "Caveat", category: "Handwriting", weights: [400, 500, 600, 700], italic: false },
+  { family: "Great Vibes", category: "Handwriting", weights: [400], italic: false },
+  { family: "Patrick Hand", category: "Handwriting", weights: [400], italic: false },
+  { family: "Amatic SC", category: "Handwriting", weights: [400, 700], italic: false },
   { family: "JetBrains Mono", category: "Mono", weights: [400, 500, 600, 700, 800], italic: true },
 ] as const satisfies readonly FontFamilySpec[]
 
