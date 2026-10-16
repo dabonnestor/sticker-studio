@@ -153,6 +153,42 @@ const playfairItalic = new URL(
   "../../node_modules/@fontsource-variable/playfair-display/files/playfair-display-latin-wght-italic.woff2",
   import.meta.url,
 ).href
+/** `@fontsource-variable/eb-garamond` — variable: one file per style. */
+const ebGaramondNormal = new URL(
+  "../../node_modules/@fontsource-variable/eb-garamond/files/eb-garamond-latin-wght-normal.woff2",
+  import.meta.url,
+).href
+const ebGaramondItalic = new URL(
+  "../../node_modules/@fontsource-variable/eb-garamond/files/eb-garamond-latin-wght-italic.woff2",
+  import.meta.url,
+).href
+/** `@fontsource-variable/libre-baskerville` — variable: one file per style. */
+const libreBaskervilleNormal = new URL(
+  "../../node_modules/@fontsource-variable/libre-baskerville/files/libre-baskerville-latin-wght-normal.woff2",
+  import.meta.url,
+).href
+const libreBaskervilleItalic = new URL(
+  "../../node_modules/@fontsource-variable/libre-baskerville/files/libre-baskerville-latin-wght-italic.woff2",
+  import.meta.url,
+).href
+/** `@fontsource-variable/bodoni-moda` — variable: one file per style. */
+const bodoniModaNormal = new URL(
+  "../../node_modules/@fontsource-variable/bodoni-moda/files/bodoni-moda-latin-wght-normal.woff2",
+  import.meta.url,
+).href
+const bodoniModaItalic = new URL(
+  "../../node_modules/@fontsource-variable/bodoni-moda/files/bodoni-moda-latin-wght-italic.woff2",
+  import.meta.url,
+).href
+/** `@fontsource-variable/fraunces` — variable: one file per style. */
+const frauncesNormal = new URL(
+  "../../node_modules/@fontsource-variable/fraunces/files/fraunces-latin-wght-normal.woff2",
+  import.meta.url,
+).href
+const frauncesItalic = new URL(
+  "../../node_modules/@fontsource-variable/fraunces/files/fraunces-latin-wght-italic.woff2",
+  import.meta.url,
+).href
 /** `@fontsource/bebas-neue` — static, single face. */
 const bebasNormal = new URL(
   "../../node_modules/@fontsource/bebas-neue/files/bebas-neue-latin-400-normal.woff2",
@@ -289,6 +325,34 @@ const FONT_ASSETS = {
     faces: variableFace("Playfair Display", "400 900", {
       normal: playfairNormal,
       italic: playfairItalic,
+    }).join("\n"),
+  },
+  "EB Garamond": {
+    url: ebGaramondNormal,
+    faces: variableFace("EB Garamond", "400 800", {
+      normal: ebGaramondNormal,
+      italic: ebGaramondItalic,
+    }).join("\n"),
+  },
+  "Libre Baskerville": {
+    url: libreBaskervilleNormal,
+    faces: variableFace("Libre Baskerville", "400 700", {
+      normal: libreBaskervilleNormal,
+      italic: libreBaskervilleItalic,
+    }).join("\n"),
+  },
+  "Bodoni Moda": {
+    url: bodoniModaNormal,
+    faces: variableFace("Bodoni Moda", "400 900", {
+      normal: bodoniModaNormal,
+      italic: bodoniModaItalic,
+    }).join("\n"),
+  },
+  Fraunces: {
+    url: frauncesNormal,
+    faces: variableFace("Fraunces", "100 900", {
+      normal: frauncesNormal,
+      italic: frauncesItalic,
     }).join("\n"),
   },
   "Bebas Neue": {
