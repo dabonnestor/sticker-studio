@@ -742,9 +742,9 @@ function FontFamilyMenu({
 /**
  * Font family as a dropdown menu (§6) with hover preview and the grouped,
  * own-face presentation (§7, #64): five category sections, one-line items in
- * their own 14 px / 400 faces, a fixed ~300 px menu that caps to available
- * height and scrolls within itself, and the trigger in the current family's
- * face (at the trigger's 12 px). Pointing at an option applies it to the
+ * their own 14 px / 400 faces, a fixed ~300 px menu capped to three quarters
+ * of the viewport and scrolling within itself, and the trigger in the current
+ * family's face (at the trigger's 12 px). Pointing at an option applies it to the
  * selection immediately and moving off restores the committed family — the
  * face reads on the trigger throughout, so the user can skim faces without
  * committing; clicking picks the hovered face. Skimming records no undo step
@@ -787,10 +787,14 @@ export function FontFamilyField({
         </Button>
       </DropdownMenuTrigger>
       {/* A fixed ~300 px (19 rem ≈ 304 px in the mock) — the trigger-width
-          default is far too narrow for a ~30-family roster. The content caps
-          to available height and scrolls within itself (the primitive's own
-          max-h/overflow). */}
-      <DropdownMenuContent align="start" className="w-[19rem]">
+          default is far too narrow for a ~30-family roster — and capped to
+          three quarters of the viewport, scrolling within itself. The min()
+          still honors the primitive's available-height variable, so a short
+          window shrinks the menu instead of pushing it off screen. */}
+      <DropdownMenuContent
+        align="start"
+        className="w-[19rem] max-h-[min(75vh,var(--radix-dropdown-menu-content-available-height))]"
+      >
         <FontFamilyMenu
           settled={settled}
           requestFace={requestFace}

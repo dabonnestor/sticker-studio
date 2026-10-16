@@ -187,6 +187,23 @@ describe("the Font family picker", () => {
     )
   })
 
+  it("caps at three quarters of the viewport, never past the primitive's available height", async () => {
+    await openMenu()
+
+    const content = document.querySelector<HTMLElement>(
+      '[data-slot="dropdown-menu-content"]',
+    )!
+    // Three quarters of the viewport replaces the primitive's full
+    // available-height cap; the min() keeps a short window from pushing the
+    // menu off screen.
+    expect(content.className).toContain(
+      "max-h-[min(75vh,var(--radix-dropdown-menu-content-available-height))]",
+    )
+    expect(content.className).not.toContain(
+      "max-h-(--radix-dropdown-menu-content-available-height)",
+    )
+  })
+
   it("renders the trigger in the current family's own face", async () => {
     await openMenu()
 
