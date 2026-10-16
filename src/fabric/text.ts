@@ -151,6 +151,21 @@ export const FONT_FAMILIES = [
   { family: "Patrick Hand", category: "Handwriting", weights: [400], italic: false },
   { family: "Amatic SC", category: "Handwriting", weights: [400, 700], italic: false },
   { family: "JetBrains Mono", category: "Mono", weights: [400, 500, 600, 700, 800], italic: true },
+  { family: "Space Mono", category: "Mono", weights: [400, 700], italic: true },
+  { family: "IBM Plex Mono", category: "Mono", weights: [400, 500, 600, 700], italic: true },
+  {
+    family: "Azeret Mono",
+    category: "Mono",
+    weights: [400, 500, 600, 700, 800, 900],
+    italic: true,
+  },
+  { family: "DM Mono", category: "Mono", weights: [300, 400, 500], italic: true },
+  {
+    family: "Source Code Pro",
+    category: "Mono",
+    weights: [400, 500, 600, 700, 800, 900],
+    italic: true,
+  },
 ] as const satisfies readonly FontFamilySpec[]
 
 /** The spec for a family, or undefined for families outside the bundle. */
@@ -183,7 +198,8 @@ export function snapToRealFace(
  * The family's bold weight for the Bold toggle — the weight nearest 700
  * among its 500+ faces (CSS bold), or undefined when the family ships no
  * bold face (the static 400-only families — no faux bold, like no faux
- * italic). Every multi-weight family lands on 700.
+ * italic). Families that ship a 700 land on it; DM Mono, whose boldest real
+ * face is 500, lands on 500 — a real face either way.
  */
 export function getBoldWeight(family: string): number | undefined {
   const bolds = getFontFamilySpec(family)?.weights.filter((w) => w >= 500) ?? []

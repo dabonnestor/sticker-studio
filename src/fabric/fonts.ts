@@ -262,6 +262,99 @@ const jetbrainsItalic = new URL(
   "../../node_modules/@fontsource-variable/jetbrains-mono/files/jetbrains-mono-latin-wght-italic.woff2",
   import.meta.url,
 ).href
+/** `@fontsource/space-mono` — static: one file per weight and style. */
+const spaceMono400 = new URL(
+  "../../node_modules/@fontsource/space-mono/files/space-mono-latin-400-normal.woff2",
+  import.meta.url,
+).href
+const spaceMono400Italic = new URL(
+  "../../node_modules/@fontsource/space-mono/files/space-mono-latin-400-italic.woff2",
+  import.meta.url,
+).href
+const spaceMono700 = new URL(
+  "../../node_modules/@fontsource/space-mono/files/space-mono-latin-700-normal.woff2",
+  import.meta.url,
+).href
+const spaceMono700Italic = new URL(
+  "../../node_modules/@fontsource/space-mono/files/space-mono-latin-700-italic.woff2",
+  import.meta.url,
+).href
+/** `@fontsource/ibm-plex-mono` — static: one file per weight and style. */
+const ibmPlex400 = new URL(
+  "../../node_modules/@fontsource/ibm-plex-mono/files/ibm-plex-mono-latin-400-normal.woff2",
+  import.meta.url,
+).href
+const ibmPlex400Italic = new URL(
+  "../../node_modules/@fontsource/ibm-plex-mono/files/ibm-plex-mono-latin-400-italic.woff2",
+  import.meta.url,
+).href
+const ibmPlex500 = new URL(
+  "../../node_modules/@fontsource/ibm-plex-mono/files/ibm-plex-mono-latin-500-normal.woff2",
+  import.meta.url,
+).href
+const ibmPlex500Italic = new URL(
+  "../../node_modules/@fontsource/ibm-plex-mono/files/ibm-plex-mono-latin-500-italic.woff2",
+  import.meta.url,
+).href
+const ibmPlex600 = new URL(
+  "../../node_modules/@fontsource/ibm-plex-mono/files/ibm-plex-mono-latin-600-normal.woff2",
+  import.meta.url,
+).href
+const ibmPlex600Italic = new URL(
+  "../../node_modules/@fontsource/ibm-plex-mono/files/ibm-plex-mono-latin-600-italic.woff2",
+  import.meta.url,
+).href
+const ibmPlex700 = new URL(
+  "../../node_modules/@fontsource/ibm-plex-mono/files/ibm-plex-mono-latin-700-normal.woff2",
+  import.meta.url,
+).href
+const ibmPlex700Italic = new URL(
+  "../../node_modules/@fontsource/ibm-plex-mono/files/ibm-plex-mono-latin-700-italic.woff2",
+  import.meta.url,
+).href
+/** `@fontsource-variable/azeret-mono` — variable: one file per style. */
+const azeretNormal = new URL(
+  "../../node_modules/@fontsource-variable/azeret-mono/files/azeret-mono-latin-wght-normal.woff2",
+  import.meta.url,
+).href
+const azeretItalic = new URL(
+  "../../node_modules/@fontsource-variable/azeret-mono/files/azeret-mono-latin-wght-italic.woff2",
+  import.meta.url,
+).href
+/** `@fontsource/dm-mono` — static: one file per weight and style. */
+const dmMono300 = new URL(
+  "../../node_modules/@fontsource/dm-mono/files/dm-mono-latin-300-normal.woff2",
+  import.meta.url,
+).href
+const dmMono300Italic = new URL(
+  "../../node_modules/@fontsource/dm-mono/files/dm-mono-latin-300-italic.woff2",
+  import.meta.url,
+).href
+const dmMono400 = new URL(
+  "../../node_modules/@fontsource/dm-mono/files/dm-mono-latin-400-normal.woff2",
+  import.meta.url,
+).href
+const dmMono400Italic = new URL(
+  "../../node_modules/@fontsource/dm-mono/files/dm-mono-latin-400-italic.woff2",
+  import.meta.url,
+).href
+const dmMono500 = new URL(
+  "../../node_modules/@fontsource/dm-mono/files/dm-mono-latin-500-normal.woff2",
+  import.meta.url,
+).href
+const dmMono500Italic = new URL(
+  "../../node_modules/@fontsource/dm-mono/files/dm-mono-latin-500-italic.woff2",
+  import.meta.url,
+).href
+/** `@fontsource-variable/source-code-pro` — variable: one file per style. */
+const sourceCodeNormal = new URL(
+  "../../node_modules/@fontsource-variable/source-code-pro/files/source-code-pro-latin-wght-normal.woff2",
+  import.meta.url,
+).href
+const sourceCodeItalic = new URL(
+  "../../node_modules/@fontsource-variable/source-code-pro/files/source-code-pro-latin-wght-italic.woff2",
+  import.meta.url,
+).href
 
 /** The metadata (family, weights, italic) comes from the text model's table. */
 type FontSpec = FontFamilySpec & {
@@ -459,6 +552,53 @@ const FONT_ASSETS = {
     faces: variableFace("JetBrains Mono", "100 800", {
       normal: jetbrainsNormal,
       italic: jetbrainsItalic,
+    }).join("\n"),
+  },
+  "Space Mono": {
+    url: spaceMono400,
+    faces: [
+      face("Space Mono", "normal", "400", spaceMono400),
+      face("Space Mono", "italic", "400", spaceMono400Italic),
+      face("Space Mono", "normal", "700", spaceMono700),
+      face("Space Mono", "italic", "700", spaceMono700Italic),
+    ].join("\n"),
+  },
+  "IBM Plex Mono": {
+    url: ibmPlex400,
+    faces: [
+      face("IBM Plex Mono", "normal", "400", ibmPlex400),
+      face("IBM Plex Mono", "italic", "400", ibmPlex400Italic),
+      face("IBM Plex Mono", "normal", "500", ibmPlex500),
+      face("IBM Plex Mono", "italic", "500", ibmPlex500Italic),
+      face("IBM Plex Mono", "normal", "600", ibmPlex600),
+      face("IBM Plex Mono", "italic", "600", ibmPlex600Italic),
+      face("IBM Plex Mono", "normal", "700", ibmPlex700),
+      face("IBM Plex Mono", "italic", "700", ibmPlex700Italic),
+    ].join("\n"),
+  },
+  "Azeret Mono": {
+    url: azeretNormal,
+    faces: variableFace("Azeret Mono", "100 900", {
+      normal: azeretNormal,
+      italic: azeretItalic,
+    }).join("\n"),
+  },
+  "DM Mono": {
+    url: dmMono400,
+    faces: [
+      face("DM Mono", "normal", "300", dmMono300),
+      face("DM Mono", "italic", "300", dmMono300Italic),
+      face("DM Mono", "normal", "400", dmMono400),
+      face("DM Mono", "italic", "400", dmMono400Italic),
+      face("DM Mono", "normal", "500", dmMono500),
+      face("DM Mono", "italic", "500", dmMono500Italic),
+    ].join("\n"),
+  },
+  "Source Code Pro": {
+    url: sourceCodeNormal,
+    faces: variableFace("Source Code Pro", "200 900", {
+      normal: sourceCodeNormal,
+      italic: sourceCodeItalic,
     }).join("\n"),
   },
 } satisfies Record<FontFamilyName, { url: string; faces: string }>

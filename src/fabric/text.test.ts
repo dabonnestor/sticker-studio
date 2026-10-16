@@ -83,6 +83,11 @@ describe("FONT_FAMILIES — the bundled families (§12)", () => {
       ["Patrick Hand", "Handwriting"],
       ["Amatic SC", "Handwriting"],
       ["JetBrains Mono", "Mono"],
+      ["Space Mono", "Mono"],
+      ["IBM Plex Mono", "Mono"],
+      ["Azeret Mono", "Mono"],
+      ["DM Mono", "Mono"],
+      ["Source Code Pro", "Mono"],
     ])
   })
 
@@ -102,9 +107,15 @@ describe("FONT_FAMILIES — the bundled families (§12)", () => {
 
 describe("getBoldWeight — the Bold toggle's weight (§6)", () => {
   it("resolves every multi-weight family to 700 — the weight nearest CSS bold", () => {
-    for (const { family } of FONT_FAMILIES.filter((s) => s.weights.length > 1)) {
+    for (const { family } of FONT_FAMILIES.filter(
+      (s) => s.weights.length > 1 && s.weights.some((w) => w === 700),
+    )) {
       expect(getBoldWeight(family)).toBe(700)
     }
+  })
+
+  it("lands on the boldest real face when a family ships no 700 — DM Mono 500", () => {
+    expect(getBoldWeight("DM Mono")).toBe(500)
   })
 
   it("is undefined for static 400-only families — no faux bold", () => {
